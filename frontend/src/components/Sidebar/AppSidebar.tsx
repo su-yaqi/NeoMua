@@ -1,4 +1,4 @@
-import { Briefcase, Building2, Home, Users } from "lucide-react"
+import { Briefcase, Building2, Home, Sparkles, Users } from "lucide-react"
 
 import { SidebarAppearance } from "@/components/Common/Appearance"
 import { Logo } from "@/components/Common/Logo"
@@ -31,6 +31,11 @@ export function AppSidebar() {
         icon: Users,
         title: "空间成员管理",
         path: `/system/namespaces/${selectedNamespaceId}/members`,
+      })
+      items.push({
+        icon: Sparkles,
+        title: "大模型接入配置",
+        path: "/system/llm-providers",
       })
     }
 

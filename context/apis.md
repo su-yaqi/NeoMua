@@ -94,6 +94,16 @@
 | PATCH | /platform/users/{user_id} | 超级管理员更新平台用户 |
 | DELETE | /platform/users/{user_id} | 超级管理员删除平台用户 |
 
+### llm
+| Method | Path | 描述 |
+|--------|------|------|
+| GET | /llm/providers/catalog | 读取预置供应商目录 |
+| GET | /llm/provider-configs | 读取当前空间的大模型接入配置列表 |
+| POST | /llm/provider-configs | 创建当前空间的大模型接入配置 |
+| PATCH | /llm/provider-configs/{config_id} | 更新当前空间的接入配置 |
+| POST | /llm/provider-configs/{config_id}/validate | 对当前配置执行连接校验 |
+| POST | /llm/provider-configs/{config_id}/sync-models | 拉取供应商模型并合并手工模型 |
+
 ### utils / private
 | Method | Path | 描述 |
 |--------|------|------|

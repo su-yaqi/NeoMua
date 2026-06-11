@@ -11,18 +11,20 @@
 
 ## 公共字段约定
 
-当前业务表并未统一具备 `updated_at` 或软删除字段，已实现的公共字段如下：
+当前业务表并未统一具备软删除字段，已实现的公共字段如下：
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | uuid | 主键 |
-| created_at | timestamptz | 创建时间；`User`、`Item`、`Namespace` 已实现 |
+| created_at | timestamptz | 创建时间；`User`、`Item`、`Namespace`、`LlmProviderConfig`、`LlmProviderModel` 已实现 |
+| updated_at | timestamptz | 更新时间；当前 `LlmProviderConfig`、`LlmProviderModel` 已实现 |
 
 ## 实体关系概览
 
 ```text
 User 1 ---- N Item
 User 1 ---- N UserNamespaceLink N ---- 1 Namespace
+Namespace 1 ---- N LlmProviderConfig 1 ---- N LlmProviderModel
 ```
 
 ## 表结构
@@ -92,3 +94,56 @@ User 1 ---- N UserNamespaceLink N ---- 1 Namespace
 | 索引名 | 字段 | 类型 | 说明 |
 |--------|------|------|------|
 | uq_user_namespace_link_user_namespace | user_id, namespace_id | 唯一 | 防止同一用户重复加入同一空间 |
+
+### llm_provider_config
+空间级大模型供应商接入配置表。
+
+| 字段 | 类型 | 可空 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| id | uuid | 否 | uuid4 | 主键 |
+| namespace_id | uuid | 否 | - | 所属空间 |
+| config_name | varchar(255) | 否 | - | 配置名称；同一空间内唯一 |
+| provider_slug | varchar(128) | 否 | - | 供应商标识 |
+| provider_display_name | varchar(255) | 否 | - | 供应商展示名快照 |
+| auth_type | enum | 否 | - | 鉴权方式，如 `api_key` / `oauth_external` / `aws_sdk` |
+| base_url | varchar(1024) | 否 | - | 接入地址 |
+| secret_ciphertext | text | 是 | null | 加密后的密钥载荷 |
+| secret_masked | varchar(255) | 是 | null | 对外展示的密钥掩码 |
+| extra_config | json | 否 | `{}` | 供应商扩展参数 |
+| supports_health_check | boolean | 否 | false | 是否支持在线校验 |
+| supports_model_discovery | boolean | 否 | false | 是否支持自动拉取模型 |
+| validation_status | enum | 否 | `unverified` | 最近一次校验状态 |
+| validation_message | varchar(1024) | 是 | null | 最近一次校验/同步提示 |
+| last_validated_at | timestamptz | 是 | null | 最近校验时间 |
+| enabled | boolean | 否 | true | 配置是否启用 |
+| created_by | uuid | 否 | - | 创建人 |
+| updated_by | uuid | 否 | - | 最近更新人 |
+| created_at | timestamptz | 是 | now() | 创建时间 |
+| updated_at | timestamptz | 是 | now() | 更新时间 |
+
+**索引**
+| 索引名 | 字段 | 类型 | 说明 |
+|--------|------|------|------|
+| uq_llm_provider_config_namespace_name | namespace_id, config_name | 唯一 | 同一空间内配置名称去重 |
+
+### llm_provider_model
+接入配置下的模型清单表，既存储自动发现模型，也存储手工补录模型。
+
+| 字段 | 类型 | 可空 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| id | uuid | 否 | uuid4 | 主键 |
+| provider_config_id | uuid | 否 | - | 所属接入配置 |
+| model_id | varchar(255) | 否 | - | 模型标识 |
+| display_name | varchar(255) | 是 | null | 展示名 |
+| source_type | enum | 否 | - | 来源：`discovered` / `manual` |
+| is_enabled | boolean | 否 | false | 当前配置下该模型是否可用 |
+| sync_status | enum | 否 | `active` | 同步状态：`active` / `stale` / `sync_failed` |
+| raw_metadata | json | 否 | `{}` | 供应商原始模型元数据快照 |
+| last_synced_at | timestamptz | 是 | null | 最近同步时间 |
+| created_at | timestamptz | 是 | now() | 创建时间 |
+| updated_at | timestamptz | 是 | now() | 更新时间 |
+
+**索引**
+| 索引名 | 字段 | 类型 | 说明 |
+|--------|------|------|------|
+| uq_llm_provider_model_config_model | provider_config_id, model_id | 唯一 | 防止同一配置重复记录相同模型 |

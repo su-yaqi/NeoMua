@@ -19,6 +19,7 @@ import { Route as LayoutSettingsRouteImport } from './routes/_layout/settings'
 import { Route as LayoutItemsRouteImport } from './routes/_layout/items'
 import { Route as LayoutAdminRouteImport } from './routes/_layout/admin'
 import { Route as LayoutSystemNamespacesRouteImport } from './routes/_layout/system.namespaces'
+import { Route as LayoutSystemLlmProvidersRouteImport } from './routes/_layout/system.llm-providers'
 import { Route as LayoutSystemNamespacesNamespaceIdMembersRouteImport } from './routes/_layout/system.namespaces.$namespaceId.members'
 
 const SignupRoute = SignupRouteImport.update({
@@ -70,6 +71,12 @@ const LayoutSystemNamespacesRoute = LayoutSystemNamespacesRouteImport.update({
   path: '/system/namespaces',
   getParentRoute: () => LayoutRoute,
 } as any)
+const LayoutSystemLlmProvidersRoute =
+  LayoutSystemLlmProvidersRouteImport.update({
+    id: '/system/llm-providers',
+    path: '/system/llm-providers',
+    getParentRoute: () => LayoutRoute,
+  } as any)
 const LayoutSystemNamespacesNamespaceIdMembersRoute =
   LayoutSystemNamespacesNamespaceIdMembersRouteImport.update({
     id: '/$namespaceId/members',
@@ -86,6 +93,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof LayoutAdminRoute
   '/items': typeof LayoutItemsRoute
   '/settings': typeof LayoutSettingsRoute
+  '/system/llm-providers': typeof LayoutSystemLlmProvidersRoute
   '/system/namespaces': typeof LayoutSystemNamespacesRouteWithChildren
   '/system/namespaces/$namespaceId/members': typeof LayoutSystemNamespacesNamespaceIdMembersRoute
 }
@@ -98,6 +106,7 @@ export interface FileRoutesByTo {
   '/items': typeof LayoutItemsRoute
   '/settings': typeof LayoutSettingsRoute
   '/': typeof LayoutIndexRoute
+  '/system/llm-providers': typeof LayoutSystemLlmProvidersRoute
   '/system/namespaces': typeof LayoutSystemNamespacesRouteWithChildren
   '/system/namespaces/$namespaceId/members': typeof LayoutSystemNamespacesNamespaceIdMembersRoute
 }
@@ -112,6 +121,7 @@ export interface FileRoutesById {
   '/_layout/items': typeof LayoutItemsRoute
   '/_layout/settings': typeof LayoutSettingsRoute
   '/_layout/': typeof LayoutIndexRoute
+  '/_layout/system/llm-providers': typeof LayoutSystemLlmProvidersRoute
   '/_layout/system/namespaces': typeof LayoutSystemNamespacesRouteWithChildren
   '/_layout/system/namespaces/$namespaceId/members': typeof LayoutSystemNamespacesNamespaceIdMembersRoute
 }
@@ -126,6 +136,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/items'
     | '/settings'
+    | '/system/llm-providers'
     | '/system/namespaces'
     | '/system/namespaces/$namespaceId/members'
   fileRoutesByTo: FileRoutesByTo
@@ -138,6 +149,7 @@ export interface FileRouteTypes {
     | '/items'
     | '/settings'
     | '/'
+    | '/system/llm-providers'
     | '/system/namespaces'
     | '/system/namespaces/$namespaceId/members'
   id:
@@ -151,6 +163,7 @@ export interface FileRouteTypes {
     | '/_layout/items'
     | '/_layout/settings'
     | '/_layout/'
+    | '/_layout/system/llm-providers'
     | '/_layout/system/namespaces'
     | '/_layout/system/namespaces/$namespaceId/members'
   fileRoutesById: FileRoutesById
@@ -235,6 +248,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutSystemNamespacesRouteImport
       parentRoute: typeof LayoutRoute
     }
+    '/_layout/system/llm-providers': {
+      id: '/_layout/system/llm-providers'
+      path: '/system/llm-providers'
+      fullPath: '/system/llm-providers'
+      preLoaderRoute: typeof LayoutSystemLlmProvidersRouteImport
+      parentRoute: typeof LayoutRoute
+    }
     '/_layout/system/namespaces/$namespaceId/members': {
       id: '/_layout/system/namespaces/$namespaceId/members'
       path: '/$namespaceId/members'
@@ -265,6 +285,7 @@ interface LayoutRouteChildren {
   LayoutItemsRoute: typeof LayoutItemsRoute
   LayoutSettingsRoute: typeof LayoutSettingsRoute
   LayoutIndexRoute: typeof LayoutIndexRoute
+  LayoutSystemLlmProvidersRoute: typeof LayoutSystemLlmProvidersRoute
   LayoutSystemNamespacesRoute: typeof LayoutSystemNamespacesRouteWithChildren
 }
 
@@ -273,6 +294,7 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutItemsRoute: LayoutItemsRoute,
   LayoutSettingsRoute: LayoutSettingsRoute,
   LayoutIndexRoute: LayoutIndexRoute,
+  LayoutSystemLlmProvidersRoute: LayoutSystemLlmProvidersRoute,
   LayoutSystemNamespacesRoute: LayoutSystemNamespacesRouteWithChildren,
 }
 

@@ -22,7 +22,8 @@
 ├── /items
 ├── /admin
 ├── /settings
-└── /system/namespaces
+├── /system/namespaces
+└── /system/llm-providers
 ```
 
 ## 导航结构
@@ -31,6 +32,7 @@
 | Dashboard | / | 登录用户 |
 | Items | /items | 登录用户 |
 | 空间管理 | /system/namespaces | 当前实现中所有登录用户都可看到，实际数据接口由后端控制 |
+| 大模型接入配置 | /system/llm-providers | 当前实现中已登录且已选空间用户可看到，实际数据接口由后端空间管理员权限控制 |
 | 用户管理 | /admin | 超级管理员 |
 | User Settings | /settings | 登录用户 |
 

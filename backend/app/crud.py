@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlmodel import Session, col, select
@@ -7,10 +8,13 @@ from app.core.security import get_password_hash, verify_password
 from app.models import (
     Item,
     ItemCreate,
+    LlmProviderConfig,
+    LlmProviderModel,
     Namespace,
     NamespaceRole,
     NamespaceUserCreate,
     NamespaceUserUpdate,
+    ProviderValidationStatus,
     User,
     UserCreate,
     UserNamespaceAssignment,
@@ -220,3 +224,92 @@ def create_item(*, session: Session, item_in: ItemCreate, owner_id: uuid.UUID) -
     session.commit()
     session.refresh(db_item)
     return db_item
+
+
+def list_llm_provider_configs(
+    *, session: Session, namespace_id: uuid.UUID
+) -> list[LlmProviderConfig]:
+    statement = (
+        select(LlmProviderConfig)
+        .where(LlmProviderConfig.namespace_id == namespace_id)
+        .order_by(col(LlmProviderConfig.created_at).desc())
+    )
+    return session.exec(statement).all()
+
+
+def get_llm_provider_config(
+    *, session: Session, config_id: uuid.UUID
+) -> LlmProviderConfig | None:
+    return session.get(LlmProviderConfig, config_id)
+
+
+def create_llm_provider_config(
+    *,
+    session: Session,
+    config: LlmProviderConfig,
+) -> LlmProviderConfig:
+    session.add(config)
+    session.commit()
+    session.refresh(config)
+    return config
+
+
+def update_llm_provider_config(
+    *,
+    session: Session,
+    config: LlmProviderConfig,
+) -> LlmProviderConfig:
+    session.add(config)
+    session.commit()
+    session.refresh(config)
+    return config
+
+
+def replace_llm_provider_models(
+    *,
+    session: Session,
+    config: LlmProviderConfig,
+    models_payload: list[dict[str, Any]],
+) -> list[LlmProviderModel]:
+    existing = session.exec(
+        select(LlmProviderModel).where(LlmProviderModel.provider_config_id == config.id)
+    ).all()
+    for item in existing:
+        session.delete(item)
+    session.flush()
+
+    created: list[LlmProviderModel] = []
+    for payload in models_payload:
+        model = LlmProviderModel(
+            provider_config_id=config.id,
+            model_id=payload["model_id"],
+            display_name=payload.get("display_name"),
+            source_type=payload["source_type"],
+            is_enabled=payload["is_enabled"],
+            sync_status=payload["sync_status"],
+            raw_metadata=payload.get("raw_metadata", {}),
+            last_synced_at=payload.get("last_synced_at"),
+            created_at=payload.get("created_at"),
+            updated_at=payload.get("updated_at"),
+        )
+        session.add(model)
+        created.append(model)
+    session.commit()
+    session.refresh(config)
+    return created
+
+
+def set_llm_provider_validation(
+    *,
+    session: Session,
+    config: LlmProviderConfig,
+    status: ProviderValidationStatus,
+    message: str,
+) -> LlmProviderConfig:
+    config.validation_status = status
+    config.validation_message = message
+    config.last_validated_at = datetime.now(timezone.utc)
+    session.add(config)
+    session.commit()
+    session.refresh(config)
+    return config
