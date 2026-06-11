@@ -1,4 +1,4 @@
-import { Briefcase, Home, Users } from "lucide-react"
+import { Briefcase, Building2, Home, Users } from "lucide-react"
 
 import { SidebarAppearance } from "@/components/Common/Appearance"
 import { Logo } from "@/components/Common/Logo"
@@ -19,10 +19,35 @@ const baseItems: Item[] = [
 
 export function AppSidebar() {
   const { user: currentUser } = useAuth()
+  const selectedNamespaceId = localStorage.getItem("selected_namespace_id")
+  const canManageSelectedNamespace =
+    Boolean(currentUser) && Boolean(selectedNamespaceId)
 
-  const items = currentUser?.is_superuser
-    ? [...baseItems, { icon: Users, title: "Admin", path: "/admin" }]
-    : baseItems
+  const items: Item[] = [...baseItems]
+
+  if (currentUser) {
+    if (canManageSelectedNamespace && selectedNamespaceId) {
+      items.push({
+        icon: Users,
+        title: "空间成员管理",
+        path: `/system/namespaces/${selectedNamespaceId}/members`,
+      })
+    }
+
+    items.push({
+      icon: Building2,
+      title: "空间管理",
+      path: "/system/namespaces",
+    })
+  }
+
+  if (currentUser?.is_superuser) {
+    items.push({
+      icon: Users,
+      title: "用户管理",
+      path: "/admin",
+    })
+  }
 
   return (
     <Sidebar collapsible="icon">

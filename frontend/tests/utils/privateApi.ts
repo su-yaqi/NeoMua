@@ -7,9 +7,11 @@ OpenAPI.BASE = `${process.env.VITE_API_URL}`
 export const createUser = async ({
   email,
   password,
+  isSuperuser = false,
 }: {
   email: string
   password: string
+  isSuperuser?: boolean
 }) => {
   return await PrivateService.createUser({
     requestBody: {
@@ -17,6 +19,8 @@ export const createUser = async ({
       password,
       is_verified: true,
       full_name: "Test User",
+      is_superuser: isSuperuser,
+      is_active: true,
     },
   })
 }

@@ -1,0 +1,43 @@
+# 项目概述
+
+## 项目名称
+NeoMua
+
+## 背景
+项目基于 Full Stack FastAPI Template 演进，保留模板自带的认证、用户、条目管理能力，并新增“空间（namespace）”这一多租户维度，逐步向平台化后台演进。
+
+## 目标
+
+- 提供一个前后端分离、可容器化部署的管理后台基础盘。
+- 支持账号认证、个人设置、平台用户管理和基础业务条目管理。
+- 支持按空间组织用户，并为后续多租户业务扩展预留统一入口。
+
+## 技术栈
+| 层次 | 技术选型 |
+|------|--------|
+| 后端 | Python 3.10+, FastAPI, SQLModel, Pydantic v2 |
+| 前端 | React 19, TypeScript, Vite, TanStack Router, TanStack Query |
+| 数据库 | PostgreSQL 18 |
+| UI | Tailwind CSS 4, shadcn/ui, Radix UI |
+| 测试 | Pytest, Playwright |
+| 部署 | Docker Compose, Traefik, Adminer |
+
+## 核心模块
+| 模块 | 描述 |
+|------|------|
+| auth | 登录、注册、Token 校验、找回密码与重置密码 |
+| users | 个人资料维护、密码修改、自助注销、平台级用户管理 |
+| items | 用户个人条目的增删改查 |
+| namespaces | 空间列表、空间 CRUD、空间成员关系与空间上下文选择 |
+
+## 当前实现状态
+
+- 后端已经实现 `users`、`items`、`namespaces`、`platform` 四组主要 API。
+- 前端已实现登录/注册/找回密码/重置密码、首页、条目页、用户管理页、个人设置页、空间管理页。
+- 前端已接入空间选择器和自定义 `tenantApi`，会自动携带 `X-Namespace-Id`。
+- 空间成员管理和平台用户管理的部分前端基础组件已存在，但尚未形成完整页面流。
+
+## 版本状态
+| 版本 | 状态 | 说明 |
+|------|------|------|
+| v0.1 | 已完成 | 模板基础能力 + 命名空间模型、空间管理 API 与空间选择器接入 |

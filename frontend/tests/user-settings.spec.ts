@@ -1,12 +1,18 @@
 import { expect, test } from "@playwright/test"
-import { firstSuperuser, firstSuperuserPassword } from "./config.ts"
 import { createUser } from "./utils/privateApi.ts"
 import { randomEmail, randomPassword } from "./utils/random"
 import { logInUser, logOutUser } from "./utils/user"
 
 const tabs = ["My profile", "Password", "Danger zone"]
 
+test.use({ storageState: { cookies: [], origins: [] } })
+
 test("My profile tab is active by default", async ({ page }) => {
+  const email = randomEmail()
+  const password = randomPassword()
+
+  await createUser({ email, password })
+  await logInUser(page, email, password)
   await page.goto("/settings")
   await expect(page.getByRole("tab", { name: "My profile" })).toHaveAttribute(
     "aria-selected",
@@ -15,6 +21,11 @@ test("My profile tab is active by default", async ({ page }) => {
 })
 
 test("All tabs are visible", async ({ page }) => {
+  const email = randomEmail()
+  const password = randomPassword()
+
+  await createUser({ email, password })
+  await logInUser(page, email, password)
   await page.goto("/settings")
   for (const tab of tabs) {
     await expect(page.getByRole("tab", { name: tab })).toBeVisible()
@@ -203,11 +214,21 @@ test.describe("Change password validation", () => {
 })
 
 test("Appearance button is visible in sidebar", async ({ page }) => {
+  const email = randomEmail()
+  const password = randomPassword()
+
+  await createUser({ email, password })
+  await logInUser(page, email, password)
   await page.goto("/settings")
   await expect(page.getByTestId("theme-button")).toBeVisible()
 })
 
 test("User can switch between theme modes", async ({ page }) => {
+  const email = randomEmail()
+  const password = randomPassword()
+
+  await createUser({ email, password })
+  await logInUser(page, email, password)
   await page.goto("/settings")
 
   await page.getByTestId("theme-button").click()
@@ -222,6 +243,11 @@ test("User can switch between theme modes", async ({ page }) => {
 })
 
 test("Selected mode is preserved across sessions", async ({ page }) => {
+  const email = randomEmail()
+  const password = randomPassword()
+
+  await createUser({ email, password })
+  await logInUser(page, email, password)
   await page.goto("/settings")
 
   await page.getByTestId("theme-button").click()
@@ -246,8 +272,11 @@ test("Selected mode is preserved across sessions", async ({ page }) => {
   )
   expect(isDarkMode).toBe(true)
 
-  await logOutUser(page)
-  await logInUser(page, firstSuperuser, firstSuperuserPassword)
+  await page.evaluate(() => {
+    localStorage.removeItem("access_token")
+  })
+  await page.goto("/login")
+  await logInUser(page, email, password)
 
   isDarkMode = await page.evaluate(() =>
     document.documentElement.classList.contains("dark"),

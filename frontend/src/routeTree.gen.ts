@@ -18,6 +18,8 @@ import { Route as LayoutIndexRouteImport } from './routes/_layout/index'
 import { Route as LayoutSettingsRouteImport } from './routes/_layout/settings'
 import { Route as LayoutItemsRouteImport } from './routes/_layout/items'
 import { Route as LayoutAdminRouteImport } from './routes/_layout/admin'
+import { Route as LayoutSystemNamespacesRouteImport } from './routes/_layout/system.namespaces'
+import { Route as LayoutSystemNamespacesNamespaceIdMembersRouteImport } from './routes/_layout/system.namespaces.$namespaceId.members'
 
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
@@ -63,8 +65,20 @@ const LayoutAdminRoute = LayoutAdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => LayoutRoute,
 } as any)
+const LayoutSystemNamespacesRoute = LayoutSystemNamespacesRouteImport.update({
+  id: '/system/namespaces',
+  path: '/system/namespaces',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutSystemNamespacesNamespaceIdMembersRoute =
+  LayoutSystemNamespacesNamespaceIdMembersRouteImport.update({
+    id: '/$namespaceId/members',
+    path: '/$namespaceId/members',
+    getParentRoute: () => LayoutSystemNamespacesRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
+  '/': typeof LayoutIndexRoute
   '/login': typeof LoginRoute
   '/recover-password': typeof RecoverPasswordRoute
   '/reset-password': typeof ResetPasswordRoute
@@ -72,7 +86,8 @@ export interface FileRoutesByFullPath {
   '/admin': typeof LayoutAdminRoute
   '/items': typeof LayoutItemsRoute
   '/settings': typeof LayoutSettingsRoute
-  '/': typeof LayoutIndexRoute
+  '/system/namespaces': typeof LayoutSystemNamespacesRouteWithChildren
+  '/system/namespaces/$namespaceId/members': typeof LayoutSystemNamespacesNamespaceIdMembersRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -83,6 +98,8 @@ export interface FileRoutesByTo {
   '/items': typeof LayoutItemsRoute
   '/settings': typeof LayoutSettingsRoute
   '/': typeof LayoutIndexRoute
+  '/system/namespaces': typeof LayoutSystemNamespacesRouteWithChildren
+  '/system/namespaces/$namespaceId/members': typeof LayoutSystemNamespacesNamespaceIdMembersRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -95,10 +112,13 @@ export interface FileRoutesById {
   '/_layout/items': typeof LayoutItemsRoute
   '/_layout/settings': typeof LayoutSettingsRoute
   '/_layout/': typeof LayoutIndexRoute
+  '/_layout/system/namespaces': typeof LayoutSystemNamespacesRouteWithChildren
+  '/_layout/system/namespaces/$namespaceId/members': typeof LayoutSystemNamespacesNamespaceIdMembersRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
+    | '/'
     | '/login'
     | '/recover-password'
     | '/reset-password'
@@ -106,7 +126,8 @@ export interface FileRouteTypes {
     | '/admin'
     | '/items'
     | '/settings'
-    | '/'
+    | '/system/namespaces'
+    | '/system/namespaces/$namespaceId/members'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -117,6 +138,8 @@ export interface FileRouteTypes {
     | '/items'
     | '/settings'
     | '/'
+    | '/system/namespaces'
+    | '/system/namespaces/$namespaceId/members'
   id:
     | '__root__'
     | '/_layout'
@@ -128,6 +151,8 @@ export interface FileRouteTypes {
     | '/_layout/items'
     | '/_layout/settings'
     | '/_layout/'
+    | '/_layout/system/namespaces'
+    | '/_layout/system/namespaces/$namespaceId/members'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -171,7 +196,7 @@ declare module '@tanstack/react-router' {
     '/_layout': {
       id: '/_layout'
       path: ''
-      fullPath: ''
+      fullPath: '/'
       preLoaderRoute: typeof LayoutRouteImport
       parentRoute: typeof rootRouteImport
     }
@@ -203,14 +228,44 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutAdminRouteImport
       parentRoute: typeof LayoutRoute
     }
+    '/_layout/system/namespaces': {
+      id: '/_layout/system/namespaces'
+      path: '/system/namespaces'
+      fullPath: '/system/namespaces'
+      preLoaderRoute: typeof LayoutSystemNamespacesRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/system/namespaces/$namespaceId/members': {
+      id: '/_layout/system/namespaces/$namespaceId/members'
+      path: '/$namespaceId/members'
+      fullPath: '/system/namespaces/$namespaceId/members'
+      preLoaderRoute: typeof LayoutSystemNamespacesNamespaceIdMembersRouteImport
+      parentRoute: typeof LayoutSystemNamespacesRoute
+    }
   }
 }
+
+interface LayoutSystemNamespacesRouteChildren {
+  LayoutSystemNamespacesNamespaceIdMembersRoute: typeof LayoutSystemNamespacesNamespaceIdMembersRoute
+}
+
+const LayoutSystemNamespacesRouteChildren: LayoutSystemNamespacesRouteChildren =
+  {
+    LayoutSystemNamespacesNamespaceIdMembersRoute:
+      LayoutSystemNamespacesNamespaceIdMembersRoute,
+  }
+
+const LayoutSystemNamespacesRouteWithChildren =
+  LayoutSystemNamespacesRoute._addFileChildren(
+    LayoutSystemNamespacesRouteChildren,
+  )
 
 interface LayoutRouteChildren {
   LayoutAdminRoute: typeof LayoutAdminRoute
   LayoutItemsRoute: typeof LayoutItemsRoute
   LayoutSettingsRoute: typeof LayoutSettingsRoute
   LayoutIndexRoute: typeof LayoutIndexRoute
+  LayoutSystemNamespacesRoute: typeof LayoutSystemNamespacesRouteWithChildren
 }
 
 const LayoutRouteChildren: LayoutRouteChildren = {
@@ -218,6 +273,7 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutItemsRoute: LayoutItemsRoute,
   LayoutSettingsRoute: LayoutSettingsRoute,
   LayoutIndexRoute: LayoutIndexRoute,
+  LayoutSystemNamespacesRoute: LayoutSystemNamespacesRouteWithChildren,
 }
 
 const LayoutRouteWithChildren =

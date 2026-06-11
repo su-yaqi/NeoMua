@@ -1,0 +1,52 @@
+# 前端总览
+
+> 前端位于 `frontend/`，采用 TanStack Router 文件路由。各模块页面细节见 `modules/*/ui.md`。
+
+## 设计规范
+
+- 组件库：shadcn/ui + Radix UI
+- 样式系统：Tailwind CSS 4
+- 布局：认证页使用独立 `AuthLayout`；登录后使用左侧 Sidebar + 顶部栏 + 内容区
+- 主题：支持浅色 / 深色 / 跟随系统
+- 响应式：Sidebar 与用户菜单具备移动端收起逻辑，整体以后台桌面场景为主
+
+## 页面树
+
+```text
+/login
+/signup
+/recover-password
+/reset-password?token=...
+
+/
+├── /items
+├── /admin
+├── /settings
+└── /system/namespaces
+```
+
+## 导航结构
+| 导航项 | 路径 | 权限 |
+|--------|------|------|
+| Dashboard | / | 登录用户 |
+| Items | /items | 登录用户 |
+| 空间管理 | /system/namespaces | 当前实现中所有登录用户都可看到，实际数据接口由后端控制 |
+| 用户管理 | /admin | 超级管理员 |
+| User Settings | /settings | 登录用户 |
+
+## 公共组件
+| 组件名 | 用途 |
+|--------|------|
+| `AuthLayout` | 登录、注册、找回密码、重置密码页共用布局 |
+| `AppSidebar` | 登录后主导航 |
+| `DataTable` | 列表页通用表格 |
+| `Appearance` | 主题切换 |
+| `Footer` | 登录后全局页脚 |
+| `ErrorComponent` / `NotFound` | 路由异常与 404 展示 |
+
+## 路由与权限约定
+
+- `/_layout` 在 `beforeLoad` 中检查本地 Token，并调用 `/users/me` 验证登录态。
+- `/login`、`/signup`、`/recover-password`、`/reset-password` 对已登录用户做重定向。
+- `/admin` 在进入页面前再次验证 `is_superuser`。
+- 顶部空间选择器将当前空间写入 `localStorage.selected_namespace_id`，并通过 `tenantApi` 自动附加到请求头。

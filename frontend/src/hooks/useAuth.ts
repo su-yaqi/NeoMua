@@ -63,6 +63,7 @@ const useAuth = () => {
     loginMutation,
     logout,
     user,
+    isLoading: isLoggedIn() && user === undefined,
   }
 }
 

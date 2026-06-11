@@ -3,7 +3,7 @@ import { Trash2 } from "lucide-react"
 import { useState } from "react"
 import { useForm } from "react-hook-form"
 
-import { UsersService } from "@/client"
+import { tenantApi } from "@/client/tenantApi"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -30,25 +30,21 @@ const DeleteUser = ({ id, onSuccess }: DeleteUserProps) => {
   const { showSuccessToast, showErrorToast } = useCustomToast()
   const { handleSubmit } = useForm()
 
-  const deleteUser = async (id: string) => {
-    await UsersService.deleteUser({ userId: id })
-  }
-
   const mutation = useMutation({
-    mutationFn: deleteUser,
+    mutationFn: () => tenantApi.deletePlatformUser(id),
     onSuccess: () => {
-      showSuccessToast("The user was deleted successfully")
+      showSuccessToast("平台用户删除成功")
       setIsOpen(false)
       onSuccess()
     },
     onError: handleError.bind(showErrorToast),
     onSettled: () => {
-      queryClient.invalidateQueries()
+      queryClient.invalidateQueries({ queryKey: ["platform-users"] })
     },
   })
 
   const onSubmit = async () => {
-    mutation.mutate(id)
+    mutation.mutate()
   }
 
   return (
@@ -59,23 +55,21 @@ const DeleteUser = ({ id, onSuccess }: DeleteUserProps) => {
         onClick={() => setIsOpen(true)}
       >
         <Trash2 />
-        Delete User
+        删除用户
       </DropdownMenuItem>
       <DialogContent className="sm:max-w-md">
         <form onSubmit={handleSubmit(onSubmit)}>
           <DialogHeader>
-            <DialogTitle>Delete User</DialogTitle>
+            <DialogTitle>删除平台用户</DialogTitle>
             <DialogDescription>
-              All items associated with this user will also be{" "}
-              <strong>permanently deleted.</strong> Are you sure? You will not
-              be able to undo this action.
+              将删除该平台用户及其空间关联。此操作不可撤销，确认继续吗？
             </DialogDescription>
           </DialogHeader>
 
           <DialogFooter className="mt-4">
             <DialogClose asChild>
               <Button variant="outline" disabled={mutation.isPending}>
-                Cancel
+                取消
               </Button>
             </DialogClose>
             <LoadingButton
@@ -83,7 +77,7 @@ const DeleteUser = ({ id, onSuccess }: DeleteUserProps) => {
               type="submit"
               loading={mutation.isPending}
             >
-              Delete
+              删除
             </LoadingButton>
           </DialogFooter>
         </form>

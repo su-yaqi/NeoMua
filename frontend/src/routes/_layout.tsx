@@ -1,7 +1,17 @@
+import { useQuery } from "@tanstack/react-query"
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router"
 
+import { UsersService } from "@/client"
+import { tenantApi } from "@/client/tenantApi"
 import { Footer } from "@/components/Common/Footer"
 import AppSidebar from "@/components/Sidebar/AppSidebar"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   SidebarInset,
   SidebarProvider,
@@ -17,16 +27,57 @@ export const Route = createFileRoute("/_layout")({
         to: "/login",
       })
     }
+    try {
+      await UsersService.readUserMe()
+    } catch {
+      localStorage.removeItem("access_token")
+      localStorage.removeItem("selected_namespace_id")
+      throw redirect({
+        to: "/login",
+      })
+    }
   },
 })
 
 function Layout() {
+  const { data: namespacesData } = useQuery({
+    queryKey: ["my-namespaces"],
+    queryFn: tenantApi.readMyNamespaces,
+  })
+  const namespaces = namespacesData?.data || []
+  const selectedNamespaceId =
+    localStorage.getItem("selected_namespace_id") || namespaces[0]?.id || ""
+
+  if (namespaces.length > 0 && !localStorage.getItem("selected_namespace_id")) {
+    localStorage.setItem("selected_namespace_id", namespaces[0].id)
+  }
+
   return (
     <SidebarProvider>
       <AppSidebar />
       <SidebarInset>
         <header className="sticky top-0 z-10 flex h-16 shrink-0 items-center gap-2 border-b px-4">
           <SidebarTrigger className="-ml-1 text-muted-foreground" />
+          <div className="ml-auto w-64">
+            <Select
+              value={selectedNamespaceId}
+              onValueChange={(value) => {
+                localStorage.setItem("selected_namespace_id", value)
+                window.location.reload()
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="选择空间" />
+              </SelectTrigger>
+              <SelectContent>
+                {namespaces.map((namespace) => (
+                  <SelectItem key={namespace.id} value={namespace.id}>
+                    {namespace.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </header>
         <main className="flex-1 p-6 md:p-8">
           <div className="mx-auto max-w-7xl">
