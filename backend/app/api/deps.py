@@ -79,6 +79,12 @@ def require_namespace_admin(
 ) -> uuid.UUID:
     if current_namespace_id is None:
         raise HTTPException(status_code=400, detail="namespace_id is required")
+    namespace = crud.get_namespace(
+        session=session,
+        namespace_id=current_namespace_id,
+    )
+    if namespace is None:
+        raise HTTPException(status_code=404, detail="Namespace not found")
     if current_user.is_superuser:
         return current_namespace_id
     role = crud.get_namespace_role(

@@ -57,6 +57,18 @@ def test_superuser_can_read_llm_provider_catalog(
     assert body["count"] >= 20
 
 
+def test_superuser_with_unknown_namespace_cannot_access_llm_provider_catalog(
+    client: TestClient, superuser_token_headers: dict[str, str]
+) -> None:
+    response = client.get(
+        f"{settings.API_V1_STR}/llm/providers/catalog",
+        headers=namespace_headers(superuser_token_headers, uuid.uuid4()),
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Namespace not found"
+
+
 def test_namespace_admin_can_create_provider_config_with_masked_secret(
     client: TestClient, db: Session
 ) -> None:

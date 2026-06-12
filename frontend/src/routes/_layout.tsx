@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router"
+import { useEffect, useState } from "react"
 
 import { UsersService } from "@/client"
 import { tenantApi } from "@/client/tenantApi"
@@ -45,12 +46,40 @@ function Layout() {
     queryFn: tenantApi.readMyNamespaces,
   })
   const namespaces = namespacesData?.data || []
-  const selectedNamespaceId =
-    localStorage.getItem("selected_namespace_id") || namespaces[0]?.id || ""
+  const [selectedNamespaceId, setSelectedNamespaceId] = useState(
+    () => localStorage.getItem("selected_namespace_id") || "",
+  )
 
-  if (namespaces.length > 0 && !localStorage.getItem("selected_namespace_id")) {
-    localStorage.setItem("selected_namespace_id", namespaces[0].id)
-  }
+  useEffect(() => {
+    if (!namespacesData) {
+      return
+    }
+
+    const storedNamespaceId = localStorage.getItem("selected_namespace_id") || ""
+    if (namespaces.length === 0) {
+      if (storedNamespaceId) {
+        localStorage.removeItem("selected_namespace_id")
+      }
+      if (selectedNamespaceId) {
+        setSelectedNamespaceId("")
+      }
+      return
+    }
+
+    const hasStoredNamespace = namespaces.some(
+      (namespace) => namespace.id === storedNamespaceId,
+    )
+    const nextNamespaceId = hasStoredNamespace
+      ? storedNamespaceId
+      : namespaces[0]?.id || ""
+
+    if (nextNamespaceId !== storedNamespaceId) {
+      localStorage.setItem("selected_namespace_id", nextNamespaceId)
+    }
+    if (nextNamespaceId !== selectedNamespaceId) {
+      setSelectedNamespaceId(nextNamespaceId)
+    }
+  }, [namespaces, namespacesData, selectedNamespaceId])
 
   return (
     <SidebarProvider>
@@ -63,6 +92,7 @@ function Layout() {
               value={selectedNamespaceId}
               onValueChange={(value) => {
                 localStorage.setItem("selected_namespace_id", value)
+                setSelectedNamespaceId(value)
                 window.location.reload()
               }}
             >

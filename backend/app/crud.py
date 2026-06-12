@@ -118,6 +118,10 @@ def list_namespaces_for_user(*, session: Session, user: User) -> list[Namespace]
     return session.exec(statement).all()
 
 
+def get_namespace(*, session: Session, namespace_id: uuid.UUID) -> Namespace | None:
+    return session.get(Namespace, namespace_id)
+
+
 def create_namespace_user(
     *, session: Session, namespace_id: uuid.UUID, user_in: NamespaceUserCreate
 ) -> User:

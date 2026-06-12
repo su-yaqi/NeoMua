@@ -52,3 +52,4 @@
 - `/login`、`/signup`、`/recover-password`、`/reset-password` 对已登录用户做重定向。
 - `/admin` 在进入页面前再次验证 `is_superuser`。
 - 顶部空间选择器将当前空间写入 `localStorage.selected_namespace_id`，并通过 `tenantApi` 自动附加到请求头。
+- 布局层会在 `/namespaces/mine` 返回后再校验并修正本地缓存的空间 ID，避免首次渲染时因空间列表尚未加载完成而误清空当前选择。
