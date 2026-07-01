@@ -214,6 +214,14 @@ Backend docs: [backend/README.md](./backend/README.md).
 
 Frontend docs: [frontend/README.md](./frontend/README.md).
 
+## NeoMua Development Workflow
+
+For this fork, we keep a fixed daily development workflow in:
+
+- [development-workflow.md](./development-workflow.md)
+
+And use root `Makefile` commands as the standard entrypoint (e.g. `make dev-up`, `make dev-logs-backend`, `make test-backend`).
+
 ## Deployment
 
 Deployment docs: [deployment.md](./deployment.md).
