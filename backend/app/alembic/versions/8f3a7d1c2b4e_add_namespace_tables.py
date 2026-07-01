@@ -19,8 +19,8 @@ depends_on = None
 
 
 def upgrade():
-    namespace_role_enum = sa.Enum(
-        "admin", "developer", "user", name="namespacerole"
+    namespace_role_enum = postgresql.ENUM(
+        "admin", "developer", "user", name="namespacerole", create_type=False
     )
     namespace_role_enum.create(op.get_bind(), checkfirst=True)
 
@@ -60,7 +60,7 @@ def downgrade():
     op.drop_index("ix_namespace_name", table_name="namespace")
     op.drop_table("namespace")
 
-    namespace_role_enum = sa.Enum(
-        "admin", "developer", "user", name="namespacerole"
+    namespace_role_enum = postgresql.ENUM(
+        "admin", "developer", "user", name="namespacerole", create_type=False
     )
     namespace_role_enum.drop(op.get_bind(), checkfirst=True)

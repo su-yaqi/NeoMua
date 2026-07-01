@@ -2,9 +2,21 @@ from sqlmodel import Session, delete
 
 from app.core.config import settings
 from app.models import Item, LlmProviderConfig, LlmProviderModel, User
+from app.runtime.models import (
+    AgentEvent,
+    AgentSession,
+    AgentTask,
+    RuntimeProfile,
+    RuntimeSecret,
+)
 
 
 def cleanup_test_data(session: Session) -> None:
+    session.execute(delete(AgentEvent))
+    session.execute(delete(AgentTask))
+    session.execute(delete(AgentSession))
+    session.execute(delete(RuntimeSecret))
+    session.execute(delete(RuntimeProfile))
     session.execute(delete(LlmProviderModel))
     session.execute(delete(LlmProviderConfig))
     session.execute(delete(Item))

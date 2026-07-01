@@ -13,11 +13,15 @@ from app.api.deps import (
 from app.llm_provider_service import mask_secret_value, seal_secret_payload
 from app.models import LlmProviderConfig, LlmProviderModel
 from app.runtime.models import (
+    AgentEventType,
+    AgentSession,
+    AgentTask,
     RuntimeProfile,
     RuntimeRouteMode,
     RuntimeSecret,
     RuntimeType,
 )
+from app.runtime.repository import append_event_idempotent
 
 router = APIRouter(prefix="/runtimes", tags=["runtimes"])
 
@@ -40,6 +44,22 @@ class PlatformRuntimePublic(BaseModel):
     base_url: str | None
     permission_mode: str
     secret_masked: str | None
+
+
+class SessionPublic(BaseModel):
+    id: uuid.UUID
+    runtime_profile_id: uuid.UUID
+    sdk_session_id: str | None
+
+
+class MessageInput(BaseModel):
+    prompt: str = Field(min_length=1)
+
+
+class TaskPublic(BaseModel):
+    id: uuid.UUID
+    session_id: uuid.UUID | None
+    status: str
 
 
 def _public(runtime: RuntimeProfile, secret: RuntimeSecret | None) -> PlatformRuntimePublic:
@@ -121,3 +141,66 @@ def read_platform_runtime(
         RuntimeSecret.runtime_profile_id == runtime.id
     )).first()
     return _public(runtime, secret)
+
+
+@router.post("/platform/sessions", response_model=SessionPublic, status_code=201)
+def create_platform_session(
+    session: SessionDep,
+    current_user: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
+) -> SessionPublic:
+    runtime = session.exec(select(RuntimeProfile).where(
+        RuntimeProfile.namespace_id == namespace_id,
+        RuntimeProfile.runtime_type == RuntimeType.PLATFORM,
+    )).first()
+    if runtime is None:
+        raise HTTPException(409, "Platform runtime not configured")
+    agent_session = AgentSession(
+        namespace_id=namespace_id,
+        runtime_profile_id=runtime.id,
+        created_by=current_user.id,
+    )
+    session.add(agent_session)
+    session.commit()
+    session.refresh(agent_session)
+    return SessionPublic(
+        id=agent_session.id,
+        runtime_profile_id=agent_session.runtime_profile_id,
+        sdk_session_id=agent_session.sdk_session_id,
+    )
+
+
+@router.post("/sessions/{session_id}/messages", response_model=TaskPublic, status_code=202)
+def create_session_message(
+    session_id: uuid.UUID,
+    body: MessageInput,
+    session: SessionDep,
+    current_user: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
+) -> TaskPublic:
+    agent_session = session.get(AgentSession, session_id)
+    if agent_session is None or agent_session.namespace_id != namespace_id:
+        raise HTTPException(404, "Session not found")
+    runtime = session.get(RuntimeProfile, agent_session.runtime_profile_id)
+    if runtime is None:
+        raise HTTPException(409, "Runtime is unavailable")
+    task = AgentTask(
+        namespace_id=namespace_id,
+        session_id=agent_session.id,
+        runtime_profile_id=runtime.id,
+        prompt=body.prompt,
+        snapshot={
+            "route_mode": runtime.route_mode.value,
+            "model_id": runtime.model_id,
+            "permission_mode": runtime.permission_mode,
+            "config": runtime.config,
+        },
+        created_by=current_user.id,
+    )
+    session.add(task)
+    session.commit()
+    session.refresh(task)
+    append_event_idempotent(
+        session, task, 0, AgentEventType.USER_MESSAGE, {"text": body.prompt}
+    )
+    return TaskPublic(id=task.id, session_id=task.session_id, status=task.status.value)

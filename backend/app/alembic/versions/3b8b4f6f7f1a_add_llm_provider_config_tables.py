@@ -19,7 +19,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    provider_auth_type = sa.Enum(
+    provider_auth_type = postgresql.ENUM(
         "api_key",
         "oauth_external",
         "oauth_device_code",
@@ -27,25 +27,25 @@ def upgrade() -> None:
         "external_process",
         "copilot_token",
         "custom",
-        name="providerauthtype",
+        name="providerauthtype", create_type=False,
     )
-    provider_validation_status = sa.Enum(
+    provider_validation_status = postgresql.ENUM(
         "unverified",
         "success",
         "failed",
         "unsupported",
-        name="providervalidationstatus",
+        name="providervalidationstatus", create_type=False,
     )
-    provider_model_source_type = sa.Enum(
+    provider_model_source_type = postgresql.ENUM(
         "discovered",
         "manual",
-        name="providermodelsourcetype",
+        name="providermodelsourcetype", create_type=False,
     )
-    provider_model_sync_status = sa.Enum(
+    provider_model_sync_status = postgresql.ENUM(
         "active",
         "stale",
         "sync_failed",
-        name="providermodelsyncstatus",
+        name="providermodelsyncstatus", create_type=False,
     )
 
     bind = op.get_bind()

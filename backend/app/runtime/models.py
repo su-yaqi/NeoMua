@@ -67,7 +67,7 @@ class AgentSession(SQLModel, table=True):
     namespace_id: uuid.UUID = Field(foreign_key="namespace.id", nullable=False, ondelete="CASCADE")
     runtime_profile_id: uuid.UUID = Field(foreign_key="runtime_profile.id", nullable=False, ondelete="CASCADE")
     sdk_session_id: str | None = Field(default=None, max_length=255)
-    created_by: uuid.UUID = Field(foreign_key="user.id", nullable=False)
+    created_by: uuid.UUID | None = Field(default=None, foreign_key="user.id", ondelete="SET NULL")
     created_at: datetime = Field(default_factory=utcnow, sa_type=DateTime(timezone=True))
 
 
@@ -81,7 +81,11 @@ class AgentTask(SQLModel, table=True):
     prompt: str
     snapshot: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
     final_result: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON, nullable=True))
-    created_by: uuid.UUID = Field(foreign_key="user.id", nullable=False)
+    revision: int = 1
+    claimed_by: str | None = Field(default=None, max_length=255)
+    lease_expires_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    retry_of_task_id: uuid.UUID | None = Field(default=None, foreign_key="agent_task.id", ondelete="SET NULL")
+    created_by: uuid.UUID | None = Field(default=None, foreign_key="user.id", ondelete="SET NULL")
     created_at: datetime = Field(default_factory=utcnow, sa_type=DateTime(timezone=True))
 
 

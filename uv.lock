@@ -1504,6 +1504,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
     { name = "pydantic" },
+    { name = "pyjwt" },
 ]
 
 [package.dev-dependencies]
@@ -1516,6 +1517,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.128,<1" },
     { name = "httpx", specifier = ">=0.28,<1" },
     { name = "pydantic", specifier = ">=2.12,<3" },
+    { name = "pyjwt", specifier = ">=2.8,<3" },
 ]
 
 [package.metadata.requires-dev]

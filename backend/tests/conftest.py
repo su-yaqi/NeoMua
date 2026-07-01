@@ -2,11 +2,12 @@ from collections.abc import Generator
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import SQLModel, Session
+from sqlmodel import SQLModel, Session, delete
 
 from app.core.config import settings
 from app.core.db import engine, init_db
 from app.main import app
+from app.runtime.models import AgentEvent, AgentSession, AgentTask, RuntimeProfile, RuntimeSecret
 from tests.utils.user import authentication_token_from_email
 from tests.utils.db import cleanup_test_data
 from tests.utils.utils import get_superuser_token_headers
@@ -19,6 +20,22 @@ def db() -> Generator[Session, None, None]:
         init_db(session)
         yield session
         cleanup_test_data(session)
+
+
+@pytest.fixture(autouse=True)
+def isolate_runtime_data(db: Session) -> Generator[None, None, None]:
+    def clean() -> None:
+        db.execute(delete(AgentEvent))
+        db.execute(delete(AgentTask))
+        db.execute(delete(AgentSession))
+        db.execute(delete(RuntimeSecret))
+        db.execute(delete(RuntimeProfile))
+        db.commit()
+        db.expire_all()
+
+    clean()
+    yield
+    clean()
 
 
 @pytest.fixture(scope="module")
