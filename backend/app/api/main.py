@@ -6,6 +6,7 @@ from app.api.routes import (
     login,
     namespaces,
     private,
+    runtimes,
     users,
     utils,
 )
@@ -19,6 +20,7 @@ api_router.include_router(items.router)
 api_router.include_router(namespaces.router)
 api_router.include_router(namespaces.platform_router)
 api_router.include_router(llm_provider_configs.router)
+api_router.include_router(runtimes.router)
 
 
 if settings.ENVIRONMENT == "local":
