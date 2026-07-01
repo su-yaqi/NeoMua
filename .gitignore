@@ -8,3 +8,6 @@ node_modules/
 .superpowers/
 context/.claude/
 .worktrees/
+__pycache__/
+*.py[cod]
+.pytest_cache/
