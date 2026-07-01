@@ -5,6 +5,8 @@ from app.api.routes import (
     llm_provider_configs,
     login,
     namespaces,
+    node_enrollment,
+    node_socket,
     private,
     runtime_internal,
     runtimes,
@@ -23,6 +25,9 @@ api_router.include_router(namespaces.platform_router)
 api_router.include_router(llm_provider_configs.router)
 api_router.include_router(runtimes.router)
 api_router.include_router(runtime_internal.router)
+api_router.include_router(node_enrollment.admin_router)
+api_router.include_router(node_enrollment.node_router)
+api_router.include_router(node_socket.router)
 
 
 if settings.ENVIRONMENT == "local":

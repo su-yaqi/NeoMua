@@ -1,0 +1,17 @@
+[Unit]
+Description=NeoMua Node Runtime
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/neomua-node run --state-dir /var/lib/neomua-node
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/neomua-node
+
+[Install]
+WantedBy=multi-user.target

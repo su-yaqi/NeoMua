@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
-from sqlalchemy import JSON, Column, DateTime, UniqueConstraint
+from sqlalchemy import JSON, Column, DateTime, Index, UniqueConstraint, text
 from sqlalchemy import Enum as SAEnum
 from sqlmodel import Field, SQLModel
 
@@ -37,7 +37,13 @@ class AgentEventType(str, Enum):
 class RuntimeProfile(SQLModel, table=True):
     __tablename__ = "runtime_profile"
     __table_args__ = (
-        UniqueConstraint("namespace_id", "runtime_type", name="uq_runtime_profile_namespace_platform"),
+        Index(
+            "uq_runtime_profile_namespace_platform",
+            "namespace_id",
+            unique=True,
+            postgresql_where=text("runtime_type = 'platform'"),
+            sqlite_where=text("runtime_type = 'platform'"),
+        ),
     )
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     namespace_id: uuid.UUID = Field(foreign_key="namespace.id", nullable=False, ondelete="CASCADE")
@@ -99,3 +105,62 @@ class AgentEvent(SQLModel, table=True):
     event_type: AgentEventType = Field(sa_type=SAEnum(AgentEventType, name="agenteventtype", values_callable=lambda v: [x.value for x in v]))
     payload: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
     created_at: datetime = Field(default_factory=utcnow, sa_type=DateTime(timezone=True))
+
+
+class RuntimeNode(SQLModel, table=True):
+    __tablename__ = "runtime_node"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    namespace_id: uuid.UUID = Field(
+        foreign_key="namespace.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    runtime_profile_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_profile.id", ondelete="SET NULL", unique=True
+    )
+    name: str = Field(max_length=255)
+    hostname: str = Field(max_length=255)
+    os_name: str = Field(max_length=128)
+    architecture: str = Field(max_length=64)
+    agent_version: str = Field(max_length=64)
+    sdk_version: str | None = Field(default=None, max_length=64)
+    public_key: str
+    key_fingerprint: str = Field(max_length=128, unique=True, index=True)
+    last_seen_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    connected_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    connection_id: uuid.UUID | None = Field(default=None, index=True)
+    config_revision: int = 1
+    revoked_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    created_at: datetime = Field(default_factory=utcnow, sa_type=DateTime(timezone=True))
+
+
+class NodeEnrollmentToken(SQLModel, table=True):
+    __tablename__ = "node_enrollment_token"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    namespace_id: uuid.UUID = Field(
+        foreign_key="namespace.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    token_hash: str = Field(max_length=64, unique=True, index=True)
+    expires_at: datetime = Field(sa_type=DateTime(timezone=True))
+    consumed_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    revoked_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    created_by: uuid.UUID | None = Field(
+        default=None, foreign_key="user.id", ondelete="SET NULL"
+    )
+    created_at: datetime = Field(default_factory=utcnow, sa_type=DateTime(timezone=True))
+
+
+class NodeCredential(SQLModel, table=True):
+    __tablename__ = "node_credential"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    node_id: uuid.UUID = Field(
+        foreign_key="runtime_node.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    namespace_id: uuid.UUID = Field(
+        foreign_key="namespace.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    key_fingerprint: str = Field(max_length=128)
+    issued_at: datetime = Field(default_factory=utcnow, sa_type=DateTime(timezone=True))
+    expires_at: datetime = Field(sa_type=DateTime(timezone=True))
+    revoked_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    replaced_by_id: uuid.UUID | None = Field(
+        default=None, foreign_key="node_credential.id", ondelete="SET NULL"
+    )
