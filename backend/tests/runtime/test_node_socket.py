@@ -10,7 +10,16 @@ from sqlmodel import Session
 
 from app.core.config import settings
 from app.runtime.connections import node_is_online
-from app.runtime.models import RuntimeNode
+from app.runtime.models import (
+    AgentEventType,
+    AgentTask,
+    RuntimeNode,
+    RuntimeProfile,
+    RuntimeRouteMode,
+    RuntimeType,
+)
+from app.runtime.policy import TaskStatus
+from app.runtime.repository import append_event_idempotent
 from tests.api.routes.test_namespaces import create_namespace, namespace_headers
 
 
@@ -77,3 +86,70 @@ def test_authenticated_node_connects_and_heartbeats(
         ack = websocket.receive_json()
         assert ack["type"] == "heartbeat_ack"
         assert ack["correlation_id"] == message_id
+
+
+def test_node_dispatch_ack_and_result_are_persisted(
+    client: TestClient, db: Session, superuser_token_headers: dict[str, str]
+) -> None:
+    enrolled, private = _enroll(client, db, superuser_token_headers)
+    node = db.get(RuntimeNode, uuid.UUID(enrolled["node_id"]))
+    assert node is not None
+    runtime = RuntimeProfile(
+        namespace_id=node.namespace_id,
+        runtime_type=RuntimeType.NODE,
+        route_mode=RuntimeRouteMode.DIRECT_ANTHROPIC,
+        model_id="claude-node",
+        base_url="https://anthropic.example",
+        config={"direct_compatibility_verified": True},
+    )
+    db.add(runtime)
+    db.flush()
+    node.runtime_profile_id = runtime.id
+    task = AgentTask(
+        namespace_id=node.namespace_id,
+        runtime_profile_id=runtime.id,
+        target_node_id=node.id,
+        prompt="work",
+        snapshot={"runtime_profile_id": str(runtime.id), "model_id": "claude-node"},
+    )
+    db.add(node)
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    append_event_idempotent(
+        db, task, 0, AgentEventType.USER_MESSAGE, {"text": "work"}
+    )
+    timestamp = str(int(time.time()))
+    headers = {
+        "Authorization": f"Bearer {enrolled['credential']}",
+        "X-Node-Timestamp": timestamp,
+        "X-Node-Signature": base64.b64encode(
+            private.sign(f"neomua-ws-v1:{timestamp}".encode())
+        ).decode(),
+    }
+    with client.websocket_connect(
+        f"{settings.API_V1_STR}/node/ws", headers=headers
+    ) as websocket:
+        assert websocket.receive_json()["type"] == "hello_ack"
+        dispatch = websocket.receive_json()
+        assert dispatch["type"] == "task_dispatch"
+        websocket.send_json({
+            "type": "task_accepted", "protocol_version": "1",
+            "message_id": str(uuid.uuid4()), "correlation_id": None,
+            "node_id": enrolled["node_id"], "sent_at": datetime.now(timezone.utc).isoformat(),
+            "payload": {"task_id": str(task.id), "revision": 1},
+        })
+        assert websocket.receive_json()["type"] == "task_accept_ack"
+        websocket.send_json({
+            "type": "task_events", "protocol_version": "1",
+            "message_id": str(uuid.uuid4()), "correlation_id": None,
+            "node_id": enrolled["node_id"], "sent_at": datetime.now(timezone.utc).isoformat(),
+            "payload": {"task_id": str(task.id), "events": [
+                {"sequence": 2, "event_type": "result", "payload": {"result": "done"}}
+            ]},
+        })
+        event_ack = websocket.receive_json()
+        assert event_ack["type"] == "task_events_ack"
+        assert event_ack["payload"]["through_sequence"] == 2
+    db.expire_all()
+    assert db.get(AgentTask, task.id).status == TaskStatus.SUCCEEDED

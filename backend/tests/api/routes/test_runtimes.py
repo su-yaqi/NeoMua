@@ -117,3 +117,32 @@ def test_developer_can_create_session_and_message_task(
     )
     assert task_response.status_code == 202
     assert task_response.json()["status"] == "queued"
+
+
+def test_developer_can_read_task_events_and_cancel_queued_task(
+    client: TestClient, db: Session, superuser_token_headers: dict[str, str]
+) -> None:
+    namespace = create_namespace(db)
+    headers = namespace_headers(superuser_token_headers, namespace.id)
+    client.put(
+        f"{settings.API_V1_STR}/runtimes/platform", headers=headers,
+        json={"route_mode": "direct_anthropic", "model_id": "claude-test",
+              "base_url": "https://example.test", "secret_inputs": {"api_key": "secret"}},
+    )
+    session_id = client.post(
+        f"{settings.API_V1_STR}/runtimes/platform/sessions", headers=headers, json={}
+    ).json()["id"]
+    task = client.post(
+        f"{settings.API_V1_STR}/runtimes/sessions/{session_id}/messages",
+        headers=headers, json={"prompt": "hello"},
+    ).json()
+    events = client.get(
+        f"{settings.API_V1_STR}/runtimes/tasks/{task['id']}/events", headers=headers
+    )
+    assert events.status_code == 200
+    assert events.json()[0]["event_type"] == "user_message"
+    cancelled = client.post(
+        f"{settings.API_V1_STR}/runtimes/tasks/{task['id']}/cancel", headers=headers
+    )
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "cancelled"

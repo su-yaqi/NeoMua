@@ -34,6 +34,14 @@ class Settings(BaseSettings):
     SECRET_KEY: str = secrets.token_urlsafe(32)
     INTERNAL_RUNTIME_TOKEN: str | None = None
     MODEL_GATEWAY_URL: str = "http://model-gateway:8090"
+    MODEL_GATEWAY_PUBLIC_URL: str | None = None
+    ARTIFACT_STORAGE_BACKEND: str = "local"
+    ARTIFACT_LOCAL_ROOT: str = "/data/runtime-artifacts"
+    ARTIFACT_S3_BUCKET: str | None = None
+    ARTIFACT_S3_ENDPOINT: str | None = None
+    ARTIFACT_S3_ACCESS_KEY: str | None = None
+    ARTIFACT_S3_SECRET_KEY: str | None = None
+    ARTIFACT_S3_REGION: str | None = None
     # 60 minutes * 24 hours * 8 days = 8 days
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8
     FRONTEND_HOST: str = "http://localhost:5173"

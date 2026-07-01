@@ -7,7 +7,8 @@ from sqlmodel import Session, select
 from app import crud
 from app.core.config import settings
 from app.core.security import verify_password
-from app.models import User, UserCreate
+from app.models import NamespaceRole, User, UserCreate
+from tests.api.routes.test_namespaces import create_namespace
 from tests.utils.user import create_random_user
 from tests.utils.utils import random_email, random_lower_string
 
@@ -32,6 +33,24 @@ def test_get_users_normal_user_me(
     assert current_user["is_active"] is True
     assert current_user["is_superuser"] is False
     assert current_user["email"] == settings.EMAIL_TEST_USER
+
+
+def test_get_user_me_includes_namespace_roles(
+    client: TestClient, db: Session
+) -> None:
+    user = create_random_user(db)
+    namespace = create_namespace(db)
+    crud.ensure_namespace_membership(
+        session=db, user_id=user.id, namespace_id=namespace.id,
+        role=NamespaceRole.DEVELOPER,
+    )
+    from tests.utils.user import authentication_token_from_email
+    headers = authentication_token_from_email(client=client, email=user.email, db=db)
+    response = client.get(f"{settings.API_V1_STR}/users/me", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["namespace_roles"] == [
+        {"namespace_id": str(namespace.id), "role": "developer"}
+    ]
 
 
 def test_create_user_new_email(

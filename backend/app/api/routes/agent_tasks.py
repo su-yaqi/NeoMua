@@ -1,0 +1,282 @@
+import uuid
+from datetime import datetime, timezone
+from pathlib import PurePosixPath, PureWindowsPath
+
+from fastapi import APIRouter, Depends, Header, HTTPException
+from pydantic import BaseModel, Field
+from sqlmodel import select
+
+from app import crud
+from app.api.deps import CurrentUser, SessionDep, require_namespace_runtime_user
+from app.core.config import settings
+from app.models import NamespaceRole
+from app.runtime.connections import node_is_online
+from app.runtime.models import (
+    AgentEventType,
+    AgentTask,
+    RuntimeNode,
+    RuntimeProfile,
+    RuntimeRouteMode,
+    RuntimeType,
+)
+from app.runtime.policy import TaskKind, TaskStatus, require_task_transition
+from app.runtime.repository import append_event_idempotent, retry_task
+
+router = APIRouter(prefix="/runtime-tasks", tags=["runtime-tasks"])
+
+
+class TaskCreate(BaseModel):
+    runtime_profile_id: uuid.UUID
+    node_id: uuid.UUID | None = None
+    prompt: str = Field(min_length=1)
+    task_kind: TaskKind = TaskKind.ORDINARY
+    working_directory: str | None = None
+
+
+class TaskPublic(BaseModel):
+    id: uuid.UUID
+    runtime_profile_id: uuid.UUID
+    node_id: uuid.UUID | None
+    task_kind: TaskKind
+    status: TaskStatus
+    prompt: str
+    snapshot: dict
+    final_result: dict | None
+    retry_of_task_id: uuid.UUID | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class TasksPublic(BaseModel):
+    data: list[TaskPublic]
+    count: int
+
+
+def _public(task: AgentTask) -> TaskPublic:
+    return TaskPublic(
+        id=task.id,
+        runtime_profile_id=task.runtime_profile_id,
+        node_id=task.target_node_id,
+        task_kind=task.task_kind,
+        status=task.status,
+        prompt=task.prompt,
+        snapshot=task.snapshot,
+        final_result=task.final_result,
+        retry_of_task_id=task.retry_of_task_id,
+        created_at=task.created_at,
+        updated_at=task.updated_at,
+    )
+
+
+def _is_namespace_admin(
+    session: SessionDep, current_user: CurrentUser, namespace_id: uuid.UUID
+) -> bool:
+    if current_user.is_superuser:
+        return True
+    return crud.get_namespace_role(
+        session=session, user_id=current_user.id, namespace_id=namespace_id
+    ) == NamespaceRole.ADMIN
+
+
+def _validated_working_directory(
+    requested: str | None, runtime: RuntimeProfile, node: RuntimeNode | None
+) -> str | None:
+    if requested is None:
+        return runtime.config.get("cwd")
+    roots = runtime.config.get("allowed_working_roots", [])
+    if not roots:
+        raise HTTPException(422, "Runtime has no allowlisted working directory roots")
+    path_type = PureWindowsPath if node and node.os_name.lower() == "windows" else PurePosixPath
+    candidate = path_type(requested)
+    if not candidate.is_absolute() or ".." in candidate.parts:
+        raise HTTPException(422, "Working directory must be an absolute normalized path")
+    if not any(candidate == path_type(root) or path_type(root) in candidate.parents for root in roots):
+        raise HTTPException(422, "Working directory is outside runtime allowlist")
+    return str(candidate)
+
+
+def _resolve_target(
+    session: SessionDep, namespace_id: uuid.UUID, body: TaskCreate
+) -> tuple[RuntimeProfile, RuntimeNode | None]:
+    runtime = session.get(RuntimeProfile, body.runtime_profile_id)
+    if runtime is None or runtime.namespace_id != namespace_id:
+        raise HTTPException(404, "Runtime not found")
+    node = None
+    if runtime.runtime_type == RuntimeType.NODE:
+        if body.node_id is None:
+            raise HTTPException(400, "node_id is required for a node runtime")
+        node = session.get(RuntimeNode, body.node_id)
+        if (
+            node is None
+            or node.namespace_id != namespace_id
+            or node.runtime_profile_id != runtime.id
+            or node.revoked_at is not None
+        ):
+            raise HTTPException(404, "Node runtime not found")
+        if not node_is_online(node):
+            raise HTTPException(409, "Node is offline")
+        if (
+            runtime.route_mode == RuntimeRouteMode.DIRECT_ANTHROPIC
+            and not runtime.config.get("direct_compatibility_verified")
+        ):
+            raise HTTPException(422, "Node direct Anthropic compatibility is not verified")
+        if (
+            runtime.route_mode == RuntimeRouteMode.PLATFORM_GATEWAY
+            and not settings.MODEL_GATEWAY_PUBLIC_URL
+        ):
+            raise HTTPException(409, "Public Model Gateway URL is not configured")
+    elif body.node_id is not None:
+        raise HTTPException(400, "node_id is not valid for platform runtime")
+    return runtime, node
+
+
+@router.post("", response_model=TaskPublic, status_code=202)
+def create_task(
+    body: TaskCreate,
+    session: SessionDep,
+    current_user: CurrentUser,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
+) -> TaskPublic:
+    if body.task_kind == TaskKind.ADMIN and not _is_namespace_admin(
+        session, current_user, namespace_id
+    ):
+        raise HTTPException(403, "Admin task requires namespace admin")
+    if not idempotency_key:
+        raise HTTPException(400, "Idempotency-Key is required")
+    existing = session.exec(
+        select(AgentTask).where(
+            AgentTask.namespace_id == namespace_id,
+            AgentTask.idempotency_key == idempotency_key,
+        )
+    ).first()
+    request_identity = {
+        "runtime_profile_id": str(body.runtime_profile_id),
+        "node_id": str(body.node_id) if body.node_id else None,
+        "task_kind": body.task_kind.value,
+        "prompt": body.prompt,
+        "working_directory": body.working_directory,
+    }
+    if existing:
+        if existing.snapshot.get("request") != request_identity:
+            raise HTTPException(409, "Idempotency-Key was used for a different task")
+        return _public(existing)
+    runtime, node = _resolve_target(session, namespace_id, body)
+    working_directory = _validated_working_directory(body.working_directory, runtime, node)
+    snapshot = {
+        "request": request_identity,
+        "runtime_type": runtime.runtime_type.value,
+        "runtime_profile_id": str(runtime.id),
+        "runtime_revision": node.config_revision if node else 1,
+        "route_mode": runtime.route_mode.value,
+        "provider_config_id": str(runtime.provider_config_id) if runtime.provider_config_id else None,
+        "model_id": runtime.model_id,
+        "base_url": runtime.base_url,
+        "permission_mode": runtime.permission_mode,
+        "tools": runtime.config.get("tools", []),
+        "allowed_tools": runtime.config.get("allowed_tools", []),
+        "disallowed_tools": runtime.config.get("disallowed_tools", []),
+        "working_directory": working_directory,
+        "allowed_working_roots": runtime.config.get("allowed_working_roots", []),
+        "timeout_seconds": runtime.config.get("timeout_seconds", 3600),
+        "executor_versions": {
+            "claude_agent_sdk": "0.2.110",
+            "executor": node.agent_version if node else "runtime-worker-0.1.0",
+        },
+    }
+    task = AgentTask(
+        namespace_id=namespace_id,
+        runtime_profile_id=runtime.id,
+        target_node_id=node.id if node else None,
+        task_kind=body.task_kind,
+        prompt=body.prompt,
+        snapshot=snapshot,
+        idempotency_key=idempotency_key,
+        created_by=current_user.id,
+    )
+    session.add(task)
+    session.commit()
+    session.refresh(task)
+    append_event_idempotent(
+        session, task, 0, AgentEventType.USER_MESSAGE, {"text": body.prompt}
+    )
+    return _public(task)
+
+
+@router.get("", response_model=TasksPublic)
+def list_tasks(
+    session: SessionDep,
+    _: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
+) -> TasksPublic:
+    tasks = session.exec(
+        select(AgentTask)
+        .where(AgentTask.namespace_id == namespace_id)
+        .order_by(AgentTask.created_at.desc())
+    ).all()
+    return TasksPublic(data=[_public(task) for task in tasks], count=len(tasks))
+
+
+def _get_task(session: SessionDep, task_id: uuid.UUID, namespace_id: uuid.UUID) -> AgentTask:
+    task = session.get(AgentTask, task_id)
+    if task is None or task.namespace_id != namespace_id:
+        raise HTTPException(404, "Task not found")
+    return task
+
+
+@router.get("/{task_id}", response_model=TaskPublic)
+def read_task(
+    task_id: uuid.UUID,
+    session: SessionDep,
+    _: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
+) -> TaskPublic:
+    return _public(_get_task(session, task_id, namespace_id))
+
+
+@router.post("/{task_id}/cancel", response_model=TaskPublic)
+def cancel_task(
+    task_id: uuid.UUID,
+    session: SessionDep,
+    _: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
+) -> TaskPublic:
+    task = _get_task(session, task_id, namespace_id)
+    target = TaskStatus.CANCELLING if task.status == TaskStatus.RUNNING else TaskStatus.CANCELLED
+    try:
+        require_task_transition(task.status, target)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    task.status = target
+    task.updated_at = datetime.now(timezone.utc)
+    session.add(task)
+    session.commit()
+    return _public(task)
+
+
+@router.post("/{task_id}/retry", response_model=TaskPublic, status_code=202)
+def retry_failed_task(
+    task_id: uuid.UUID,
+    session: SessionDep,
+    _: CurrentUser,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
+) -> TaskPublic:
+    original = _get_task(session, task_id, namespace_id)
+    if not idempotency_key:
+        raise HTTPException(400, "Idempotency-Key is required")
+    existing = session.exec(
+        select(AgentTask).where(
+            AgentTask.namespace_id == namespace_id,
+            AgentTask.idempotency_key == idempotency_key,
+        )
+    ).first()
+    if existing:
+        if existing.retry_of_task_id != original.id:
+            raise HTTPException(409, "Idempotency-Key was used for a different retry")
+        return _public(existing)
+    try:
+        retried = retry_task(session, original.id, idempotency_key=idempotency_key)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return _public(retried)

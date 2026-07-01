@@ -1,0 +1,63 @@
+import os
+import shutil
+import uuid
+import zipfile
+from pathlib import Path
+
+from node_runtime.artifacts.state import ArtifactState
+from node_runtime.artifacts.validator import validate_archive, validate_instruction
+
+
+class ArtifactInstaller:
+    def __init__(self, roots: dict[str, Path], node_id: str) -> None:
+        self.roots = {key: value.resolve() for key, value in roots.items()}
+        self.node_id = node_id
+
+    def recover(self) -> None:
+        for root in self.roots.values():
+            if not root.exists():
+                continue
+            for path in root.glob(".staging-*"):
+                if path.is_dir():
+                    shutil.rmtree(path)
+
+    def apply_archive(self, command: dict, archive_path: Path) -> dict:
+        manifest, deployment = validate_instruction(command, node_id=self.node_id)
+        root = self.roots.get(manifest.logical_target)
+        if root is None:
+            raise ValueError("logical target has no local allowlisted root")
+        root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        versions = root / "versions"
+        versions.mkdir(exist_ok=True)
+        validate_archive(archive_path, manifest, command["content_sha256"])
+        staging = root / f".staging-{deployment.deployment_id}-{uuid.uuid4().hex}"
+        staging.mkdir(mode=0o700)
+        try:
+            with zipfile.ZipFile(archive_path) as archive:
+                for item in manifest.files:
+                    destination = staging / item.path
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    with archive.open(item.path) as source, destination.open("xb") as target:
+                        shutil.copyfileobj(source, target, length=1024 * 1024)
+                        target.flush()
+                        os.fsync(target.fileno())
+            version_path = versions / manifest.artifact_id
+            if version_path.exists():
+                shutil.rmtree(staging)
+            else:
+                os.replace(staging, version_path)
+            state = ArtifactState(root)
+            old = state.read().get("current")
+            temporary_link = root / f".current-{uuid.uuid4().hex}"
+            os.symlink(Path("versions") / manifest.artifact_id, temporary_link)
+            os.replace(temporary_link, root / "current")
+            state.write(manifest.artifact_id, old)
+            return {
+                "deployment_id": deployment.deployment_id,
+                "artifact_id": manifest.artifact_id,
+                "logical_target": manifest.logical_target,
+                "previous_artifact_id": old,
+            }
+        finally:
+            if staging.exists():
+                shutil.rmtree(staging)

@@ -21,6 +21,11 @@ class TaskStatus(str, Enum):
     REJECTED = "rejected"
 
 
+class TaskKind(str, Enum):
+    ORDINARY = "ordinary"
+    ADMIN = "admin"
+
+
 class InvalidTaskTransition(ValueError):
     pass
 
@@ -33,7 +38,12 @@ _ACTIONS = {
 
 _TRANSITIONS = {
     TaskStatus.QUEUED: {TaskStatus.DISPATCHED, TaskStatus.CANCELLED, TaskStatus.REJECTED},
-    TaskStatus.DISPATCHED: {TaskStatus.RUNNING, TaskStatus.REJECTED, TaskStatus.CANCELLED},
+    TaskStatus.DISPATCHED: {
+        TaskStatus.RUNNING,
+        TaskStatus.REJECTED,
+        TaskStatus.CANCELLED,
+        TaskStatus.INTERRUPTED,
+    },
     TaskStatus.RUNNING: {
         TaskStatus.CANCELLING,
         TaskStatus.SUCCEEDED,

@@ -6,9 +6,13 @@ from app.runtime.models import (
     AgentEvent,
     AgentSession,
     AgentTask,
+    ArtifactDeployment,
+    ArtifactRelease,
     NodeCredential,
     NodeEnrollmentToken,
     RuntimeNode,
+    RuntimeNodeArtifact,
+    RuntimeArtifact,
     RuntimeProfile,
     RuntimeSecret,
 )
@@ -18,6 +22,10 @@ def cleanup_test_data(session: Session) -> None:
     session.execute(delete(AgentEvent))
     session.execute(delete(AgentTask))
     session.execute(delete(AgentSession))
+    session.execute(delete(ArtifactDeployment))
+    session.execute(delete(RuntimeNodeArtifact))
+    session.execute(delete(ArtifactRelease))
+    session.execute(delete(RuntimeArtifact))
     session.execute(delete(NodeCredential))
     session.execute(delete(NodeEnrollmentToken))
     session.execute(delete(RuntimeNode))

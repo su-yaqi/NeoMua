@@ -18,8 +18,8 @@ from app.runtime.models import (
     RuntimeSecret,
     RuntimeType,
 )
-from app.runtime.policy import InvalidTaskTransition, TaskStatus, require_task_transition
-from app.runtime.repository import append_event_idempotent
+from app.runtime.policy import TaskStatus
+from app.runtime.repository import apply_event_state, append_event_idempotent
 from app.runtime.security import (
     GatewayScopeError,
     issue_gateway_token,
@@ -49,6 +49,11 @@ class ClaimInput(BaseModel):
     worker_id: str
 
 
+class LeaseInput(BaseModel):
+    worker_id: str
+    revision: int
+
+
 @router.post("/events")
 def append_events(body: EventBatch, session: SessionDep) -> dict[str, int]:
     task = session.get(AgentTask, body.task_id)
@@ -59,49 +64,21 @@ def append_events(body: EventBatch, session: SessionDep) -> dict[str, int]:
             append_event_idempotent(
                 session, task, item.sequence, item.event_type, item.payload
             )
-            _apply_event_state(task, item.event_type, item.payload)
+            apply_event_state(task, item.event_type, item.payload)
+            if (
+                item.event_type == AgentEventType.RESULT
+                and task.session_id
+                and item.payload.get("session_id")
+            ):
+                agent_session = session.get(AgentSession, task.session_id)
+                if agent_session:
+                    agent_session.sdk_session_id = str(item.payload["session_id"])
+                    session.add(agent_session)
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from exc
         session.add(task)
         session.commit()
     return {"accepted": len(body.events)}
-
-
-def _transition_task(task: AgentTask, target: TaskStatus) -> None:
-    if task.status == target:
-        return
-    require_task_transition(task.status, target)
-    task.status = target
-
-
-def _apply_event_state(
-    task: AgentTask, event_type: AgentEventType, payload: dict
-) -> None:
-    try:
-        if event_type in {
-            AgentEventType.ASSISTANT_MESSAGE,
-            AgentEventType.TOOL_CALL,
-            AgentEventType.TOOL_RESULT,
-        } and task.status == TaskStatus.DISPATCHED:
-            _transition_task(task, TaskStatus.RUNNING)
-        elif event_type == AgentEventType.STATUS:
-            state = payload.get("state")
-            if state in {status.value for status in TaskStatus}:
-                _transition_task(task, TaskStatus(state))
-        elif event_type in {AgentEventType.RESULT, AgentEventType.ERROR}:
-            target = (
-                TaskStatus.SUCCEEDED
-                if event_type == AgentEventType.RESULT
-                else TaskStatus.FAILED
-            )
-            if task.status == TaskStatus.DISPATCHED:
-                _transition_task(task, TaskStatus.RUNNING)
-            if task.status == target:
-                return
-            _transition_task(task, target)
-            task.final_result = payload
-    except InvalidTaskTransition as exc:
-        raise ValueError(str(exc)) from exc
 
 
 @router.post("/tasks/claim")
@@ -126,6 +103,13 @@ def claim_platform_task(body: ClaimInput, session: SessionDep) -> dict:
     task.lease_expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
     session.add(task)
     session.commit()
+    append_event_idempotent(
+        session,
+        task,
+        1,
+        AgentEventType.STATUS,
+        {"state": TaskStatus.DISPATCHED.value, "executor": body.worker_id},
+    )
     env: dict[str, str]
     if runtime.route_mode == RuntimeRouteMode.DIRECT_ANTHROPIC:
         secret = session.exec(select(RuntimeSecret).where(
@@ -161,8 +145,33 @@ def claim_platform_task(body: ClaimInput, session: SessionDep) -> dict:
             "cwd": runtime.config.get("cwd"),
             "env": env,
             "sdk_session_id": agent_session.sdk_session_id if agent_session else None,
+            "start_sequence": 1,
         },
     }
+
+
+@router.post("/tasks/{task_id}/lease")
+def renew_platform_task_lease(
+    task_id: uuid.UUID, body: LeaseInput, session: SessionDep
+) -> dict[str, str]:
+    task = session.exec(
+        select(AgentTask).where(AgentTask.id == task_id).with_for_update()
+    ).first()
+    if (
+        task is None
+        or task.claimed_by != body.worker_id
+        or task.revision != body.revision
+    ):
+        raise HTTPException(409, "Task lease scope mismatch")
+    if task.status == TaskStatus.DISPATCHED:
+        task.status = TaskStatus.RUNNING
+    elif task.status != TaskStatus.RUNNING:
+        raise HTTPException(409, "Task lease is not renewable")
+    task.lease_expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+    task.updated_at = datetime.now(timezone.utc)
+    session.add(task)
+    session.commit()
+    return {"status": task.status.value}
 
 
 @router.get("/routes/{runtime_id}")

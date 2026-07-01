@@ -7,7 +7,8 @@ from sqlalchemy import JSON, Column, DateTime, Index, UniqueConstraint, text
 from sqlalchemy import Enum as SAEnum
 from sqlmodel import Field, SQLModel
 
-from app.runtime.policy import TaskStatus
+from app.runtime.policy import TaskKind, TaskStatus
+from app.runtime.artifacts.manifest import ArtifactKind, LogicalTarget
 
 
 def utcnow() -> datetime:
@@ -79,10 +80,22 @@ class AgentSession(SQLModel, table=True):
 
 class AgentTask(SQLModel, table=True):
     __tablename__ = "agent_task"
+    __table_args__ = (
+        UniqueConstraint(
+            "namespace_id", "idempotency_key", name="uq_agent_task_namespace_idempotency"
+        ),
+    )
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     namespace_id: uuid.UUID = Field(foreign_key="namespace.id", nullable=False, ondelete="CASCADE")
     session_id: uuid.UUID | None = Field(default=None, foreign_key="agent_session.id", ondelete="SET NULL")
     runtime_profile_id: uuid.UUID = Field(foreign_key="runtime_profile.id", nullable=False, ondelete="CASCADE")
+    target_node_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_node.id", ondelete="SET NULL", index=True
+    )
+    task_kind: TaskKind = Field(
+        default=TaskKind.ORDINARY,
+        sa_type=SAEnum(TaskKind, name="agenttaskkind", values_callable=lambda v: [x.value for x in v]),
+    )
     status: TaskStatus = Field(default=TaskStatus.QUEUED, sa_type=SAEnum(TaskStatus, name="agenttaskstatus", values_callable=lambda v: [x.value for x in v]))
     prompt: str
     snapshot: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
@@ -91,8 +104,11 @@ class AgentTask(SQLModel, table=True):
     claimed_by: str | None = Field(default=None, max_length=255)
     lease_expires_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     retry_of_task_id: uuid.UUID | None = Field(default=None, foreign_key="agent_task.id", ondelete="SET NULL")
+    idempotency_key: str | None = Field(default=None, max_length=255)
     created_by: uuid.UUID | None = Field(default=None, foreign_key="user.id", ondelete="SET NULL")
     created_at: datetime = Field(default_factory=utcnow, sa_type=DateTime(timezone=True))
+    updated_at: datetime = Field(default_factory=utcnow, sa_type=DateTime(timezone=True))
+    completed_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
 
 
 class AgentEvent(SQLModel, table=True):
@@ -164,3 +180,116 @@ class NodeCredential(SQLModel, table=True):
     replaced_by_id: uuid.UUID | None = Field(
         default=None, foreign_key="node_credential.id", ondelete="SET NULL"
     )
+
+
+class DeploymentStatus(str, Enum):
+    PENDING = "pending"
+    DISPATCHED = "dispatched"
+    APPLIED = "applied"
+    FAILED = "failed"
+    EXPIRED = "expired"
+
+
+class RuntimeArtifact(SQLModel, table=True):
+    __tablename__ = "runtime_artifact"
+    __table_args__ = (
+        UniqueConstraint(
+            "namespace_id", "kind", "logical_target", "version",
+            name="uq_runtime_artifact_namespace_version",
+        ),
+    )
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    namespace_id: uuid.UUID = Field(
+        foreign_key="namespace.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    kind: ArtifactKind = Field(
+        sa_type=SAEnum(ArtifactKind, name="artifactkind", values_callable=lambda v: [x.value for x in v])
+    )
+    logical_target: LogicalTarget = Field(
+        sa_type=SAEnum(LogicalTarget, name="logicaltarget", values_callable=lambda v: [x.value for x in v])
+    )
+    version: str = Field(max_length=128)
+    content_sha256: str = Field(max_length=64, index=True)
+    storage_key: str = Field(max_length=1024)
+    size: int
+    manifest: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
+    signature: str
+    signing_public_key: str
+    created_by: uuid.UUID | None = Field(
+        default=None, foreign_key="user.id", ondelete="SET NULL"
+    )
+    created_at: datetime = Field(default_factory=utcnow, sa_type=DateTime(timezone=True))
+
+
+class ArtifactRelease(SQLModel, table=True):
+    __tablename__ = "artifact_release"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    namespace_id: uuid.UUID = Field(
+        foreign_key="namespace.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    artifact_id: uuid.UUID = Field(
+        foreign_key="runtime_artifact.id", nullable=False, ondelete="RESTRICT"
+    )
+    valid_until: datetime = Field(sa_type=DateTime(timezone=True))
+    rollback_of_release_id: uuid.UUID | None = Field(
+        default=None, foreign_key="artifact_release.id", ondelete="SET NULL"
+    )
+    created_by: uuid.UUID | None = Field(
+        default=None, foreign_key="user.id", ondelete="SET NULL"
+    )
+    created_at: datetime = Field(default_factory=utcnow, sa_type=DateTime(timezone=True))
+
+
+class ArtifactDeployment(SQLModel, table=True):
+    __tablename__ = "artifact_deployment"
+    __table_args__ = (
+        UniqueConstraint(
+            "release_id", "node_id", "attempt", name="uq_artifact_deployment_attempt"
+        ),
+    )
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    namespace_id: uuid.UUID = Field(
+        foreign_key="namespace.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    release_id: uuid.UUID = Field(
+        foreign_key="artifact_release.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    node_id: uuid.UUID = Field(
+        foreign_key="runtime_node.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    artifact_id: uuid.UUID = Field(
+        foreign_key="runtime_artifact.id", nullable=False, ondelete="RESTRICT"
+    )
+    previous_artifact_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_artifact.id", ondelete="SET NULL"
+    )
+    attempt: int = 1
+    status: DeploymentStatus = Field(
+        default=DeploymentStatus.PENDING,
+        sa_type=SAEnum(DeploymentStatus, name="deploymentstatus", values_callable=lambda v: [x.value for x in v]),
+    )
+    error: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON, nullable=True))
+    dispatched_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    applied_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    created_at: datetime = Field(default_factory=utcnow, sa_type=DateTime(timezone=True))
+
+
+class RuntimeNodeArtifact(SQLModel, table=True):
+    __tablename__ = "runtime_node_artifact"
+    __table_args__ = (
+        UniqueConstraint("node_id", "logical_target", name="uq_node_artifact_target"),
+    )
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    node_id: uuid.UUID = Field(
+        foreign_key="runtime_node.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    logical_target: LogicalTarget = Field(
+        sa_type=SAEnum(LogicalTarget, name="logicaltarget", values_callable=lambda v: [x.value for x in v])
+    )
+    current_artifact_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_artifact.id", ondelete="SET NULL"
+    )
+    previous_artifact_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_artifact.id", ondelete="SET NULL"
+    )
+    updated_at: datetime = Field(default_factory=utcnow, sa_type=DateTime(timezone=True))

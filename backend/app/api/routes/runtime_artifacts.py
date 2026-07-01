@@ -1,0 +1,407 @@
+import hashlib
+import os
+import stat
+import tempfile
+import uuid
+import zipfile
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
+from sqlmodel import select
+
+from app.api.deps import CurrentUser, SessionDep, require_namespace_admin, require_namespace_runtime_user
+from app.core.config import settings
+from app.runtime.artifacts.local_storage import LocalArtifactStorage
+from app.runtime.artifacts.manifest import (
+    ArtifactFile,
+    ArtifactKind,
+    ArtifactManifest,
+    LogicalTarget,
+    MAX_TOTAL_BYTES,
+)
+from app.runtime.artifacts.signing import ArtifactSigner, configured_artifact_signer
+from app.runtime.artifacts.storage import ArtifactStorage
+from app.runtime.artifacts.security import (
+    ArtifactDownloadTokenError,
+    verify_artifact_download_token,
+)
+from app.runtime.models import RuntimeArtifact
+from app.runtime.artifacts.service import ArtifactReleaseService
+from app.runtime.models import (
+    ArtifactDeployment,
+    ArtifactRelease,
+    DeploymentStatus,
+    RuntimeNode,
+    RuntimeNodeArtifact,
+)
+
+router = APIRouter(prefix="/runtime-artifacts", tags=["runtime-artifacts"])
+node_router = APIRouter(prefix="/node/artifacts", tags=["node-artifacts"])
+
+
+class ArtifactPublic(BaseModel):
+    id: uuid.UUID
+    kind: ArtifactKind
+    logical_target: LogicalTarget
+    version: str
+    content_sha256: str
+    size: int
+    manifest: dict
+    signature: str
+    signing_public_key: str
+
+
+class ArtifactsPublic(BaseModel):
+    data: list[ArtifactPublic]
+    count: int
+
+
+class ReleaseCreate(BaseModel):
+    artifact_id: uuid.UUID
+    node_ids: list[uuid.UUID] = Field(min_length=1)
+    valid_for_seconds: int = Field(default=3600, ge=60, le=86400)
+
+
+class DeploymentPublic(BaseModel):
+    id: uuid.UUID
+    node_id: uuid.UUID
+    artifact_id: uuid.UUID
+    previous_artifact_id: uuid.UUID | None
+    attempt: int
+    status: DeploymentStatus
+    error: dict | None
+
+
+class ReleasePublic(BaseModel):
+    id: uuid.UUID
+    artifact_id: uuid.UUID
+    valid_until: datetime
+    rollback_of_release_id: uuid.UUID | None
+    deployments: list[DeploymentPublic]
+
+
+def _public(artifact: RuntimeArtifact) -> ArtifactPublic:
+    return ArtifactPublic(
+        id=artifact.id, kind=artifact.kind, logical_target=artifact.logical_target,
+        version=artifact.version, content_sha256=artifact.content_sha256,
+        size=artifact.size, manifest=artifact.manifest, signature=artifact.signature,
+        signing_public_key=artifact.signing_public_key,
+    )
+
+
+def artifact_storage() -> ArtifactStorage:
+    if settings.ARTIFACT_STORAGE_BACKEND == "local":
+        return LocalArtifactStorage(Path(settings.ARTIFACT_LOCAL_ROOT))
+    if settings.ARTIFACT_STORAGE_BACKEND == "s3":
+        if not settings.ARTIFACT_S3_BUCKET:
+            raise RuntimeError("ARTIFACT_S3_BUCKET is required for S3 storage")
+        from app.runtime.artifacts.s3_storage import S3ArtifactStorage
+        return S3ArtifactStorage(
+            bucket=settings.ARTIFACT_S3_BUCKET,
+            endpoint_url=settings.ARTIFACT_S3_ENDPOINT,
+            access_key=settings.ARTIFACT_S3_ACCESS_KEY,
+            secret_key=settings.ARTIFACT_S3_SECRET_KEY,
+            region=settings.ARTIFACT_S3_REGION,
+        )
+    raise RuntimeError("Unsupported artifact storage backend")
+
+
+def artifact_signer() -> ArtifactSigner:
+    return configured_artifact_signer()
+
+
+def _build_manifest(
+    archive_path: Path, artifact_id: uuid.UUID, version: str,
+    kind: ArtifactKind, logical_target: LogicalTarget,
+) -> ArtifactManifest:
+    files: list[ArtifactFile] = []
+    try:
+        archive = zipfile.ZipFile(archive_path)
+    except zipfile.BadZipFile as exc:
+        raise HTTPException(422, "Artifact must be a valid ZIP archive") from exc
+    with archive:
+        for info in archive.infolist():
+            if info.is_dir():
+                continue
+            mode = (info.external_attr >> 16) & 0o170000
+            if mode == stat.S_IFLNK:
+                raise HTTPException(422, "Artifact symlink entries are forbidden")
+            digest = hashlib.sha256()
+            size = 0
+            with archive.open(info, "r") as source:
+                while chunk := source.read(1024 * 1024):
+                    size += len(chunk)
+                    if size > 100 * 1024 * 1024:
+                        raise HTTPException(413, "Artifact file exceeds size limit")
+                    digest.update(chunk)
+            try:
+                files.append(
+                    ArtifactFile(
+                        path=info.filename, sha256=digest.hexdigest(), size=size,
+                        symlink=False,
+                    )
+                )
+            except ValueError as exc:
+                raise HTTPException(422, str(exc)) from exc
+    try:
+        return ArtifactManifest(
+            artifact_id=str(artifact_id), version=version, kind=kind,
+            logical_target=logical_target, files=files,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.post("", response_model=ArtifactPublic, status_code=201)
+async def upload_artifact(
+    session: SessionDep,
+    current_user: CurrentUser,
+    kind: ArtifactKind = Form(),
+    logical_target: LogicalTarget = Form(),
+    version: str = Form(min_length=1, max_length=128),
+    file: UploadFile = File(),
+    namespace_id: uuid.UUID = Depends(require_namespace_admin),
+) -> ArtifactPublic:
+    descriptor, temporary_name = tempfile.mkstemp(prefix="neomua-artifact-", suffix=".zip")
+    temporary = Path(temporary_name)
+    digest = hashlib.sha256()
+    size = 0
+    try:
+        with os.fdopen(descriptor, "wb") as target:
+            while chunk := await file.read(1024 * 1024):
+                size += len(chunk)
+                if size > MAX_TOTAL_BYTES:
+                    raise HTTPException(413, "Artifact archive exceeds size limit")
+                digest.update(chunk)
+                target.write(chunk)
+            target.flush()
+            os.fsync(target.fileno())
+        artifact_id = uuid.uuid4()
+        manifest = _build_manifest(
+            temporary, artifact_id, version, kind, logical_target
+        )
+        content_sha256 = digest.hexdigest()
+        storage_key = f"sha256/{content_sha256[:2]}/{content_sha256}"
+        artifact_storage().put_once(storage_key, temporary)
+        signer = artifact_signer()
+        signature = signer.sign(manifest.canonical_bytes())
+        artifact = RuntimeArtifact(
+            id=artifact_id, namespace_id=namespace_id, kind=kind,
+            logical_target=logical_target, version=version,
+            content_sha256=content_sha256, storage_key=storage_key, size=size,
+            manifest=manifest.model_dump(mode="json"), signature=signature,
+            signing_public_key=signer.public_key(), created_by=current_user.id,
+        )
+        session.add(artifact)
+        try:
+            session.commit()
+        except IntegrityError as exc:
+            session.rollback()
+            raise HTTPException(409, "Artifact version already exists") from exc
+        return _public(artifact)
+    finally:
+        temporary.unlink(missing_ok=True)
+        await file.close()
+
+
+@router.get("", response_model=ArtifactsPublic)
+def list_artifacts(
+    session: SessionDep,
+    _: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
+) -> ArtifactsPublic:
+    artifacts = session.exec(
+        select(RuntimeArtifact)
+        .where(RuntimeArtifact.namespace_id == namespace_id)
+        .order_by(RuntimeArtifact.created_at.desc())
+    ).all()
+    return ArtifactsPublic(
+        data=[_public(artifact) for artifact in artifacts], count=len(artifacts)
+    )
+
+
+@router.get("/{artifact_id}", response_model=ArtifactPublic)
+def read_artifact(
+    artifact_id: uuid.UUID,
+    session: SessionDep,
+    _: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
+) -> ArtifactPublic:
+    artifact = session.get(RuntimeArtifact, artifact_id)
+    if artifact is None or artifact.namespace_id != namespace_id:
+        raise HTTPException(404, "Artifact not found")
+    return _public(artifact)
+
+
+def _public_release(session: SessionDep, release: ArtifactRelease) -> ReleasePublic:
+    deployments = session.exec(
+        select(ArtifactDeployment)
+        .where(ArtifactDeployment.release_id == release.id)
+        .order_by(ArtifactDeployment.node_id, ArtifactDeployment.attempt)
+    ).all()
+    return ReleasePublic(
+        id=release.id, artifact_id=release.artifact_id,
+        valid_until=release.valid_until,
+        rollback_of_release_id=release.rollback_of_release_id,
+        deployments=[
+            DeploymentPublic(
+                id=item.id, node_id=item.node_id, artifact_id=item.artifact_id,
+                previous_artifact_id=item.previous_artifact_id,
+                attempt=item.attempt, status=item.status, error=item.error,
+            )
+            for item in deployments
+        ],
+    )
+
+
+@router.post("/releases", response_model=ReleasePublic, status_code=201)
+def create_release(
+    body: ReleaseCreate,
+    session: SessionDep,
+    current_user: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_admin),
+) -> ReleasePublic:
+    artifact = session.get(RuntimeArtifact, body.artifact_id)
+    if artifact is None or artifact.namespace_id != namespace_id:
+        raise HTTPException(404, "Artifact not found")
+    if len(body.node_ids) != len(set(body.node_ids)):
+        raise HTTPException(400, "Duplicate release node")
+    nodes = session.exec(
+        select(RuntimeNode).where(RuntimeNode.id.in_(body.node_ids))
+    ).all()
+    if len(nodes) != len(body.node_ids) or any(
+        node.namespace_id != namespace_id or node.revoked_at is not None for node in nodes
+    ):
+        raise HTTPException(404, "Active release node not found")
+    release = ArtifactRelease(
+        namespace_id=namespace_id,
+        artifact_id=artifact.id,
+        valid_until=datetime.now(timezone.utc) + timedelta(seconds=body.valid_for_seconds),
+        created_by=current_user.id,
+    )
+    session.add(release)
+    session.flush()
+    for node in nodes:
+        installed = session.exec(
+            select(RuntimeNodeArtifact).where(
+                RuntimeNodeArtifact.node_id == node.id,
+                RuntimeNodeArtifact.logical_target == artifact.logical_target,
+            )
+        ).first()
+        session.add(
+            ArtifactDeployment(
+                namespace_id=namespace_id, release_id=release.id,
+                node_id=node.id, artifact_id=artifact.id,
+                previous_artifact_id=installed.current_artifact_id if installed else None,
+            )
+        )
+    session.commit()
+    return _public_release(session, release)
+
+
+@router.get("/releases/{release_id}", response_model=ReleasePublic)
+def read_release(
+    release_id: uuid.UUID,
+    session: SessionDep,
+    _: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
+) -> ReleasePublic:
+    release = session.get(ArtifactRelease, release_id)
+    if release is None or release.namespace_id != namespace_id:
+        raise HTTPException(404, "Release not found")
+    return _public_release(session, release)
+
+
+@router.post("/deployments/{deployment_id}/retry", response_model=DeploymentPublic, status_code=201)
+def retry_deployment(
+    deployment_id: uuid.UUID,
+    session: SessionDep,
+    _: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_admin),
+) -> DeploymentPublic:
+    deployment = session.get(ArtifactDeployment, deployment_id)
+    if deployment is None or deployment.namespace_id != namespace_id:
+        raise HTTPException(404, "Deployment not found")
+    if deployment.status not in {DeploymentStatus.FAILED, DeploymentStatus.EXPIRED}:
+        raise HTTPException(409, "Only failed or expired deployments can be retried")
+    retried = ArtifactReleaseService(session).retry(deployment)
+    return DeploymentPublic(
+        id=retried.id, node_id=retried.node_id, artifact_id=retried.artifact_id,
+        previous_artifact_id=retried.previous_artifact_id,
+        attempt=retried.attempt, status=retried.status, error=retried.error,
+    )
+
+
+@router.post("/deployments/{deployment_id}/rollback", response_model=ReleasePublic, status_code=201)
+def rollback_deployment(
+    deployment_id: uuid.UUID,
+    session: SessionDep,
+    current_user: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_admin),
+) -> ReleasePublic:
+    deployment = session.get(ArtifactDeployment, deployment_id)
+    if (
+        deployment is None
+        or deployment.namespace_id != namespace_id
+        or deployment.status != DeploymentStatus.APPLIED
+        or deployment.previous_artifact_id is None
+    ):
+        raise HTTPException(409, "Deployment has no applied previous version")
+    release = ArtifactRelease(
+        namespace_id=namespace_id, artifact_id=deployment.previous_artifact_id,
+        valid_until=datetime.now(timezone.utc) + timedelta(hours=1),
+        rollback_of_release_id=deployment.release_id,
+        created_by=current_user.id,
+    )
+    session.add(release)
+    session.flush()
+    session.add(
+        ArtifactDeployment(
+            namespace_id=namespace_id, release_id=release.id,
+            node_id=deployment.node_id, artifact_id=deployment.previous_artifact_id,
+            previous_artifact_id=deployment.artifact_id,
+        )
+    )
+    session.commit()
+    return _public_release(session, release)
+
+
+@node_router.get("/{deployment_id}/download", response_model=None)
+def download_artifact(
+    deployment_id: uuid.UUID, token: str, session: SessionDep
+) -> StreamingResponse:
+    try:
+        claims = verify_artifact_download_token(token, deployment_id)
+    except ArtifactDownloadTokenError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    deployment = session.get(ArtifactDeployment, deployment_id)
+    if (
+        deployment is None
+        or str(deployment.node_id) != claims.get("node_id")
+        or str(deployment.artifact_id) != claims.get("artifact_id")
+        or deployment.status not in {DeploymentStatus.PENDING, DeploymentStatus.DISPATCHED}
+    ):
+        raise HTTPException(404, "Artifact deployment not available")
+    release = session.get(ArtifactRelease, deployment.release_id)
+    artifact = session.get(RuntimeArtifact, deployment.artifact_id)
+    if (
+        release is None
+        or artifact is None
+        or release.valid_until <= datetime.now(timezone.utc)
+        or artifact.storage_key != claims.get("storage_key")
+    ):
+        raise HTTPException(410, "Artifact release expired")
+    source = artifact_storage().open(artifact.storage_key)
+
+    def stream():
+        try:
+            while chunk := source.read(1024 * 1024):
+                yield chunk
+        finally:
+            source.close()
+
+    return StreamingResponse(stream(), media_type="application/zip")

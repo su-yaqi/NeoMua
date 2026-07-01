@@ -1,6 +1,9 @@
+import asyncio
+import json
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlmodel import select
 
@@ -13,6 +16,7 @@ from app.api.deps import (
 from app.llm_provider_service import mask_secret_value, seal_secret_payload
 from app.models import LlmProviderConfig, LlmProviderModel
 from app.runtime.models import (
+    AgentEvent,
     AgentEventType,
     AgentSession,
     AgentTask,
@@ -21,6 +25,7 @@ from app.runtime.models import (
     RuntimeSecret,
     RuntimeType,
 )
+from app.runtime.policy import TaskStatus, require_task_transition
 from app.runtime.repository import append_event_idempotent
 
 router = APIRouter(prefix="/runtimes", tags=["runtimes"])
@@ -60,6 +65,12 @@ class TaskPublic(BaseModel):
     id: uuid.UUID
     session_id: uuid.UUID | None
     status: str
+
+
+class EventPublic(BaseModel):
+    sequence: int
+    event_type: AgentEventType
+    payload: dict
 
 
 def _public(runtime: RuntimeProfile, secret: RuntimeSecret | None) -> PlatformRuntimePublic:
@@ -203,4 +214,116 @@ def create_session_message(
     append_event_idempotent(
         session, task, 0, AgentEventType.USER_MESSAGE, {"text": body.prompt}
     )
+    return TaskPublic(id=task.id, session_id=task.session_id, status=task.status.value)
+
+
+def _namespace_task(
+    session: SessionDep, task_id: uuid.UUID, namespace_id: uuid.UUID
+) -> AgentTask:
+    task = session.get(AgentTask, task_id)
+    if task is None or task.namespace_id != namespace_id:
+        raise HTTPException(404, "Task not found")
+    return task
+
+
+@router.get("/tasks/{task_id}", response_model=TaskPublic)
+def read_task(
+    task_id: uuid.UUID,
+    session: SessionDep,
+    _: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
+) -> TaskPublic:
+    task = _namespace_task(session, task_id, namespace_id)
+    return TaskPublic(id=task.id, session_id=task.session_id, status=task.status.value)
+
+
+@router.get("/tasks/{task_id}/events", response_model=list[EventPublic])
+def read_task_events(
+    task_id: uuid.UUID,
+    session: SessionDep,
+    _: CurrentUser,
+    after_sequence: int = -1,
+    namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
+) -> list[EventPublic]:
+    _namespace_task(session, task_id, namespace_id)
+    events = session.exec(
+        select(AgentEvent).where(
+            AgentEvent.task_id == task_id,
+            AgentEvent.sequence > after_sequence,
+        ).order_by(AgentEvent.sequence)
+    ).all()
+    return [
+        EventPublic(sequence=e.sequence, event_type=e.event_type, payload=e.payload)
+        for e in events
+    ]
+
+
+@router.get("/tasks/{task_id}/stream", response_model=None)
+async def stream_task_events(
+    task_id: uuid.UUID,
+    request: Request,
+    session: SessionDep,
+    _: CurrentUser,
+    after_sequence: int = -1,
+    last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
+    namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
+) -> StreamingResponse:
+    task = _namespace_task(session, task_id, namespace_id)
+    cursor = max(after_sequence, int(last_event_id)) if last_event_id else after_sequence
+    terminal = {
+        TaskStatus.SUCCEEDED,
+        TaskStatus.FAILED,
+        TaskStatus.CANCELLED,
+        TaskStatus.INTERRUPTED,
+        TaskStatus.REJECTED,
+    }
+
+    async def generate():
+        nonlocal cursor
+        while not await request.is_disconnected():
+            session.expire_all()
+            events = session.exec(
+                select(AgentEvent).where(
+                    AgentEvent.task_id == task_id,
+                    AgentEvent.sequence > cursor,
+                ).order_by(AgentEvent.sequence)
+            ).all()
+            for event in events:
+                cursor = event.sequence
+                data = json.dumps(
+                    {"sequence": event.sequence, "event_type": event.event_type.value,
+                     "payload": event.payload},
+                    ensure_ascii=False,
+                )
+                yield f"id: {event.sequence}\nevent: {event.event_type.value}\ndata: {data}\n\n"
+            current = session.get(AgentTask, task_id)
+            if current is None or current.status in terminal:
+                break
+            if not events:
+                yield ": keepalive\n\n"
+            await asyncio.sleep(0.5)
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+@router.post("/tasks/{task_id}/cancel", response_model=TaskPublic)
+def cancel_task(
+    task_id: uuid.UUID,
+    session: SessionDep,
+    _: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
+) -> TaskPublic:
+    task = _namespace_task(session, task_id, namespace_id)
+    target = (
+        TaskStatus.CANCELLING
+        if task.status == TaskStatus.RUNNING
+        else TaskStatus.CANCELLED
+    )
+    try:
+        require_task_transition(task.status, target)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    task.status = target
+    session.add(task)
+    session.commit()
     return TaskPublic(id=task.id, session_id=task.session_id, status=task.status.value)

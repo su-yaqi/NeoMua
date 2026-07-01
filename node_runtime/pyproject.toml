@@ -5,6 +5,7 @@ requires-python = ">=3.10,<4.0"
 dependencies = [
   "cryptography>=44,<50",
   "httpx>=0.28,<1",
+  "neomua-runtime-worker",
   "pydantic>=2.12,<3",
   "typer>=0.21,<1",
   "websockets>=15,<17",
@@ -15,6 +16,9 @@ neomua-node = "node_runtime.cli:app"
 
 [dependency-groups]
 dev = ["pytest>=7.4,<8"]
+
+[tool.uv.sources]
+neomua-runtime-worker = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

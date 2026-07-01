@@ -2,12 +2,13 @@ import json
 import os
 from pathlib import Path
 
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl
 
 
 class NodeConfig(BaseModel):
     platform_url: HttpUrl
     node_name: str
+    artifact_roots: dict[str, str] = Field(default_factory=dict)
 
 
 class ConfigStore:

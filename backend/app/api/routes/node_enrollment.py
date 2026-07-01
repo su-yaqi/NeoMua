@@ -246,6 +246,12 @@ def configure_node_runtime(
     runtime.provider_config_id = body.provider_config_id
     runtime.base_url = body.base_url
     runtime.permission_mode = body.permission_mode
+    runtime.config = {
+        **runtime.config,
+        "direct_compatibility_verified": False
+        if body.route_mode == RuntimeRouteMode.DIRECT_ANTHROPIC
+        else None,
+    }
     if body.secret_inputs:
         secret = existing_secret or RuntimeSecret(
             namespace_id=namespace_id,

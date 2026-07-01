@@ -11,9 +11,13 @@ from app.runtime.models import (
     AgentEvent,
     AgentSession,
     AgentTask,
+    ArtifactDeployment,
+    ArtifactRelease,
     NodeCredential,
     NodeEnrollmentToken,
     RuntimeNode,
+    RuntimeNodeArtifact,
+    RuntimeArtifact,
     RuntimeProfile,
     RuntimeSecret,
 )
@@ -37,6 +41,10 @@ def isolate_runtime_data(db: Session) -> Generator[None, None, None]:
         db.execute(delete(AgentEvent))
         db.execute(delete(AgentTask))
         db.execute(delete(AgentSession))
+        db.execute(delete(ArtifactDeployment))
+        db.execute(delete(RuntimeNodeArtifact))
+        db.execute(delete(ArtifactRelease))
+        db.execute(delete(RuntimeArtifact))
         db.execute(delete(NodeCredential))
         db.execute(delete(NodeEnrollmentToken))
         db.execute(delete(RuntimeNode))

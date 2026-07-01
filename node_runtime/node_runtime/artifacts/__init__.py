@@ -1,0 +1,1 @@
+"""Safe signed artifact installation."""

@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.routes import (
+    agent_tasks,
     items,
     llm_provider_configs,
     login,
@@ -9,6 +10,7 @@ from app.api.routes import (
     node_socket,
     private,
     runtime_internal,
+    runtime_artifacts,
     runtimes,
     users,
     utils,
@@ -16,6 +18,7 @@ from app.api.routes import (
 from app.core.config import settings
 
 api_router = APIRouter()
+api_router.include_router(agent_tasks.router)
 api_router.include_router(login.router)
 api_router.include_router(users.router)
 api_router.include_router(utils.router)
@@ -25,6 +28,8 @@ api_router.include_router(namespaces.platform_router)
 api_router.include_router(llm_provider_configs.router)
 api_router.include_router(runtimes.router)
 api_router.include_router(runtime_internal.router)
+api_router.include_router(runtime_artifacts.router)
+api_router.include_router(runtime_artifacts.node_router)
 api_router.include_router(node_enrollment.admin_router)
 api_router.include_router(node_enrollment.node_router)
 api_router.include_router(node_socket.router)

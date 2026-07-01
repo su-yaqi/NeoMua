@@ -31,14 +31,31 @@ class RuntimeWorker:
         response.raise_for_status()
         payload = response.json()
         command = RunCommand(**payload["command"])
-        async for event in self.shell.run_session(command):
-            posted = await self.client.post(
-                "/api/v1/internal/runtime/events",
-                headers=self.headers,
-                json={"task_id": payload["task_id"], "events": [event]},
-            )
-            posted.raise_for_status()
+        lease = asyncio.create_task(
+            self._renew_lease(payload["task_id"], payload["revision"])
+        )
+        try:
+            async for event in self.shell.run_session(command):
+                posted = await self.client.post(
+                    "/api/v1/internal/runtime/events",
+                    headers=self.headers,
+                    json={"task_id": payload["task_id"], "events": [event]},
+                )
+                posted.raise_for_status()
+        finally:
+            lease.cancel()
+            await asyncio.gather(lease, return_exceptions=True)
         return True
+
+    async def _renew_lease(self, task_id: str, revision: int) -> None:
+        while True:
+            await asyncio.sleep(60)
+            response = await self.client.post(
+                f"/api/v1/internal/runtime/tasks/{task_id}/lease",
+                headers=self.headers,
+                json={"worker_id": self.worker_id, "revision": revision},
+            )
+            response.raise_for_status()
 
     async def run_forever(self) -> None:
         while True:

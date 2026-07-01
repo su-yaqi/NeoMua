@@ -18,6 +18,7 @@ from app.models import (
     UpdatePassword,
     User,
     UserCreate,
+    UserNamespaceAssignment,
     UserPublic,
     UserRegister,
     UsersPublic,
@@ -122,11 +123,18 @@ def update_password_me(
 
 
 @router.get("/me", response_model=UserPublic)
-def read_user_me(current_user: CurrentUser) -> Any:
+def read_user_me(session: SessionDep, current_user: CurrentUser) -> Any:
     """
     Get current user.
     """
-    return current_user
+    links = crud.get_user_namespace_links(session=session, user_id=current_user.id)
+    return UserPublic(
+        **current_user.model_dump(),
+        namespace_roles=[
+            UserNamespaceAssignment(namespace_id=link.namespace_id, role=link.role)
+            for link in links
+        ],
+    )
 
 
 @router.delete("/me", response_model=Message)

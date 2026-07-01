@@ -4,11 +4,39 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ValidationError
+from sqlmodel import select
 
 from app.api.deps import SessionDep
+from app.core.config import settings
+from app.llm_provider_service import open_secret_payload
 from app.runtime.connections import NodeAuthenticationError, authenticate_node_connection
+from app.runtime.artifacts.security import issue_artifact_download_token
+from app.runtime.artifacts.service import ArtifactReleaseService
+from app.runtime.artifacts.signing import configured_artifact_signer
+import hashlib
+import json
 from app.runtime.enrollment import retire_replaced_credential, rotate_node_credential
-from app.runtime.models import RuntimeNode
+from app.runtime.models import (
+    AgentEventType,
+    AgentTask,
+    ArtifactDeployment,
+    ArtifactRelease,
+    DeploymentStatus,
+    RuntimeNode,
+    RuntimeProfile,
+    RuntimeArtifact,
+    RuntimeRouteMode,
+    RuntimeSecret,
+    RuntimeNodeArtifact,
+)
+from app.runtime.policy import TaskStatus, require_task_transition
+from app.runtime.repository import (
+    apply_event_state,
+    append_event_idempotent,
+    expire_task_leases,
+    last_contiguous_event_sequence,
+)
+from app.runtime.security import issue_gateway_token
 
 router = APIRouter(prefix="/node", tags=["node-socket"])
 
@@ -36,6 +64,166 @@ def _envelope(
         sent_at=datetime.now(timezone.utc),
         payload=payload,
     ).model_dump(mode="json")
+
+
+async def _send_pending_control(
+    websocket: WebSocket, session: SessionDep, node: RuntimeNode
+) -> None:
+    expire_task_leases(session)
+    queued = session.exec(
+        select(AgentTask)
+        .where(
+            AgentTask.target_node_id == node.id,
+            AgentTask.status == TaskStatus.QUEUED,
+        )
+        .order_by(AgentTask.created_at)
+        .limit(10)
+    ).all()
+    for task in queued:
+        runtime = session.get(RuntimeProfile, task.runtime_profile_id)
+        if runtime is None:
+            task.status = TaskStatus.REJECTED
+            task.final_result = {"code": "runtime_unavailable"}
+            session.add(task)
+            session.commit()
+            continue
+        route: dict[str, Any] = {"mode": runtime.route_mode.value}
+        if runtime.route_mode == RuntimeRouteMode.PLATFORM_GATEWAY:
+            if not settings.MODEL_GATEWAY_PUBLIC_URL:
+                task.status = TaskStatus.REJECTED
+                task.final_result = {"code": "gateway_public_url_not_configured"}
+                session.add(task)
+                session.commit()
+                continue
+            token = issue_gateway_token(
+                task.namespace_id, runtime.id, task.id, runtime.model_id
+            )
+            route.update(
+                {
+                    "base_url": settings.MODEL_GATEWAY_PUBLIC_URL,
+                    "api_key": token,
+                    "runtime_id": str(runtime.id),
+                }
+            )
+        await websocket.send_json(
+            _envelope(
+                "task_dispatch",
+                node.id,
+                {
+                    "task_id": str(task.id),
+                    "revision": task.revision,
+                    "prompt": task.prompt,
+                    "snapshot": task.snapshot,
+                    "route": route,
+                    "event_sequence_start": 1,
+                },
+            )
+        )
+    cancelling = session.exec(
+        select(AgentTask).where(
+            AgentTask.target_node_id == node.id,
+            AgentTask.status == TaskStatus.CANCELLING,
+        )
+    ).all()
+    for task in cancelling:
+        await websocket.send_json(
+            _envelope(
+                "task_cancel", node.id,
+                {"task_id": str(task.id), "revision": task.revision},
+            )
+        )
+
+
+async def _send_runtime_config(
+    websocket: WebSocket, session: SessionDep, node: RuntimeNode
+) -> None:
+    if node.runtime_profile_id is None:
+        return
+    runtime = session.get(RuntimeProfile, node.runtime_profile_id)
+    if runtime is None:
+        return
+    payload: dict[str, Any] = {
+        "revision": node.config_revision,
+        "runtime_id": str(runtime.id),
+        "route_mode": runtime.route_mode.value,
+        "base_url": runtime.base_url,
+        "model_id": runtime.model_id,
+    }
+    if runtime.route_mode == RuntimeRouteMode.DIRECT_ANTHROPIC:
+        secret = session.exec(
+            select(RuntimeSecret).where(RuntimeSecret.runtime_profile_id == runtime.id)
+        ).first()
+        if secret is None:
+            return
+        values = open_secret_payload(secret.secret_ciphertext)
+        api_key = values.get("api_key") or values.get("api_token") or values.get("token")
+        if not api_key:
+            return
+        payload["api_key"] = api_key
+    await websocket.send_json(_envelope("runtime_config", node.id, payload))
+
+
+async def _send_pending_artifacts(
+    websocket: WebSocket, session: SessionDep, node: RuntimeNode
+) -> None:
+    deployments = ArtifactReleaseService(session).pending_for_node(node.id)
+    for deployment in deployments:
+        release = session.get(ArtifactRelease, deployment.release_id)
+        artifact = session.get(RuntimeArtifact, deployment.artifact_id)
+        if release is None or artifact is None:
+            continue
+        token = issue_artifact_download_token(
+            deployment_id=deployment.id,
+            node_id=node.id,
+            artifact_id=artifact.id,
+            storage_key=artifact.storage_key,
+            expires_at=release.valid_until,
+        )
+        deployment_manifest = {
+            "schema_version": "1",
+            "namespace_id": str(deployment.namespace_id),
+            "node_id": str(node.id),
+            "release_id": str(release.id),
+            "deployment_id": str(deployment.id),
+            "artifact_id": str(artifact.id),
+            "logical_target": artifact.logical_target.value,
+            "artifact_manifest_sha256": hashlib.sha256(
+                json.dumps(
+                    artifact.manifest, sort_keys=True, separators=(",", ":"),
+                    ensure_ascii=False,
+                ).encode()
+            ).hexdigest(),
+            "valid_until": release.valid_until.isoformat(),
+        }
+        deployment_bytes = json.dumps(
+            deployment_manifest, sort_keys=True, separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode()
+        signer = configured_artifact_signer()
+        await websocket.send_json(
+            _envelope(
+                "artifact_deploy", node.id,
+                {
+                    "release_id": str(release.id),
+                    "deployment_id": str(deployment.id),
+                    "artifact_id": str(artifact.id),
+                    "logical_target": artifact.logical_target.value,
+                    "manifest": artifact.manifest,
+                    "signature": artifact.signature,
+                    "signing_public_key": artifact.signing_public_key,
+                    "content_sha256": artifact.content_sha256,
+                    "download_path": f"/api/v1/node/artifacts/{deployment.id}/download",
+                    "download_token": token,
+                    "valid_until": release.valid_until.isoformat(),
+                    "deployment_manifest": deployment_manifest,
+                    "deployment_signature": signer.sign(deployment_bytes),
+                },
+            )
+        )
+        deployment.status = DeploymentStatus.DISPATCHED
+        deployment.dispatched_at = datetime.now(timezone.utc)
+        session.add(deployment)
+        session.commit()
 
 
 @router.websocket("/ws")
@@ -71,6 +259,8 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                 {"credential_expires_at": credential.expires_at.isoformat()},
             )
         )
+    await _send_pending_control(websocket, session, node)
+    await _send_pending_artifacts(websocket, session, node)
     try:
         while True:
             raw = await websocket.receive_json()
@@ -96,8 +286,27 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                 await websocket.send_json(
                     _envelope("heartbeat_ack", node.id, {}, message.message_id)
                 )
+                await _send_pending_control(websocket, session, current)
+                await _send_pending_artifacts(websocket, session, current)
             elif message.type == "reconcile":
                 current.last_seen_at = datetime.now(timezone.utc)
+                for task_id_value in message.payload.get("interrupted_task_ids", []):
+                    try:
+                        interrupted = session.get(AgentTask, uuid.UUID(task_id_value))
+                    except ValueError:
+                        continue
+                    if (
+                        interrupted
+                        and interrupted.target_node_id == current.id
+                        and interrupted.status in {TaskStatus.DISPATCHED, TaskStatus.RUNNING}
+                    ):
+                        require_task_transition(
+                            interrupted.status, TaskStatus.INTERRUPTED
+                        )
+                        interrupted.status = TaskStatus.INTERRUPTED
+                        interrupted.completed_at = datetime.now(timezone.utc)
+                        interrupted.lease_expires_at = None
+                        session.add(interrupted)
                 session.add(current)
                 session.commit()
                 await websocket.send_json(
@@ -106,6 +315,9 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                         {"config_revision": current.config_revision}, message.message_id,
                     )
                 )
+                if int(message.payload.get("config_revision", 0)) < current.config_revision:
+                    await _send_runtime_config(websocket, session, current)
+                await _send_pending_artifacts(websocket, session, current)
             elif message.type == "rotate_credential":
                 try:
                     replacement, token = rotate_node_credential(
@@ -155,6 +367,187 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                     _envelope(
                         "credential_rotation_acknowledged", node.id, {}, message.message_id
                     )
+                )
+            elif message.type == "task_accepted":
+                task_id = uuid.UUID(message.payload["task_id"])
+                revision = int(message.payload["revision"])
+                task = session.exec(
+                    select(AgentTask).where(AgentTask.id == task_id).with_for_update()
+                ).first()
+                if (
+                    task is None
+                    or task.target_node_id != node.id
+                    or task.revision != revision
+                ):
+                    await websocket.send_json(
+                        _envelope("error", node.id, {"code": "task_accept_scope_mismatch"}, message.message_id)
+                    )
+                    continue
+                if task.status == TaskStatus.QUEUED:
+                    require_task_transition(task.status, TaskStatus.DISPATCHED)
+                    task.status = TaskStatus.DISPATCHED
+                    append_event_idempotent(
+                        session,
+                        task,
+                        1,
+                        AgentEventType.STATUS,
+                        {"state": TaskStatus.DISPATCHED.value, "executor": f"node:{node.id}"},
+                    )
+                elif task.status not in {TaskStatus.DISPATCHED, TaskStatus.RUNNING}:
+                    await websocket.send_json(
+                        _envelope("error", node.id, {"code": "task_not_dispatchable"}, message.message_id)
+                    )
+                    continue
+                task.claimed_by = f"node:{node.id}"
+                task.lease_expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+                task.updated_at = datetime.now(timezone.utc)
+                session.add(task)
+                session.commit()
+                await websocket.send_json(
+                    _envelope("task_accept_ack", node.id, {"task_id": str(task.id)}, message.message_id)
+                )
+            elif message.type == "lease_renewed":
+                task = session.get(AgentTask, uuid.UUID(message.payload["task_id"]))
+                if task is None or task.target_node_id != node.id or task.revision != int(message.payload["revision"]):
+                    await websocket.send_json(
+                        _envelope("error", node.id, {"code": "lease_scope_mismatch"}, message.message_id)
+                    )
+                    continue
+                if task.status == TaskStatus.DISPATCHED:
+                    require_task_transition(task.status, TaskStatus.RUNNING)
+                    task.status = TaskStatus.RUNNING
+                if task.status != TaskStatus.RUNNING:
+                    await websocket.send_json(
+                        _envelope("error", node.id, {"code": "lease_not_renewable"}, message.message_id)
+                    )
+                    continue
+                task.lease_expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+                task.updated_at = datetime.now(timezone.utc)
+                session.add(task)
+                session.commit()
+            elif message.type == "task_rejected":
+                task = session.get(AgentTask, uuid.UUID(message.payload["task_id"]))
+                if task is None or task.target_node_id != node.id:
+                    continue
+                if task.status in {TaskStatus.QUEUED, TaskStatus.DISPATCHED}:
+                    require_task_transition(task.status, TaskStatus.REJECTED)
+                    task.status = TaskStatus.REJECTED
+                    task.final_result = message.payload
+                    task.completed_at = datetime.now(timezone.utc)
+                    task.lease_expires_at = None
+                    session.add(task)
+                    session.commit()
+            elif message.type == "task_events":
+                task = session.get(AgentTask, uuid.UUID(message.payload["task_id"]))
+                if task is None or task.target_node_id != node.id:
+                    await websocket.send_json(
+                        _envelope("error", node.id, {"code": "event_scope_mismatch"}, message.message_id)
+                    )
+                    continue
+                try:
+                    for event in message.payload.get("events", []):
+                        event_type = AgentEventType(event["event_type"])
+                        append_event_idempotent(
+                            session, task, int(event["sequence"]), event_type, event["payload"]
+                        )
+                        apply_event_state(task, event_type, event["payload"])
+                        session.add(task)
+                        session.commit()
+                except (KeyError, ValueError) as exc:
+                    await websocket.send_json(
+                        _envelope(
+                            "error", node.id,
+                            {"code": "event_append_failed", "detail": str(exc)},
+                            message.message_id,
+                        )
+                    )
+                    continue
+                contiguous = last_contiguous_event_sequence(session, task.id)
+                await websocket.send_json(
+                    _envelope(
+                        "task_events_ack", node.id,
+                        {"task_id": str(task.id), "through_sequence": contiguous},
+                        message.message_id,
+                    )
+                )
+            elif message.type == "task_cancelled":
+                task = session.get(AgentTask, uuid.UUID(message.payload["task_id"]))
+                if task and task.target_node_id == node.id and task.status == TaskStatus.CANCELLING:
+                    require_task_transition(task.status, TaskStatus.CANCELLED)
+                    task.status = TaskStatus.CANCELLED
+                    task.completed_at = datetime.now(timezone.utc)
+                    task.lease_expires_at = None
+                    session.add(task)
+                    session.commit()
+            elif message.type in {"runtime_config_applied", "runtime_config_rejected"}:
+                runtime_id = uuid.UUID(message.payload["runtime_id"])
+                runtime = session.get(RuntimeProfile, runtime_id)
+                if (
+                    runtime is None
+                    or current.runtime_profile_id != runtime.id
+                    or int(message.payload["revision"]) != current.config_revision
+                ):
+                    await websocket.send_json(
+                        _envelope("error", node.id, {"code": "runtime_config_scope_mismatch"}, message.message_id)
+                    )
+                    continue
+                runtime.config = {
+                    **runtime.config,
+                    "direct_compatibility_verified": message.type == "runtime_config_applied"
+                    and message.payload.get("direct_compatibility_verified") is True,
+                    "direct_compatibility_fingerprint": message.payload.get("fingerprint"),
+                    "direct_compatibility_checked_at": datetime.now(timezone.utc).isoformat(),
+                    "node_config_applied_revision": current.config_revision
+                    if message.type == "runtime_config_applied" else None,
+                }
+                session.add(runtime)
+                session.commit()
+                await websocket.send_json(
+                    _envelope("runtime_config_ack", node.id, {"revision": current.config_revision}, message.message_id)
+                )
+            elif message.type in {"artifact_applied", "artifact_failed"}:
+                deployment = session.get(
+                    ArtifactDeployment, uuid.UUID(message.payload["deployment_id"])
+                )
+                if (
+                    deployment is None
+                    or deployment.node_id != current.id
+                    or deployment.status != DeploymentStatus.DISPATCHED
+                ):
+                    await websocket.send_json(
+                        _envelope("error", node.id, {"code": "artifact_deployment_scope_mismatch"}, message.message_id)
+                    )
+                    continue
+                artifact = session.get(RuntimeArtifact, deployment.artifact_id)
+                if artifact is None:
+                    continue
+                if message.type == "artifact_applied":
+                    installed = session.exec(
+                        select(RuntimeNodeArtifact).where(
+                            RuntimeNodeArtifact.node_id == current.id,
+                            RuntimeNodeArtifact.logical_target == artifact.logical_target,
+                        )
+                    ).first()
+                    if installed is None:
+                        installed = RuntimeNodeArtifact(
+                            node_id=current.id, logical_target=artifact.logical_target
+                        )
+                    installed.previous_artifact_id = installed.current_artifact_id
+                    installed.current_artifact_id = artifact.id
+                    installed.updated_at = datetime.now(timezone.utc)
+                    deployment.status = DeploymentStatus.APPLIED
+                    deployment.applied_at = datetime.now(timezone.utc)
+                    session.add(installed)
+                else:
+                    deployment.status = DeploymentStatus.FAILED
+                    deployment.error = {
+                        "code": message.payload.get("code", "node_apply_failed"),
+                        "message": message.payload.get("message"),
+                    }
+                session.add(deployment)
+                session.commit()
+                await websocket.send_json(
+                    _envelope("artifact_status_ack", node.id, {"deployment_id": str(deployment.id)}, message.message_id)
                 )
             else:
                 await websocket.send_json(

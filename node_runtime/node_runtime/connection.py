@@ -13,6 +13,9 @@ from node_runtime.identity import DeviceIdentity
 from node_runtime.identity import IdentityStore
 from node_runtime.protocol import Envelope, envelope
 from node_runtime.reconcile import ReconcileState
+from node_runtime.tasks import NodeTaskController
+from node_runtime.runtime_config import RuntimeConfigManager
+from node_runtime.artifacts.controller import ArtifactController
 
 
 class PermanentConnectionError(RuntimeError):
@@ -55,12 +58,18 @@ class NodeConnection:
         *,
         on_message: Callable[[Envelope], Awaitable[None]] | None = None,
         identity_store: IdentityStore | None = None,
+        task_controller: NodeTaskController | None = None,
+        runtime_config_manager: RuntimeConfigManager | None = None,
+        artifact_controller: ArtifactController | None = None,
     ) -> None:
         self.url = websocket_url(platform_url)
         self.identity = identity
         self.reconcile_state = reconcile_state
         self.on_message = on_message
         self.identity_store = identity_store
+        self.task_controller = task_controller
+        self.runtime_config_manager = runtime_config_manager
+        self.artifact_controller = artifact_controller
 
     async def connect_once(self) -> None:
         try:
@@ -89,10 +98,15 @@ class NodeConnection:
                         self.reconcile_state.model_dump(mode="json"),
                     ).model_dump_json()
                 )
+                if self.task_controller:
+                    await self.task_controller.replay_pending()
                 heartbeat = asyncio.create_task(self._heartbeat_loop(websocket))
                 receiver = asyncio.create_task(self._receive_loop(websocket))
+                tasks = {heartbeat, receiver}
+                if self.task_controller:
+                    tasks.add(asyncio.create_task(self._task_outbox_loop(websocket)))
                 done, pending = await asyncio.wait(
-                    {heartbeat, receiver}, return_when=asyncio.FIRST_COMPLETED
+                    tasks, return_when=asyncio.FIRST_COMPLETED
                 )
                 for task in pending:
                     task.cancel()
@@ -141,8 +155,40 @@ class NodeConnection:
                 self.identity.previous_credential_id = None
                 self.identity_store.save(self.identity)
                 continue
+            if message.type == "runtime_config" and self.runtime_config_manager:
+                try:
+                    result = await self.runtime_config_manager.apply(message.payload)
+                    self.reconcile_state.config_revision = int(result["revision"])
+                    response_type = "runtime_config_applied"
+                except ValueError as exc:
+                    result = {
+                        "revision": message.payload.get("revision"),
+                        "runtime_id": message.payload.get("runtime_id"),
+                        "reason": str(exc),
+                    }
+                    response_type = "runtime_config_rejected"
+                await websocket.send(
+                    envelope(response_type, self.identity.node_id, result).model_dump_json()
+                )
+                continue
+            if self.artifact_controller:
+                artifact_responses = await self.artifact_controller.handle(message)
+                for response in artifact_responses:
+                    await websocket.send(response.model_dump_json())
+                if artifact_responses:
+                    continue
+            if self.task_controller:
+                responses = await self.task_controller.handle(message)
+                for response in responses:
+                    await websocket.send(response.model_dump_json())
             if self.on_message:
                 await self.on_message(message)
+
+    async def _task_outbox_loop(self, websocket) -> None:
+        assert self.task_controller is not None
+        while True:
+            message = await self.task_controller.outbox.get()
+            await websocket.send(message.model_dump_json())
 
     async def run_forever(self) -> None:
         attempt = 0

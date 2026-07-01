@@ -72,9 +72,20 @@ def test_worker_claims_queued_platform_task(
         f"{settings.API_V1_STR}/internal/runtime/events",
         headers={"X-Runtime-Token": expected_internal_token()},
         json={"task_id": task_id, "events": [
-            {"sequence": 1, "event_type": "result", "payload": {"result": "done"}}
+            {"sequence": 2, "event_type": "result", "payload": {"result": "done", "session_id": "sdk-session-1"}}
         ]},
     )
     assert event_response.status_code == 200
     db.expire_all()
     assert db.get(AgentTask, uuid.UUID(task_id)).status == TaskStatus.SUCCEEDED
+    next_task_id = client.post(
+        f"{settings.API_V1_STR}/runtimes/sessions/{session_id}/messages",
+        headers=headers, json={"prompt": "follow up"},
+    ).json()["id"]
+    next_claim = client.post(
+        f"{settings.API_V1_STR}/internal/runtime/tasks/claim",
+        headers={"X-Runtime-Token": expected_internal_token()},
+        json={"worker_id": "platform-worker-1"},
+    )
+    assert next_claim.json()["task_id"] == next_task_id
+    assert next_claim.json()["command"]["sdk_session_id"] == "sdk-session-1"

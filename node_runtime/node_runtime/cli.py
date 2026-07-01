@@ -12,6 +12,12 @@ from node_runtime.config import ConfigStore, NodeConfig
 from node_runtime.identity import DeviceIdentity, IdentityStore, generate_keypair
 from node_runtime.connection import NodeConnection
 from node_runtime.reconcile import ReconcileState
+from node_runtime.model_route import ModelRouteStore
+from node_runtime.spool import EventSpool
+from node_runtime.tasks import NodeTaskController
+from node_runtime.runtime_config import RuntimeConfigManager
+from node_runtime.artifacts.controller import ArtifactController
+from node_runtime.artifacts.installer import ArtifactInstaller
 from node_runtime.service import SystemdServiceManager, UnsupportedServiceManager
 
 app = typer.Typer(no_args_is_help=True)
@@ -63,7 +69,14 @@ def install(
         )
     )
     ConfigStore(state_dir / "config.json").save(
-        NodeConfig(platform_url=url, node_name=name)
+        NodeConfig(
+            platform_url=url,
+            node_name=name,
+            artifact_roots={
+                target: str(state_dir / "content" / target)
+                for target in ("agents", "skills", "mcp", "cli", "workspace")
+            },
+        )
     )
     executable = shutil.which("neomua-node")
     if not executable:
@@ -78,7 +91,26 @@ def run(state_dir: Path = typer.Option(Path("/var/lib/neomua-node"))) -> None:
     config = ConfigStore(state_dir / "config.json").load()
     identity_store = IdentityStore(state_dir / "identity.json")
     identity = identity_store.load()
+    spool = EventSpool(state_dir / "events.db")
+    interrupted_task_ids = spool.recover_interrupted_dispatches()
+    route_store = ModelRouteStore(state_dir / "model-routes.json")
+    task_controller = NodeTaskController(identity.node_id, spool, route_store)
+    installer = ArtifactInstaller(
+        {key: Path(value) for key, value in config.artifact_roots.items()},
+        identity.node_id,
+    )
+    installer.recover()
+    artifact_controller = ArtifactController(
+        str(config.platform_url), identity.node_id, installer, state_dir / "downloads"
+    )
     connection = NodeConnection(
-        str(config.platform_url), identity, ReconcileState(), identity_store=identity_store
+        str(config.platform_url), identity,
+        ReconcileState(
+            config_revision=route_store.revision(),
+            interrupted_task_ids=interrupted_task_ids,
+        ),
+        identity_store=identity_store, task_controller=task_controller,
+        runtime_config_manager=RuntimeConfigManager(route_store),
+        artifact_controller=artifact_controller,
     )
     asyncio.run(connection.run_forever())
