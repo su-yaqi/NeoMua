@@ -94,9 +94,9 @@ sequenceDiagram
 平台区域展示健康状态、Worker/SDK/CLI 版本、路由和默认模型。密钥只在首次录入或轮换时输入，不回显明文。Developer 只看到测试入口。
 
 ## 6. 验收标准
-- [ ] 每个 namespace 可独立保存一个平台运行时，且不能引用其他空间的模型配置。
-- [ ] Anthropic 兼容 API 可正常工作，非兼容 API 必须通过 Gateway 转换。
-- [ ] 不支持的模型能力在任务开始前被明确拒绝，不发生静默降级。
-- [ ] Admin 可配置并测试；Developer 可测试但不能修改；User 不可见。
-- [ ] 多轮测试可恢复会话，页面流式展示完整事件并可停止。
-- [ ] SDK/CLI 进程由独立 runtime-worker 管理，FastAPI 重启不产生孤儿进程。
+- [x] 每个 namespace 可独立保存一个平台运行时，且不能引用其他空间的模型配置。
+- [x] Anthropic 兼容 API 可正常工作，非兼容 API 必须通过 Gateway 转换。
+- [x] 不支持的模型能力在任务开始前被明确拒绝，不发生静默降级。
+- [x] Admin 可配置并测试；Developer 可测试但不能修改；User 不可见。
+- [x] 多轮测试可恢复会话，页面流式展示完整事件并可停止。
+- [x] SDK/CLI 进程由独立 runtime-worker 管理，FastAPI 重启不产生孤儿进程。

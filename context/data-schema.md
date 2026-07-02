@@ -25,9 +25,31 @@
 User 1 ---- N Item
 User 1 ---- N UserNamespaceLink N ---- 1 Namespace
 Namespace 1 ---- N LlmProviderConfig 1 ---- N LlmProviderModel
+Namespace 1 ---- N RuntimeProfile / RuntimeNode / AgentTask / RuntimeArtifact
+RuntimeNode 1 ---- N NodeCredential / AgentTask / ArtifactDeployment
+AgentTask 1 ---- N AgentEvent
 ```
 
 ## 表结构
+
+### runtime_management 表组
+
+| 表 | 关键职责 |
+|---|---|
+| `runtime_profile` | namespace 内平台或节点运行时的模型、路由、工具与目录策略；平台使用部分唯一索引 |
+| `runtime_secret` | 运行时密钥加密载荷；浏览器仅见掩码 |
+| `agent_session` | 平台多轮会话与 Claude SDK session ID |
+| `agent_task` | 不可变执行快照、目标节点、任务类型、状态、租约、幂等键和 retry 链 |
+| `agent_event` | 按 `(task_id, sequence)` 唯一保存用户、Agent、工具、状态、错误和结果事件 |
+| `runtime_node` | 节点公钥、指纹、版本、心跳、连接代次、配置修订和吊销时间 |
+| `node_enrollment_token` | 一次性注册令牌 HMAC；仅保存哈希、有效期和消费时间 |
+| `node_credential` | 90 天设备凭证、密钥指纹、轮换链与吊销时间；不保存私钥 |
+| `runtime_artifact` | namespace 内不可变内容哈希、逻辑目标、清单、签名和存储键 |
+| `artifact_release` | 有效期内的发布或回滚意图 |
+| `artifact_deployment` | 每节点每次发布尝试及 pending/dispatched/applied/failed/expired 状态 |
+| `runtime_node_artifact` | 节点每个逻辑目标的 current/previous 制品指针 |
+
+任务状态只允许显式状态机迁移；运行租约过期变为 `interrupted`，不会自动创建 retry。制品路径只保存逻辑目标，物理目录仅存在节点本地配置。
 
 ### user
 系统用户表，保存登录账号、平台权限和基础资料。

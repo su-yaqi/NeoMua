@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 class DeviceIdentity(BaseModel):
     node_id: str
+    namespace_id: str | None = None
     private_key: str
     credential: str
     previous_credential_id: str | None = None
@@ -46,9 +47,7 @@ class IdentityStore:
     def save(self, identity: DeviceIdentity) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(self.path.parent, 0o700)
-        temporary = self.path.with_name(
-            f".{self.path.name}.{secrets.token_hex(8)}.tmp"
-        )
+        temporary = self.path.with_name(f".{self.path.name}.{secrets.token_hex(8)}.tmp")
         descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         try:
             with os.fdopen(descriptor, "w", encoding="utf-8") as handle:

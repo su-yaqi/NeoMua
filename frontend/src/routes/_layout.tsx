@@ -1,9 +1,8 @@
 import { useQuery } from "@tanstack/react-query"
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router"
 import { useEffect, useState } from "react"
-
-import { UsersService } from "@/client"
-import { tenantApi } from "@/client/tenantApi"
+import { UsersService } from "@/api/generatedCompat"
+import { tenantApi } from "@/api/tenantApi"
 import { Footer } from "@/components/Common/Footer"
 import AppSidebar from "@/components/Sidebar/AppSidebar"
 import {
@@ -55,7 +54,8 @@ function Layout() {
       return
     }
 
-    const storedNamespaceId = localStorage.getItem("selected_namespace_id") || ""
+    const storedNamespaceId =
+      localStorage.getItem("selected_namespace_id") || ""
     if (namespaces.length === 0) {
       if (storedNamespaceId) {
         localStorage.removeItem("selected_namespace_id")

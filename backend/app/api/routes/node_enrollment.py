@@ -15,13 +15,14 @@ from app.api.deps import (
 )
 from app.llm_provider_service import mask_secret_value, seal_secret_payload
 from app.models import LlmProviderConfig, LlmProviderModel
+from app.runtime.connections import node_is_online
 from app.runtime.enrollment import (
     EnrollmentTokenInvalid,
     consume_enrollment_token,
     create_enrollment_token,
     issue_node_credential,
 )
-from app.runtime.connections import node_is_online
+from app.runtime.gateway import UnsupportedGatewayProvider, gateway_provider_kind
 from app.runtime.models import (
     NodeCredential,
     NodeEnrollmentToken,
@@ -67,6 +68,7 @@ class NodeEnrollInput(BaseModel):
 
 class NodeEnrollResult(BaseModel):
     node_id: uuid.UUID
+    namespace_id: uuid.UUID
     credential: str
     credential_expires_at: datetime
 
@@ -144,9 +146,7 @@ def create_token(
     namespace_id: uuid.UUID = Depends(require_namespace_admin),
 ) -> EnrollmentTokenCreated:
     raw, record = create_enrollment_token(session, namespace_id, current_user.id)
-    return EnrollmentTokenCreated(
-        id=record.id, token=raw, expires_at=record.expires_at
-    )
+    return EnrollmentTokenCreated(id=record.id, token=raw, expires_at=record.expires_at)
 
 
 @admin_router.get("/enrollment-tokens", response_model=EnrollmentTokensPublic)
@@ -215,12 +215,21 @@ def configure_node_runtime(
     if body.route_mode == RuntimeRouteMode.DIRECT_ANTHROPIC:
         if not body.base_url or (not body.secret_inputs and existing_secret is None):
             raise HTTPException(
-                400, "direct_anthropic requires an Anthropic-compatible URL and credential"
+                400,
+                "direct_anthropic requires an Anthropic-compatible URL and credential",
             )
     else:
         provider = session.get(LlmProviderConfig, body.provider_config_id)
-        if provider is None or provider.namespace_id != namespace_id or not provider.enabled:
+        if (
+            provider is None
+            or provider.namespace_id != namespace_id
+            or not provider.enabled
+        ):
             raise HTTPException(404, "Enabled provider config not found")
+        try:
+            gateway_provider_kind(provider.provider_slug)
+        except UnsupportedGatewayProvider as exc:
+            raise HTTPException(422, str(exc)) from exc
         model = session.exec(
             select(LlmProviderModel).where(
                 LlmProviderModel.provider_config_id == provider.id,
@@ -230,7 +239,11 @@ def configure_node_runtime(
         ).first()
         if model is None:
             raise HTTPException(400, "Enabled model not found")
-    runtime = session.get(RuntimeProfile, node.runtime_profile_id) if node.runtime_profile_id else None
+    runtime = (
+        session.get(RuntimeProfile, node.runtime_profile_id)
+        if node.runtime_profile_id
+        else None
+    )
     if runtime is None:
         runtime = RuntimeProfile(
             namespace_id=namespace_id,
@@ -259,7 +272,9 @@ def configure_node_runtime(
             secret_ciphertext="",
         )
         secret.secret_ciphertext = seal_secret_payload(body.secret_inputs) or ""
-        secret.secret_masked = mask_secret_value(next(iter(body.secret_inputs.values())))
+        secret.secret_masked = mask_secret_value(
+            next(iter(body.secret_inputs.values()))
+        )
         session.add(secret)
         existing_secret = secret
     node.config_revision += 1
@@ -360,6 +375,7 @@ def enroll_node(body: NodeEnrollInput, session: SessionDep) -> NodeEnrollResult:
     session.commit()
     return NodeEnrollResult(
         node_id=node.id,
+        namespace_id=node.namespace_id,
         credential=token,
         credential_expires_at=credential.expires_at,
     )

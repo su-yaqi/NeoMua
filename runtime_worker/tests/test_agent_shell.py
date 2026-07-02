@@ -10,8 +10,12 @@ def test_command_rejects_bypass_permissions() -> None:
 
 def test_build_options_keeps_tool_boundaries() -> None:
     command = RunCommand(
-        prompt="review", model="claude", tools=["Read"],
-        allowed_tools=["Read"], disallowed_tools=["Bash"], cwd="/workspace",
+        prompt="review",
+        model="claude",
+        tools=["Read"],
+        allowed_tools=["Read"],
+        disallowed_tools=["Bash"],
+        cwd="/workspace",
     )
     options = AgentShell.build_options(command)
     assert options.tools == ["Read"]

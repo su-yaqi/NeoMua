@@ -1,10 +1,11 @@
 import uuid
-from typing import Any
 from datetime import datetime, timezone
 from enum import Enum
+from typing import Any
 
 from pydantic import EmailStr
-from sqlalchemy import JSON, Column, DateTime, Enum as SAEnum, UniqueConstraint
+from sqlalchemy import JSON, Column, DateTime, UniqueConstraint
+from sqlalchemy import Enum as SAEnum
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -83,7 +84,9 @@ class UserNamespaceLink(SQLModel, table=True):
     __table_args__ = (UniqueConstraint("user_id", "namespace_id"),)
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    user_id: uuid.UUID = Field(foreign_key="user.id", nullable=False, ondelete="CASCADE")
+    user_id: uuid.UUID = Field(
+        foreign_key="user.id", nullable=False, ondelete="CASCADE"
+    )
     namespace_id: uuid.UUID = Field(
         foreign_key="namespace.id", nullable=False, ondelete="CASCADE"
     )
@@ -133,7 +136,9 @@ class Namespace(NamespaceBase, table=True):
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
     )
-    users: list[User] = Relationship(back_populates="namespaces", link_model=UserNamespaceLink)
+    users: list[User] = Relationship(
+        back_populates="namespaces", link_model=UserNamespaceLink
+    )
 
 
 class LlmProviderConfigBase(SQLModel):

@@ -5,7 +5,7 @@ import { useState } from "react"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
-import { type TenantUser, tenantApi } from "@/client/tenantApi"
+import { type TenantUser, tenantApi } from "@/api/tenantApi"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -79,7 +79,9 @@ function EditNamespaceMember({
     },
     onError: handleError.bind(showErrorToast),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["namespace-users", namespaceId] })
+      queryClient.invalidateQueries({
+        queryKey: ["namespace-users", namespaceId],
+      })
     },
   })
 
@@ -95,7 +97,9 @@ function EditNamespaceMember({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>编辑空间成员</DialogTitle>
-          <DialogDescription>更新成员姓名、状态和当前空间角色。</DialogDescription>
+          <DialogDescription>
+            更新成员姓名、状态和当前空间角色。
+          </DialogDescription>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit((data) => mutation.mutate(data))}>

@@ -16,13 +16,20 @@ from tests.api.routes.test_namespaces import create_namespace
 
 def test_rotation_issues_90_day_credential_and_retires_old(db: Session) -> None:
     namespace = create_namespace(db)
-    public = Ed25519PrivateKey.generate().public_key().public_bytes(
-        serialization.Encoding.Raw, serialization.PublicFormat.Raw
+    public = (
+        Ed25519PrivateKey.generate()
+        .public_key()
+        .public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
     )
     node = RuntimeNode(
-        namespace_id=namespace.id, name="node", hostname="host", os_name="linux",
-        architecture="arm64", agent_version="1",
-        public_key=base64.b64encode(public).decode(), key_fingerprint="f" * 64,
+        namespace_id=namespace.id,
+        name="node",
+        hostname="host",
+        os_name="linux",
+        architecture="arm64",
+        agent_version="1",
+        public_key=base64.b64encode(public).decode(),
+        key_fingerprint="f" * 64,
     )
     db.add(node)
     db.flush()
@@ -38,8 +45,13 @@ def test_rotation_issues_90_day_credential_and_retires_old(db: Session) -> None:
 def test_one_day_offline_does_not_remove_node_pairing(db: Session) -> None:
     namespace = create_namespace(db)
     node = RuntimeNode(
-        namespace_id=namespace.id, name="node", hostname="host", os_name="linux",
-        architecture="arm64", agent_version="1", public_key="key",
+        namespace_id=namespace.id,
+        name="node",
+        hostname="host",
+        os_name="linux",
+        architecture="arm64",
+        agent_version="1",
+        public_key="key",
         key_fingerprint="e" * 64,
         last_seen_at=datetime.now(timezone.utc) - timedelta(days=1),
     )

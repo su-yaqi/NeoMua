@@ -56,7 +56,8 @@ class ArtifactController:
                 pass
             return [
                 envelope(
-                    "artifact_failed", self.node_id,
+                    "artifact_failed",
+                    self.node_id,
                     {
                         "deployment_id": payload.get("deployment_id"),
                         "code": "artifact_validation_or_apply_failed",

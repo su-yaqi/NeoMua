@@ -75,10 +75,10 @@ sequenceDiagram
 | 修改 | 功能测试抽屉 | `/system/runtimes` | 复用统一会话、任务和事件组件 |
 
 ## 6. 验收标准
-- [ ] Admin 与 Developer 可下发普通任务，User 不可见且接口拒绝访问。
-- [ ] 重复下发不会启动两个 Agent Loop，事件重传不会产生重复记录。
-- [ ] 断线后可补传未确认事件；执行中任务进入 `interrupted` 且不会自动重跑。
-- [ ] 平台 Gateway Token 不能跨空间、节点、任务或模型使用。
-- [ ] 节点直连仅允许已通过 Anthropic 兼容性测试的 API。
-- [ ] 完整过程按序保存且敏感值已脱敏。
+- [x] Admin 与 Developer 可下发普通任务，User 不可见且接口拒绝访问。
+- [x] 重复下发不会启动两个 Agent Loop，事件重传不会产生重复记录。
+- [x] 断线后可补传未确认事件；执行中任务进入 `interrupted` 且不会自动重跑。
+- [x] 平台 Gateway Token 不能跨空间、节点、任务或模型使用。
+- [x] 节点直连仅允许已通过 Anthropic 兼容性测试的 API。
+- [x] 完整过程按序保存且敏感值已脱敏。
 

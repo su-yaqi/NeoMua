@@ -5,7 +5,7 @@ import { useState } from "react"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
-import { tenantApi } from "@/client/tenantApi"
+import { tenantApi } from "@/api/tenantApi"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -137,7 +137,11 @@ function AddPlatformUser() {
                   <FormItem>
                     <FormLabel>密码</FormLabel>
                     <FormControl>
-                      <Input type="password" placeholder="请输入密码" {...field} />
+                      <Input
+                        type="password"
+                        placeholder="请输入密码"
+                        {...field}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -150,7 +154,11 @@ function AddPlatformUser() {
                   <FormItem>
                     <FormLabel>确认密码</FormLabel>
                     <FormControl>
-                      <Input type="password" placeholder="请再次输入密码" {...field} />
+                      <Input
+                        type="password"
+                        placeholder="请再次输入密码"
+                        {...field}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

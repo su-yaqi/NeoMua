@@ -13,28 +13,33 @@ from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
-from app.api.deps import CurrentUser, SessionDep, require_namespace_admin, require_namespace_runtime_user
+from app.api.deps import (
+    CurrentUser,
+    SessionDep,
+    require_namespace_admin,
+    require_namespace_runtime_user,
+)
 from app.core.config import settings
 from app.runtime.artifacts.local_storage import LocalArtifactStorage
 from app.runtime.artifacts.manifest import (
+    MAX_TOTAL_BYTES,
     ArtifactFile,
     ArtifactKind,
     ArtifactManifest,
     LogicalTarget,
-    MAX_TOTAL_BYTES,
 )
-from app.runtime.artifacts.signing import ArtifactSigner, configured_artifact_signer
-from app.runtime.artifacts.storage import ArtifactStorage
 from app.runtime.artifacts.security import (
     ArtifactDownloadTokenError,
     verify_artifact_download_token,
 )
-from app.runtime.models import RuntimeArtifact
 from app.runtime.artifacts.service import ArtifactReleaseService
+from app.runtime.artifacts.signing import ArtifactSigner, configured_artifact_signer
+from app.runtime.artifacts.storage import ArtifactStorage
 from app.runtime.models import (
     ArtifactDeployment,
     ArtifactRelease,
     DeploymentStatus,
+    RuntimeArtifact,
     RuntimeNode,
     RuntimeNodeArtifact,
 )
@@ -86,9 +91,14 @@ class ReleasePublic(BaseModel):
 
 def _public(artifact: RuntimeArtifact) -> ArtifactPublic:
     return ArtifactPublic(
-        id=artifact.id, kind=artifact.kind, logical_target=artifact.logical_target,
-        version=artifact.version, content_sha256=artifact.content_sha256,
-        size=artifact.size, manifest=artifact.manifest, signature=artifact.signature,
+        id=artifact.id,
+        kind=artifact.kind,
+        logical_target=artifact.logical_target,
+        version=artifact.version,
+        content_sha256=artifact.content_sha256,
+        size=artifact.size,
+        manifest=artifact.manifest,
+        signature=artifact.signature,
         signing_public_key=artifact.signing_public_key,
     )
 
@@ -100,6 +110,7 @@ def artifact_storage() -> ArtifactStorage:
         if not settings.ARTIFACT_S3_BUCKET:
             raise RuntimeError("ARTIFACT_S3_BUCKET is required for S3 storage")
         from app.runtime.artifacts.s3_storage import S3ArtifactStorage
+
         return S3ArtifactStorage(
             bucket=settings.ARTIFACT_S3_BUCKET,
             endpoint_url=settings.ARTIFACT_S3_ENDPOINT,
@@ -115,10 +126,14 @@ def artifact_signer() -> ArtifactSigner:
 
 
 def _build_manifest(
-    archive_path: Path, artifact_id: uuid.UUID, version: str,
-    kind: ArtifactKind, logical_target: LogicalTarget,
+    archive_path: Path,
+    artifact_id: uuid.UUID,
+    version: str,
+    kind: ArtifactKind,
+    logical_target: LogicalTarget,
 ) -> ArtifactManifest:
     files: list[ArtifactFile] = []
+    total_size = 0
     try:
         archive = zipfile.ZipFile(archive_path)
     except zipfile.BadZipFile as exc:
@@ -127,6 +142,8 @@ def _build_manifest(
         for info in archive.infolist():
             if info.is_dir():
                 continue
+            if len(files) >= 10_000:
+                raise HTTPException(413, "Artifact file count exceeds limit")
             mode = (info.external_attr >> 16) & 0o170000
             if mode == stat.S_IFLNK:
                 raise HTTPException(422, "Artifact symlink entries are forbidden")
@@ -135,13 +152,18 @@ def _build_manifest(
             with archive.open(info, "r") as source:
                 while chunk := source.read(1024 * 1024):
                     size += len(chunk)
+                    total_size += len(chunk)
                     if size > 100 * 1024 * 1024:
                         raise HTTPException(413, "Artifact file exceeds size limit")
+                    if total_size > MAX_TOTAL_BYTES:
+                        raise HTTPException(413, "Artifact expanded size exceeds limit")
                     digest.update(chunk)
             try:
                 files.append(
                     ArtifactFile(
-                        path=info.filename, sha256=digest.hexdigest(), size=size,
+                        path=info.filename,
+                        sha256=digest.hexdigest(),
+                        size=size,
                         symlink=False,
                     )
                 )
@@ -149,8 +171,11 @@ def _build_manifest(
                 raise HTTPException(422, str(exc)) from exc
     try:
         return ArtifactManifest(
-            artifact_id=str(artifact_id), version=version, kind=kind,
-            logical_target=logical_target, files=files,
+            artifact_id=str(artifact_id),
+            version=version,
+            kind=kind,
+            logical_target=logical_target,
+            files=files,
         )
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
@@ -166,7 +191,9 @@ async def upload_artifact(
     file: UploadFile = File(),
     namespace_id: uuid.UUID = Depends(require_namespace_admin),
 ) -> ArtifactPublic:
-    descriptor, temporary_name = tempfile.mkstemp(prefix="neomua-artifact-", suffix=".zip")
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix="neomua-artifact-", suffix=".zip"
+    )
     temporary = Path(temporary_name)
     digest = hashlib.sha256()
     size = 0
@@ -190,11 +217,18 @@ async def upload_artifact(
         signer = artifact_signer()
         signature = signer.sign(manifest.canonical_bytes())
         artifact = RuntimeArtifact(
-            id=artifact_id, namespace_id=namespace_id, kind=kind,
-            logical_target=logical_target, version=version,
-            content_sha256=content_sha256, storage_key=storage_key, size=size,
-            manifest=manifest.model_dump(mode="json"), signature=signature,
-            signing_public_key=signer.public_key(), created_by=current_user.id,
+            id=artifact_id,
+            namespace_id=namespace_id,
+            kind=kind,
+            logical_target=logical_target,
+            version=version,
+            content_sha256=content_sha256,
+            storage_key=storage_key,
+            size=size,
+            manifest=manifest.model_dump(mode="json"),
+            signature=signature,
+            signing_public_key=signer.public_key(),
+            created_by=current_user.id,
         )
         session.add(artifact)
         try:
@@ -244,14 +278,19 @@ def _public_release(session: SessionDep, release: ArtifactRelease) -> ReleasePub
         .order_by(ArtifactDeployment.node_id, ArtifactDeployment.attempt)
     ).all()
     return ReleasePublic(
-        id=release.id, artifact_id=release.artifact_id,
+        id=release.id,
+        artifact_id=release.artifact_id,
         valid_until=release.valid_until,
         rollback_of_release_id=release.rollback_of_release_id,
         deployments=[
             DeploymentPublic(
-                id=item.id, node_id=item.node_id, artifact_id=item.artifact_id,
+                id=item.id,
+                node_id=item.node_id,
+                artifact_id=item.artifact_id,
                 previous_artifact_id=item.previous_artifact_id,
-                attempt=item.attempt, status=item.status, error=item.error,
+                attempt=item.attempt,
+                status=item.status,
+                error=item.error,
             )
             for item in deployments
         ],
@@ -274,13 +313,15 @@ def create_release(
         select(RuntimeNode).where(RuntimeNode.id.in_(body.node_ids))
     ).all()
     if len(nodes) != len(body.node_ids) or any(
-        node.namespace_id != namespace_id or node.revoked_at is not None for node in nodes
+        node.namespace_id != namespace_id or node.revoked_at is not None
+        for node in nodes
     ):
         raise HTTPException(404, "Active release node not found")
     release = ArtifactRelease(
         namespace_id=namespace_id,
         artifact_id=artifact.id,
-        valid_until=datetime.now(timezone.utc) + timedelta(seconds=body.valid_for_seconds),
+        valid_until=datetime.now(timezone.utc)
+        + timedelta(seconds=body.valid_for_seconds),
         created_by=current_user.id,
     )
     session.add(release)
@@ -294,9 +335,13 @@ def create_release(
         ).first()
         session.add(
             ArtifactDeployment(
-                namespace_id=namespace_id, release_id=release.id,
-                node_id=node.id, artifact_id=artifact.id,
-                previous_artifact_id=installed.current_artifact_id if installed else None,
+                namespace_id=namespace_id,
+                release_id=release.id,
+                node_id=node.id,
+                artifact_id=artifact.id,
+                previous_artifact_id=installed.current_artifact_id
+                if installed
+                else None,
             )
         )
     session.commit()
@@ -316,7 +361,11 @@ def read_release(
     return _public_release(session, release)
 
 
-@router.post("/deployments/{deployment_id}/retry", response_model=DeploymentPublic, status_code=201)
+@router.post(
+    "/deployments/{deployment_id}/retry",
+    response_model=DeploymentPublic,
+    status_code=201,
+)
 def retry_deployment(
     deployment_id: uuid.UUID,
     session: SessionDep,
@@ -330,13 +379,21 @@ def retry_deployment(
         raise HTTPException(409, "Only failed or expired deployments can be retried")
     retried = ArtifactReleaseService(session).retry(deployment)
     return DeploymentPublic(
-        id=retried.id, node_id=retried.node_id, artifact_id=retried.artifact_id,
+        id=retried.id,
+        node_id=retried.node_id,
+        artifact_id=retried.artifact_id,
         previous_artifact_id=retried.previous_artifact_id,
-        attempt=retried.attempt, status=retried.status, error=retried.error,
+        attempt=retried.attempt,
+        status=retried.status,
+        error=retried.error,
     )
 
 
-@router.post("/deployments/{deployment_id}/rollback", response_model=ReleasePublic, status_code=201)
+@router.post(
+    "/deployments/{deployment_id}/rollback",
+    response_model=ReleasePublic,
+    status_code=201,
+)
 def rollback_deployment(
     deployment_id: uuid.UUID,
     session: SessionDep,
@@ -352,7 +409,8 @@ def rollback_deployment(
     ):
         raise HTTPException(409, "Deployment has no applied previous version")
     release = ArtifactRelease(
-        namespace_id=namespace_id, artifact_id=deployment.previous_artifact_id,
+        namespace_id=namespace_id,
+        artifact_id=deployment.previous_artifact_id,
         valid_until=datetime.now(timezone.utc) + timedelta(hours=1),
         rollback_of_release_id=deployment.release_id,
         created_by=current_user.id,
@@ -361,8 +419,10 @@ def rollback_deployment(
     session.flush()
     session.add(
         ArtifactDeployment(
-            namespace_id=namespace_id, release_id=release.id,
-            node_id=deployment.node_id, artifact_id=deployment.previous_artifact_id,
+            namespace_id=namespace_id,
+            release_id=release.id,
+            node_id=deployment.node_id,
+            artifact_id=deployment.previous_artifact_id,
             previous_artifact_id=deployment.artifact_id,
         )
     )
@@ -383,7 +443,8 @@ def download_artifact(
         deployment is None
         or str(deployment.node_id) != claims.get("node_id")
         or str(deployment.artifact_id) != claims.get("artifact_id")
-        or deployment.status not in {DeploymentStatus.PENDING, DeploymentStatus.DISPATCHED}
+        or deployment.status
+        not in {DeploymentStatus.PENDING, DeploymentStatus.DISPATCHED}
     ):
         raise HTTPException(404, "Artifact deployment not available")
     release = session.get(ArtifactRelease, deployment.release_id)

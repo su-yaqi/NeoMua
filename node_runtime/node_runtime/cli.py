@@ -64,6 +64,7 @@ def install(
     IdentityStore(state_dir / "identity.json").save(
         DeviceIdentity(
             node_id=enrolled["node_id"],
+            namespace_id=enrolled["namespace_id"],
             private_key=keypair.private_key,
             credential=enrolled["credential"],
         )
@@ -93,23 +94,30 @@ def run(state_dir: Path = typer.Option(Path("/var/lib/neomua-node"))) -> None:
     identity = identity_store.load()
     spool = EventSpool(state_dir / "events.db")
     interrupted_task_ids = spool.recover_interrupted_dispatches()
+    last_ack, spool_first, spool_last = spool.reconciliation_range()
     route_store = ModelRouteStore(state_dir / "model-routes.json")
     task_controller = NodeTaskController(identity.node_id, spool, route_store)
     installer = ArtifactInstaller(
         {key: Path(value) for key, value in config.artifact_roots.items()},
         identity.node_id,
+        identity.namespace_id or "",
     )
     installer.recover()
     artifact_controller = ArtifactController(
         str(config.platform_url), identity.node_id, installer, state_dir / "downloads"
     )
     connection = NodeConnection(
-        str(config.platform_url), identity,
+        str(config.platform_url),
+        identity,
         ReconcileState(
             config_revision=route_store.revision(),
             interrupted_task_ids=interrupted_task_ids,
+            last_acknowledged_event=last_ack,
+            spool_first_sequence=spool_first,
+            spool_last_sequence=spool_last,
         ),
-        identity_store=identity_store, task_controller=task_controller,
+        identity_store=identity_store,
+        task_controller=task_controller,
         runtime_config_manager=RuntimeConfigManager(route_store),
         artifact_controller=artifact_controller,
     )

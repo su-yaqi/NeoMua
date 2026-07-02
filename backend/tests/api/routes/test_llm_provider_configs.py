@@ -213,6 +213,7 @@ def test_sync_models_for_custom_provider_uses_discovered_and_manual_models(
 
     def fake_get(url: str, headers: dict[str, str] | None = None, timeout: int = 0):
         assert url == "https://llm.example.com/v1/models"
+        assert timeout > 0
         assert headers is not None
         assert headers["Authorization"] == "Bearer sk-custom-secret-2222"
         return FakeResponse()

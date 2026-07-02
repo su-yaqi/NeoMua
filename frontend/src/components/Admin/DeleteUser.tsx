@@ -3,7 +3,7 @@ import { Trash2 } from "lucide-react"
 import { useState } from "react"
 import { useForm } from "react-hook-form"
 
-import { tenantApi } from "@/client/tenantApi"
+import { tenantApi } from "@/api/tenantApi"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,

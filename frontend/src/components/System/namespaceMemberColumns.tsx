@@ -1,6 +1,6 @@
 import type { ColumnDef } from "@tanstack/react-table"
 
-import type { TenantUser } from "@/client/tenantApi"
+import type { TenantUser } from "@/api/tenantApi"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import { NamespaceMemberActionsMenu } from "./NamespaceMemberActionsMenu"
@@ -13,7 +13,9 @@ export function buildNamespaceMemberColumns(
       accessorKey: "full_name",
       header: "姓名",
       cell: ({ row }) => (
-        <span className={cn(!row.original.full_name && "text-muted-foreground")}>
+        <span
+          className={cn(!row.original.full_name && "text-muted-foreground")}
+        >
           {row.original.full_name || "未填写"}
         </span>
       ),
@@ -55,7 +57,10 @@ export function buildNamespaceMemberColumns(
       header: () => <span className="sr-only">Actions</span>,
       cell: ({ row }) => (
         <div className="flex justify-end">
-          <NamespaceMemberActionsMenu namespaceId={namespaceId} user={row.original} />
+          <NamespaceMemberActionsMenu
+            namespaceId={namespaceId}
+            user={row.original}
+          />
         </div>
       ),
     },

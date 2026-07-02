@@ -29,9 +29,7 @@ class ModelRouteStore:
         os.chmod(self.path.parent, 0o700)
         values = self._read()
         values[route.runtime_id] = route.model_dump()
-        temporary = self.path.with_name(
-            f".{self.path.name}.{secrets.token_hex(8)}.tmp"
-        )
+        temporary = self.path.with_name(f".{self.path.name}.{secrets.token_hex(8)}.tmp")
         descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         try:
             with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
@@ -48,9 +46,7 @@ class ModelRouteStore:
         values = self._read()
         values["__config_revision"] = {"value": revision}
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        temporary = self.path.with_name(
-            f".{self.path.name}.{secrets.token_hex(8)}.tmp"
-        )
+        temporary = self.path.with_name(f".{self.path.name}.{secrets.token_hex(8)}.tmp")
         descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         try:
             with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
@@ -80,7 +76,6 @@ def build_route_env(
         return {
             "ANTHROPIC_BASE_URL": str(route["base_url"]),
             "ANTHROPIC_API_KEY": str(route["api_key"]),
-            "ANTHROPIC_CUSTOM_HEADERS": f"X-Runtime-ID: {route['runtime_id']}",
         }
     if route.get("mode") != "direct_anthropic":
         raise ValueError("unsupported model route")

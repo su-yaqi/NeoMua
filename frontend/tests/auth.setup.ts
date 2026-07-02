@@ -7,16 +7,19 @@ setup("authenticate", async ({ page, request }) => {
   const email = randomEmail()
   const password = randomPassword()
 
-  const createResponse = await request.post("http://127.0.0.1:8000/api/v1/private/users/", {
-    data: {
-      email,
-      password,
-      full_name: "Playwright Admin",
-      is_verified: true,
-      is_superuser: true,
-      is_active: true,
+  const createResponse = await request.post(
+    "http://127.0.0.1:8000/api/v1/private/users/",
+    {
+      data: {
+        email,
+        password,
+        full_name: "Playwright Admin",
+        is_verified: true,
+        is_superuser: true,
+        is_active: true,
+      },
     },
-  })
+  )
 
   if (!createResponse.ok()) {
     throw new Error(
@@ -24,21 +27,28 @@ setup("authenticate", async ({ page, request }) => {
     )
   }
 
-  const response = await request.post("http://127.0.0.1:8000/api/v1/login/access-token", {
-    form: {
-      username: email,
-      password,
+  const response = await request.post(
+    "http://127.0.0.1:8000/api/v1/login/access-token",
+    {
+      form: {
+        username: email,
+        password,
+      },
     },
-  })
+  )
   const responseText = await response.text()
 
   if (!response.ok()) {
-    throw new Error(`Authentication failed: ${response.status()} ${responseText}`)
+    throw new Error(
+      `Authentication failed: ${response.status()} ${responseText}`,
+    )
   }
 
   const body = JSON.parse(responseText) as { access_token?: string }
   if (!body.access_token) {
-    throw new Error(`Authentication response missing access_token: ${responseText}`)
+    throw new Error(
+      `Authentication response missing access_token: ${responseText}`,
+    )
   }
 
   await page.goto("/login")

@@ -7,8 +7,8 @@ from sqlalchemy import JSON, Column, DateTime, Index, UniqueConstraint, text
 from sqlalchemy import Enum as SAEnum
 from sqlmodel import Field, SQLModel
 
-from app.runtime.policy import TaskKind, TaskStatus
 from app.runtime.artifacts.manifest import ArtifactKind, LogicalTarget
+from app.runtime.policy import TaskKind, TaskStatus
 
 
 def utcnow() -> datetime:
@@ -47,23 +47,52 @@ class RuntimeProfile(SQLModel, table=True):
         ),
     )
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    namespace_id: uuid.UUID = Field(foreign_key="namespace.id", nullable=False, ondelete="CASCADE")
-    runtime_type: RuntimeType = Field(sa_type=SAEnum(RuntimeType, name="runtimetype", values_callable=lambda v: [x.value for x in v]))
-    route_mode: RuntimeRouteMode = Field(sa_type=SAEnum(RuntimeRouteMode, name="runtimeroutemode", values_callable=lambda v: [x.value for x in v]))
-    provider_config_id: uuid.UUID | None = Field(default=None, foreign_key="llm_provider_config.id", ondelete="SET NULL")
+    namespace_id: uuid.UUID = Field(
+        foreign_key="namespace.id", nullable=False, ondelete="CASCADE"
+    )
+    runtime_type: RuntimeType = Field(
+        sa_type=SAEnum(
+            RuntimeType,
+            name="runtimetype",
+            values_callable=lambda v: [x.value for x in v],
+        )
+    )
+    route_mode: RuntimeRouteMode = Field(
+        sa_type=SAEnum(
+            RuntimeRouteMode,
+            name="runtimeroutemode",
+            values_callable=lambda v: [x.value for x in v],
+        )
+    )
+    provider_config_id: uuid.UUID | None = Field(
+        default=None, foreign_key="llm_provider_config.id", ondelete="SET NULL"
+    )
     model_id: str = Field(max_length=255)
     base_url: str | None = Field(default=None, max_length=1024)
     permission_mode: str = Field(default="default", max_length=64)
-    config: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
-    created_at: datetime = Field(default_factory=utcnow, sa_type=DateTime(timezone=True))
-    updated_at: datetime = Field(default_factory=utcnow, sa_type=DateTime(timezone=True))
+    config: dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(JSON, nullable=False)
+    )
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+    updated_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
 
 
 class RuntimeSecret(SQLModel, table=True):
     __tablename__ = "runtime_secret"
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    namespace_id: uuid.UUID = Field(foreign_key="namespace.id", nullable=False, ondelete="CASCADE")
-    runtime_profile_id: uuid.UUID = Field(foreign_key="runtime_profile.id", nullable=False, ondelete="CASCADE", unique=True)
+    namespace_id: uuid.UUID = Field(
+        foreign_key="namespace.id", nullable=False, ondelete="CASCADE"
+    )
+    runtime_profile_id: uuid.UUID = Field(
+        foreign_key="runtime_profile.id",
+        nullable=False,
+        ondelete="CASCADE",
+        unique=True,
+    )
     secret_ciphertext: str
     secret_masked: str | None = Field(default=None, max_length=255)
 
@@ -71,56 +100,113 @@ class RuntimeSecret(SQLModel, table=True):
 class AgentSession(SQLModel, table=True):
     __tablename__ = "agent_session"
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    namespace_id: uuid.UUID = Field(foreign_key="namespace.id", nullable=False, ondelete="CASCADE")
-    runtime_profile_id: uuid.UUID = Field(foreign_key="runtime_profile.id", nullable=False, ondelete="CASCADE")
+    namespace_id: uuid.UUID = Field(
+        foreign_key="namespace.id", nullable=False, ondelete="CASCADE"
+    )
+    runtime_profile_id: uuid.UUID = Field(
+        foreign_key="runtime_profile.id", nullable=False, ondelete="CASCADE"
+    )
     sdk_session_id: str | None = Field(default=None, max_length=255)
-    created_by: uuid.UUID | None = Field(default=None, foreign_key="user.id", ondelete="SET NULL")
-    created_at: datetime = Field(default_factory=utcnow, sa_type=DateTime(timezone=True))
+    created_by: uuid.UUID | None = Field(
+        default=None, foreign_key="user.id", ondelete="SET NULL"
+    )
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
 
 
 class AgentTask(SQLModel, table=True):
     __tablename__ = "agent_task"
     __table_args__ = (
         UniqueConstraint(
-            "namespace_id", "idempotency_key", name="uq_agent_task_namespace_idempotency"
+            "namespace_id",
+            "idempotency_key",
+            name="uq_agent_task_namespace_idempotency",
         ),
     )
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    namespace_id: uuid.UUID = Field(foreign_key="namespace.id", nullable=False, ondelete="CASCADE")
-    session_id: uuid.UUID | None = Field(default=None, foreign_key="agent_session.id", ondelete="SET NULL")
-    runtime_profile_id: uuid.UUID = Field(foreign_key="runtime_profile.id", nullable=False, ondelete="CASCADE")
+    namespace_id: uuid.UUID = Field(
+        foreign_key="namespace.id", nullable=False, ondelete="CASCADE"
+    )
+    session_id: uuid.UUID | None = Field(
+        default=None, foreign_key="agent_session.id", ondelete="SET NULL"
+    )
+    runtime_profile_id: uuid.UUID = Field(
+        foreign_key="runtime_profile.id", nullable=False, ondelete="CASCADE"
+    )
     target_node_id: uuid.UUID | None = Field(
         default=None, foreign_key="runtime_node.id", ondelete="SET NULL", index=True
     )
     task_kind: TaskKind = Field(
         default=TaskKind.ORDINARY,
-        sa_type=SAEnum(TaskKind, name="agenttaskkind", values_callable=lambda v: [x.value for x in v]),
+        sa_type=SAEnum(
+            TaskKind,
+            name="agenttaskkind",
+            values_callable=lambda v: [x.value for x in v],
+        ),
     )
-    status: TaskStatus = Field(default=TaskStatus.QUEUED, sa_type=SAEnum(TaskStatus, name="agenttaskstatus", values_callable=lambda v: [x.value for x in v]))
+    status: TaskStatus = Field(
+        default=TaskStatus.QUEUED,
+        sa_type=SAEnum(
+            TaskStatus,
+            name="agenttaskstatus",
+            values_callable=lambda v: [x.value for x in v],
+        ),
+    )
     prompt: str
-    snapshot: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
-    final_result: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON, nullable=True))
+    snapshot: dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(JSON, nullable=False)
+    )
+    final_result: dict[str, Any] | None = Field(
+        default=None, sa_column=Column(JSON, nullable=True)
+    )
     revision: int = 1
     claimed_by: str | None = Field(default=None, max_length=255)
-    lease_expires_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
-    retry_of_task_id: uuid.UUID | None = Field(default=None, foreign_key="agent_task.id", ondelete="SET NULL")
+    lease_expires_at: datetime | None = Field(
+        default=None, sa_type=DateTime(timezone=True)
+    )
+    retry_of_task_id: uuid.UUID | None = Field(
+        default=None, foreign_key="agent_task.id", ondelete="SET NULL"
+    )
     idempotency_key: str | None = Field(default=None, max_length=255)
-    created_by: uuid.UUID | None = Field(default=None, foreign_key="user.id", ondelete="SET NULL")
-    created_at: datetime = Field(default_factory=utcnow, sa_type=DateTime(timezone=True))
-    updated_at: datetime = Field(default_factory=utcnow, sa_type=DateTime(timezone=True))
+    created_by: uuid.UUID | None = Field(
+        default=None, foreign_key="user.id", ondelete="SET NULL"
+    )
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+    updated_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
     completed_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
 
 
 class AgentEvent(SQLModel, table=True):
     __tablename__ = "agent_event"
-    __table_args__ = (UniqueConstraint("task_id", "sequence", name="uq_agent_event_task_sequence"),)
+    __table_args__ = (
+        UniqueConstraint("task_id", "sequence", name="uq_agent_event_task_sequence"),
+    )
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    namespace_id: uuid.UUID = Field(foreign_key="namespace.id", nullable=False, ondelete="CASCADE")
-    task_id: uuid.UUID = Field(foreign_key="agent_task.id", nullable=False, ondelete="CASCADE")
+    namespace_id: uuid.UUID = Field(
+        foreign_key="namespace.id", nullable=False, ondelete="CASCADE"
+    )
+    task_id: uuid.UUID = Field(
+        foreign_key="agent_task.id", nullable=False, ondelete="CASCADE"
+    )
     sequence: int
-    event_type: AgentEventType = Field(sa_type=SAEnum(AgentEventType, name="agenteventtype", values_callable=lambda v: [x.value for x in v]))
-    payload: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
-    created_at: datetime = Field(default_factory=utcnow, sa_type=DateTime(timezone=True))
+    event_type: AgentEventType = Field(
+        sa_type=SAEnum(
+            AgentEventType,
+            name="agenteventtype",
+            values_callable=lambda v: [x.value for x in v],
+        )
+    )
+    payload: dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(JSON, nullable=False)
+    )
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
 
 
 class RuntimeNode(SQLModel, table=True):
@@ -145,7 +231,9 @@ class RuntimeNode(SQLModel, table=True):
     connection_id: uuid.UUID | None = Field(default=None, index=True)
     config_revision: int = 1
     revoked_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
-    created_at: datetime = Field(default_factory=utcnow, sa_type=DateTime(timezone=True))
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
 
 
 class NodeEnrollmentToken(SQLModel, table=True):
@@ -161,7 +249,9 @@ class NodeEnrollmentToken(SQLModel, table=True):
     created_by: uuid.UUID | None = Field(
         default=None, foreign_key="user.id", ondelete="SET NULL"
     )
-    created_at: datetime = Field(default_factory=utcnow, sa_type=DateTime(timezone=True))
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
 
 
 class NodeCredential(SQLModel, table=True):
@@ -194,7 +284,10 @@ class RuntimeArtifact(SQLModel, table=True):
     __tablename__ = "runtime_artifact"
     __table_args__ = (
         UniqueConstraint(
-            "namespace_id", "kind", "logical_target", "version",
+            "namespace_id",
+            "kind",
+            "logical_target",
+            "version",
             name="uq_runtime_artifact_namespace_version",
         ),
     )
@@ -203,22 +296,34 @@ class RuntimeArtifact(SQLModel, table=True):
         foreign_key="namespace.id", nullable=False, ondelete="CASCADE", index=True
     )
     kind: ArtifactKind = Field(
-        sa_type=SAEnum(ArtifactKind, name="artifactkind", values_callable=lambda v: [x.value for x in v])
+        sa_type=SAEnum(
+            ArtifactKind,
+            name="artifactkind",
+            values_callable=lambda v: [x.value for x in v],
+        )
     )
     logical_target: LogicalTarget = Field(
-        sa_type=SAEnum(LogicalTarget, name="logicaltarget", values_callable=lambda v: [x.value for x in v])
+        sa_type=SAEnum(
+            LogicalTarget,
+            name="logicaltarget",
+            values_callable=lambda v: [x.value for x in v],
+        )
     )
     version: str = Field(max_length=128)
     content_sha256: str = Field(max_length=64, index=True)
     storage_key: str = Field(max_length=1024)
     size: int
-    manifest: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
+    manifest: dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(JSON, nullable=False)
+    )
     signature: str
     signing_public_key: str
     created_by: uuid.UUID | None = Field(
         default=None, foreign_key="user.id", ondelete="SET NULL"
     )
-    created_at: datetime = Field(default_factory=utcnow, sa_type=DateTime(timezone=True))
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
 
 
 class ArtifactRelease(SQLModel, table=True):
@@ -237,7 +342,9 @@ class ArtifactRelease(SQLModel, table=True):
     created_by: uuid.UUID | None = Field(
         default=None, foreign_key="user.id", ondelete="SET NULL"
     )
-    created_at: datetime = Field(default_factory=utcnow, sa_type=DateTime(timezone=True))
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
 
 
 class ArtifactDeployment(SQLModel, table=True):
@@ -252,7 +359,10 @@ class ArtifactDeployment(SQLModel, table=True):
         foreign_key="namespace.id", nullable=False, ondelete="CASCADE", index=True
     )
     release_id: uuid.UUID = Field(
-        foreign_key="artifact_release.id", nullable=False, ondelete="CASCADE", index=True
+        foreign_key="artifact_release.id",
+        nullable=False,
+        ondelete="CASCADE",
+        index=True,
     )
     node_id: uuid.UUID = Field(
         foreign_key="runtime_node.id", nullable=False, ondelete="CASCADE", index=True
@@ -266,12 +376,22 @@ class ArtifactDeployment(SQLModel, table=True):
     attempt: int = 1
     status: DeploymentStatus = Field(
         default=DeploymentStatus.PENDING,
-        sa_type=SAEnum(DeploymentStatus, name="deploymentstatus", values_callable=lambda v: [x.value for x in v]),
+        sa_type=SAEnum(
+            DeploymentStatus,
+            name="deploymentstatus",
+            values_callable=lambda v: [x.value for x in v],
+        ),
     )
-    error: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON, nullable=True))
-    dispatched_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    error: dict[str, Any] | None = Field(
+        default=None, sa_column=Column(JSON, nullable=True)
+    )
+    dispatched_at: datetime | None = Field(
+        default=None, sa_type=DateTime(timezone=True)
+    )
     applied_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
-    created_at: datetime = Field(default_factory=utcnow, sa_type=DateTime(timezone=True))
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
 
 
 class RuntimeNodeArtifact(SQLModel, table=True):
@@ -284,7 +404,11 @@ class RuntimeNodeArtifact(SQLModel, table=True):
         foreign_key="runtime_node.id", nullable=False, ondelete="CASCADE", index=True
     )
     logical_target: LogicalTarget = Field(
-        sa_type=SAEnum(LogicalTarget, name="logicaltarget", values_callable=lambda v: [x.value for x in v])
+        sa_type=SAEnum(
+            LogicalTarget,
+            name="logicaltarget",
+            values_callable=lambda v: [x.value for x in v],
+        )
     )
     current_artifact_id: uuid.UUID | None = Field(
         default=None, foreign_key="runtime_artifact.id", ondelete="SET NULL"
@@ -292,4 +416,19 @@ class RuntimeNodeArtifact(SQLModel, table=True):
     previous_artifact_id: uuid.UUID | None = Field(
         default=None, foreign_key="runtime_artifact.id", ondelete="SET NULL"
     )
-    updated_at: datetime = Field(default_factory=utcnow, sa_type=DateTime(timezone=True))
+    updated_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+
+
+class NodeHandshakeNonce(SQLModel, table=True):
+    __tablename__ = "node_handshake_nonce"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    node_id: uuid.UUID = Field(
+        foreign_key="runtime_node.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    nonce_hash: str = Field(max_length=64, unique=True, index=True)
+    expires_at: datetime = Field(sa_type=DateTime(timezone=True), index=True)
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )

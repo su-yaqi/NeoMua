@@ -35,16 +35,17 @@ def test_get_users_normal_user_me(
     assert current_user["email"] == settings.EMAIL_TEST_USER
 
 
-def test_get_user_me_includes_namespace_roles(
-    client: TestClient, db: Session
-) -> None:
+def test_get_user_me_includes_namespace_roles(client: TestClient, db: Session) -> None:
     user = create_random_user(db)
     namespace = create_namespace(db)
     crud.ensure_namespace_membership(
-        session=db, user_id=user.id, namespace_id=namespace.id,
+        session=db,
+        user_id=user.id,
+        namespace_id=namespace.id,
         role=NamespaceRole.DEVELOPER,
     )
     from tests.utils.user import authentication_token_from_email
+
     headers = authentication_token_from_email(client=client, email=user.email, db=db)
     response = client.get(f"{settings.API_V1_STR}/users/me", headers=headers)
     assert response.status_code == 200

@@ -1,16 +1,17 @@
-import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { z } from "zod"
 import { Plus, RefreshCw, ShieldCheck } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { z } from "zod"
 
 import {
   type LlmProviderCatalogItem,
   type LlmProviderConfig,
   type LlmProviderModel,
   tenantApi,
-} from "@/client/tenantApi"
+} from "@/api/tenantApi"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
@@ -30,7 +31,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Checkbox } from "@/components/ui/checkbox"
 import useCustomToast from "@/hooks/useCustomToast"
 import { handleError } from "@/utils"
 
@@ -81,7 +81,9 @@ function ProviderConfigDialog({
   const [enabled, setEnabled] = useState(config?.enabled ?? true)
   const [secretInputs, setSecretInputs] = useState<Record<string, string>>({})
   const [extraConfig, setExtraConfig] = useState<Record<string, string>>({})
-  const [models, setModels] = useState<EditableModel[]>(normalizeModels(config?.models))
+  const [models, setModels] = useState<EditableModel[]>(
+    normalizeModels(config?.models),
+  )
   const [manualModelId, setManualModelId] = useState("")
   const [manualModelName, setManualModelName] = useState("")
   const [workingConfig, setWorkingConfig] = useState<LlmProviderConfig | null>(
@@ -141,7 +143,9 @@ function ProviderConfigDialog({
         .filter((item) => item.is_enabled)
         .map((item) => item.model_id)
       const sanitizedSecretInputs = Object.fromEntries(
-        Object.entries(secretInputs).filter(([, value]) => value.trim().length > 0),
+        Object.entries(secretInputs).filter(
+          ([, value]) => value.trim().length > 0,
+        ),
       )
 
       if (workingConfig) {
@@ -232,7 +236,9 @@ function ProviderConfigDialog({
       return
     }
     setModels((current) => {
-      const rest = current.filter((item) => item.model_id !== manualModelId.trim())
+      const rest = current.filter(
+        (item) => item.model_id !== manualModelId.trim(),
+      )
       const nextModels: EditableModel[] = [
         ...rest,
         {
@@ -243,7 +249,9 @@ function ProviderConfigDialog({
           sync_status: "active",
         },
       ]
-      return nextModels.sort((left, right) => left.model_id.localeCompare(right.model_id))
+      return nextModels.sort((left, right) =>
+        left.model_id.localeCompare(right.model_id),
+      )
     })
     setManualModelId("")
     setManualModelName("")
@@ -279,7 +287,9 @@ function ProviderConfigDialog({
       {trigger}
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
         <DialogHeader>
-          <DialogTitle>{workingConfig ? "编辑大模型接入配置" : "新增大模型接入配置"}</DialogTitle>
+          <DialogTitle>
+            {workingConfig ? "编辑大模型接入配置" : "新增大模型接入配置"}
+          </DialogTitle>
           <DialogDescription>
             维护当前空间的大模型供应商接入参数、密钥和可用模型。
           </DialogDescription>
@@ -300,7 +310,11 @@ function ProviderConfigDialog({
             <div className="grid gap-2">
               <Label htmlFor="provider-slug">供应商</Label>
               {workingConfig ? (
-                <Input id="provider-slug" value={workingConfig.provider_display_name} disabled />
+                <Input
+                  id="provider-slug"
+                  value={workingConfig.provider_display_name}
+                  disabled
+                />
               ) : (
                 <Select value={providerSlug} onValueChange={setProviderSlug}>
                   <SelectTrigger id="provider-slug">
@@ -308,7 +322,10 @@ function ProviderConfigDialog({
                   </SelectTrigger>
                   <SelectContent>
                     {catalog.map((item) => (
-                      <SelectItem key={item.provider_slug} value={item.provider_slug}>
+                      <SelectItem
+                        key={item.provider_slug}
+                        value={item.provider_slug}
+                      >
                         {item.display_name}
                       </SelectItem>
                     ))}
@@ -327,7 +344,9 @@ function ProviderConfigDialog({
                 placeholder="https://api.example.com/v1"
               />
               {selectedProvider?.description ? (
-                <p className="text-sm text-muted-foreground">{selectedProvider.description}</p>
+                <p className="text-sm text-muted-foreground">
+                  {selectedProvider.description}
+                </p>
               ) : null}
             </div>
           </div>
@@ -353,11 +372,13 @@ function ProviderConfigDialog({
                     placeholder={
                       workingConfig?.secret_masked
                         ? `${workingConfig.secret_masked}（留空则保持不变）`
-                        : field.placeholder ?? undefined
+                        : (field.placeholder ?? undefined)
                     }
                   />
                   {field.help_text ? (
-                    <p className="text-sm text-muted-foreground">{field.help_text}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {field.help_text}
+                    </p>
                   ) : null}
                 </div>
               ))}
@@ -393,7 +414,8 @@ function ProviderConfigDialog({
             <Label htmlFor="config-enabled">启用该配置</Label>
             {workingConfig ? (
               <Badge variant="outline">
-                {statusLabel[workingConfig.validation_status] ?? workingConfig.validation_status}
+                {statusLabel[workingConfig.validation_status] ??
+                  workingConfig.validation_status}
               </Badge>
             ) : null}
           </div>
@@ -439,7 +461,11 @@ function ProviderConfigDialog({
                 onChange={(event) => setManualModelName(event.target.value)}
                 placeholder="手工模型展示名（可选）"
               />
-              <Button type="button" variant="secondary" onClick={addManualModel}>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={addManualModel}
+              >
                 添加手工模型
               </Button>
             </div>
@@ -457,7 +483,9 @@ function ProviderConfigDialog({
                   >
                     <div className="space-y-1">
                       <div className="font-medium">{item.display_name}</div>
-                      <div className="text-sm text-muted-foreground">{item.model_id}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {item.model_id}
+                      </div>
                       <div className="flex gap-2">
                         <Badge variant="outline">
                           {item.source_type === "manual" ? "手工" : "自动发现"}
@@ -496,7 +524,8 @@ function ProviderConfigDialog({
 
         <DialogFooter className="gap-2 sm:justify-between">
           <div className="text-sm text-muted-foreground">
-            {workingConfig?.validation_message ?? "保存后可继续执行校验和模型同步。"}
+            {workingConfig?.validation_message ??
+              "保存后可继续执行校验和模型同步。"}
           </div>
           <div className="flex gap-2">
             <Button

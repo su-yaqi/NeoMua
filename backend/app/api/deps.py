@@ -93,7 +93,9 @@ def require_namespace_admin(
         namespace_id=current_namespace_id,
     )
     if role != NamespaceRole.ADMIN:
-        raise HTTPException(status_code=403, detail="Namespace admin privilege required")
+        raise HTTPException(
+            status_code=403, detail="Namespace admin privilege required"
+        )
     return current_namespace_id
 
 
@@ -114,5 +116,7 @@ def require_namespace_runtime_user(
         session=session, user_id=current_user.id, namespace_id=current_namespace_id
     )
     if role not in {NamespaceRole.ADMIN, NamespaceRole.DEVELOPER}:
-        raise HTTPException(status_code=403, detail="Runtime access requires admin or developer")
+        raise HTTPException(
+            status_code=403, detail="Runtime access requires admin or developer"
+        )
     return current_namespace_id

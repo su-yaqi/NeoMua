@@ -1,8 +1,13 @@
 import { useQuery } from "@tanstack/react-query"
-import { Outlet, createFileRoute, useLocation, useNavigate } from "@tanstack/react-router"
+import {
+  createFileRoute,
+  Outlet,
+  useLocation,
+  useNavigate,
+} from "@tanstack/react-router"
 import { useEffect } from "react"
 
-import { tenantApi } from "@/client/tenantApi"
+import { tenantApi } from "@/api/tenantApi"
 import { DataTable } from "@/components/Common/DataTable"
 import AddSystemNamespace from "@/components/System/AddSystemNamespace"
 import { columns } from "@/components/System/columns"

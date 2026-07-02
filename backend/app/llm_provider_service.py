@@ -15,10 +15,10 @@ from app.models import (
     LlmProviderCatalogField,
     LlmProviderCatalogItem,
     LlmProviderConfig,
+    LlmProviderConfigPublic,
     LlmProviderModel,
     LlmProviderModelInput,
     LlmProviderModelPublic,
-    LlmProviderConfigPublic,
     ProviderAuthType,
     ProviderModelSourceType,
     ProviderModelSyncStatus,
@@ -78,39 +78,304 @@ def _extra_field(
 
 
 PROVIDER_DEFINITIONS: tuple[ProviderDefinition, ...] = (
-    ProviderDefinition("alibaba", "Alibaba Cloud / DashScope", ProviderAuthType.API_KEY, "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", supports_health_check=True, supports_model_discovery=True, secret_fields=[_secret_field("api_token", "API Token")]),
-    ProviderDefinition("alibaba-coding-plan", "Alibaba Cloud (Coding Plan)", ProviderAuthType.API_KEY, "https://coding-intl.dashscope.aliyuncs.com/v1", supports_health_check=True, supports_model_discovery=True, secret_fields=[_secret_field("api_token", "API Token")]),
-    ProviderDefinition("anthropic", "Anthropic", ProviderAuthType.API_KEY, "https://api.anthropic.com", supports_health_check=True, supports_model_discovery=True, secret_fields=[_secret_field("api_token", "API Key")], models_url="https://api.anthropic.com/v1/models", auth_header_kind="x-api-key", extra_headers={"anthropic-version": "2023-06-01"}),
-    ProviderDefinition("arcee", "Arcee AI", ProviderAuthType.API_KEY, "https://api.arcee.ai/api/v1", supports_health_check=True, supports_model_discovery=True, secret_fields=[_secret_field("api_token", "API Token")]),
-    ProviderDefinition("azure-foundry", "Azure Foundry", ProviderAuthType.API_KEY, "", description="Azure AI Foundry custom endpoint", supports_health_check=True, supports_model_discovery=True, base_url_editable=True, secret_fields=[_secret_field("api_token", "API Token")]),
-    ProviderDefinition("bedrock", "AWS Bedrock", ProviderAuthType.AWS_SDK, "https://bedrock-runtime.us-east-1.amazonaws.com", base_url_editable=True, secret_fields=[_secret_field("aws_access_key_id", "AWS Access Key ID"), _secret_field("aws_secret_access_key", "AWS Secret Access Key"), _secret_field("aws_session_token", "AWS Session Token", required=False)], extra_fields=[_extra_field("region", "AWS Region", placeholder="us-east-1")]),
-    ProviderDefinition("copilot", "GitHub Copilot / GitHub Models", ProviderAuthType.COPILOT_TOKEN, "https://api.githubcopilot.com", secret_fields=[_secret_field("api_token", "GitHub Token")]),
-    ProviderDefinition("copilot-acp", "GitHub Copilot ACP", ProviderAuthType.EXTERNAL_PROCESS, "acp://copilot"),
-    ProviderDefinition("custom", "Custom / Local OpenAI-compatible", ProviderAuthType.CUSTOM, "", description="任意 OpenAI-compatible endpoint", supports_health_check=True, supports_model_discovery=True, base_url_editable=True, secret_fields=[_secret_field("api_token", "API Token", required=False)]),
-    ProviderDefinition("deepseek", "DeepSeek", ProviderAuthType.API_KEY, "https://api.deepseek.com/v1", supports_health_check=True, supports_model_discovery=True, secret_fields=[_secret_field("api_token", "API Token")]),
-    ProviderDefinition("gemini", "Gemini", ProviderAuthType.API_KEY, "https://generativelanguage.googleapis.com/v1beta", secret_fields=[_secret_field("api_token", "API Token")]),
-    ProviderDefinition("google-gemini-cli", "Gemini CLI / Cloud Code", ProviderAuthType.OAUTH_EXTERNAL, "cloudcode-pa://google", secret_fields=[_secret_field("access_token", "Access Token", required=False), _secret_field("refresh_token", "Refresh Token", required=False)]),
-    ProviderDefinition("gmi", "GMI Cloud", ProviderAuthType.API_KEY, "https://api.gmi-serving.com/v1", supports_health_check=True, supports_model_discovery=True, secret_fields=[_secret_field("api_token", "API Token")]),
-    ProviderDefinition("huggingface", "Hugging Face", ProviderAuthType.API_KEY, "https://router.huggingface.co/v1", supports_health_check=True, supports_model_discovery=True, secret_fields=[_secret_field("api_token", "HF Token")]),
-    ProviderDefinition("kilocode", "Kilo Code", ProviderAuthType.API_KEY, "https://api.kilo.ai/api/gateway", supports_health_check=True, supports_model_discovery=True, secret_fields=[_secret_field("api_token", "API Token")], models_url="https://api.kilo.ai/api/gateway/models"),
-    ProviderDefinition("kimi-coding", "Kimi / Moonshot", ProviderAuthType.API_KEY, "https://api.moonshot.ai/v1", supports_health_check=True, supports_model_discovery=True, secret_fields=[_secret_field("api_token", "API Token")]),
-    ProviderDefinition("kimi-coding-cn", "Kimi / Moonshot (China)", ProviderAuthType.API_KEY, "https://api.moonshot.cn/v1", supports_health_check=True, supports_model_discovery=True, secret_fields=[_secret_field("api_token", "API Token")]),
-    ProviderDefinition("minimax", "MiniMax", ProviderAuthType.API_KEY, "https://api.minimax.io/anthropic", supports_health_check=True, supports_model_discovery=True, secret_fields=[_secret_field("api_token", "API Token")], models_url="https://api.minimax.io/v1/models"),
-    ProviderDefinition("minimax-cn", "MiniMax (China)", ProviderAuthType.API_KEY, "https://api.minimaxi.com/anthropic", secret_fields=[_secret_field("api_token", "API Token")], models_url="https://api.minimaxi.com/v1/models"),
-    ProviderDefinition("minimax-oauth", "MiniMax (OAuth)", ProviderAuthType.OAUTH_EXTERNAL, "https://api.minimax.io/anthropic", secret_fields=[_secret_field("access_token", "Access Token", required=False), _secret_field("refresh_token", "Refresh Token", required=False)]),
-    ProviderDefinition("nous", "Nous Research", ProviderAuthType.OAUTH_DEVICE_CODE, "https://inference.nousresearch.com/v1", secret_fields=[_secret_field("access_token", "Access Token", required=False)]),
-    ProviderDefinition("novita", "NovitaAI", ProviderAuthType.API_KEY, "https://api.novita.ai/openai/v1", supports_health_check=True, supports_model_discovery=True, secret_fields=[_secret_field("api_token", "API Token")]),
-    ProviderDefinition("nvidia", "NVIDIA NIM", ProviderAuthType.API_KEY, "https://integrate.api.nvidia.com/v1", supports_health_check=True, supports_model_discovery=True, secret_fields=[_secret_field("api_token", "API Token")]),
-    ProviderDefinition("ollama-cloud", "Ollama Cloud", ProviderAuthType.API_KEY, "https://ollama.com/v1", supports_health_check=True, supports_model_discovery=True, secret_fields=[_secret_field("api_token", "API Token")]),
-    ProviderDefinition("openai-codex", "OpenAI Codex", ProviderAuthType.OAUTH_EXTERNAL, "https://chatgpt.com/backend-api/codex", secret_fields=[_secret_field("access_token", "Access Token", required=False)]),
-    ProviderDefinition("opencode-zen", "OpenCode Zen", ProviderAuthType.API_KEY, "https://opencode.ai/zen/v1", supports_health_check=True, supports_model_discovery=True, secret_fields=[_secret_field("api_token", "API Token")]),
-    ProviderDefinition("opencode-go", "OpenCode Go", ProviderAuthType.API_KEY, "https://opencode.ai/zen/go/v1", supports_health_check=True, supports_model_discovery=True, secret_fields=[_secret_field("api_token", "API Token")]),
-    ProviderDefinition("openrouter", "OpenRouter", ProviderAuthType.API_KEY, "https://openrouter.ai/api/v1", supports_health_check=True, supports_model_discovery=True, secret_fields=[_secret_field("api_token", "API Token")], models_url="https://openrouter.ai/api/v1/models", auth_header_kind="none"),
-    ProviderDefinition("qwen-oauth", "Qwen Portal", ProviderAuthType.OAUTH_EXTERNAL, "https://portal.qwen.ai/v1", secret_fields=[_secret_field("access_token", "Access Token", required=False)]),
-    ProviderDefinition("stepfun", "StepFun", ProviderAuthType.API_KEY, "https://api.stepfun.ai/step_plan/v1", supports_health_check=True, supports_model_discovery=True, secret_fields=[_secret_field("api_token", "API Token")]),
-    ProviderDefinition("xai", "xAI / Grok", ProviderAuthType.API_KEY, "https://api.x.ai/v1", supports_health_check=True, supports_model_discovery=True, secret_fields=[_secret_field("api_token", "API Token")]),
-    ProviderDefinition("xiaomi", "Xiaomi MiMo", ProviderAuthType.API_KEY, "https://api.xiaomimimo.com/v1", secret_fields=[_secret_field("api_token", "API Token")]),
-    ProviderDefinition("zai", "Z.AI (GLM)", ProviderAuthType.API_KEY, "https://api.z.ai/api/paas/v4", supports_health_check=True, supports_model_discovery=True, secret_fields=[_secret_field("api_token", "API Token")]),
+    ProviderDefinition(
+        "alibaba",
+        "Alibaba Cloud / DashScope",
+        ProviderAuthType.API_KEY,
+        "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+        supports_health_check=True,
+        supports_model_discovery=True,
+        secret_fields=[_secret_field("api_token", "API Token")],
+    ),
+    ProviderDefinition(
+        "alibaba-coding-plan",
+        "Alibaba Cloud (Coding Plan)",
+        ProviderAuthType.API_KEY,
+        "https://coding-intl.dashscope.aliyuncs.com/v1",
+        supports_health_check=True,
+        supports_model_discovery=True,
+        secret_fields=[_secret_field("api_token", "API Token")],
+    ),
+    ProviderDefinition(
+        "anthropic",
+        "Anthropic",
+        ProviderAuthType.API_KEY,
+        "https://api.anthropic.com",
+        supports_health_check=True,
+        supports_model_discovery=True,
+        secret_fields=[_secret_field("api_token", "API Key")],
+        models_url="https://api.anthropic.com/v1/models",
+        auth_header_kind="x-api-key",
+        extra_headers={"anthropic-version": "2023-06-01"},
+    ),
+    ProviderDefinition(
+        "arcee",
+        "Arcee AI",
+        ProviderAuthType.API_KEY,
+        "https://api.arcee.ai/api/v1",
+        supports_health_check=True,
+        supports_model_discovery=True,
+        secret_fields=[_secret_field("api_token", "API Token")],
+    ),
+    ProviderDefinition(
+        "azure-foundry",
+        "Azure Foundry",
+        ProviderAuthType.API_KEY,
+        "",
+        description="Azure AI Foundry custom endpoint",
+        supports_health_check=True,
+        supports_model_discovery=True,
+        base_url_editable=True,
+        secret_fields=[_secret_field("api_token", "API Token")],
+    ),
+    ProviderDefinition(
+        "bedrock",
+        "AWS Bedrock",
+        ProviderAuthType.AWS_SDK,
+        "https://bedrock-runtime.us-east-1.amazonaws.com",
+        base_url_editable=True,
+        secret_fields=[
+            _secret_field("aws_access_key_id", "AWS Access Key ID"),
+            _secret_field("aws_secret_access_key", "AWS Secret Access Key"),
+            _secret_field("aws_session_token", "AWS Session Token", required=False),
+        ],
+        extra_fields=[_extra_field("region", "AWS Region", placeholder="us-east-1")],
+    ),
+    ProviderDefinition(
+        "copilot",
+        "GitHub Copilot / GitHub Models",
+        ProviderAuthType.COPILOT_TOKEN,
+        "https://api.githubcopilot.com",
+        secret_fields=[_secret_field("api_token", "GitHub Token")],
+    ),
+    ProviderDefinition(
+        "copilot-acp",
+        "GitHub Copilot ACP",
+        ProviderAuthType.EXTERNAL_PROCESS,
+        "acp://copilot",
+    ),
+    ProviderDefinition(
+        "custom",
+        "Custom / Local OpenAI-compatible",
+        ProviderAuthType.CUSTOM,
+        "",
+        description="任意 OpenAI-compatible endpoint",
+        supports_health_check=True,
+        supports_model_discovery=True,
+        base_url_editable=True,
+        secret_fields=[_secret_field("api_token", "API Token", required=False)],
+    ),
+    ProviderDefinition(
+        "deepseek",
+        "DeepSeek",
+        ProviderAuthType.API_KEY,
+        "https://api.deepseek.com/v1",
+        supports_health_check=True,
+        supports_model_discovery=True,
+        secret_fields=[_secret_field("api_token", "API Token")],
+    ),
+    ProviderDefinition(
+        "gemini",
+        "Gemini",
+        ProviderAuthType.API_KEY,
+        "https://generativelanguage.googleapis.com/v1beta",
+        secret_fields=[_secret_field("api_token", "API Token")],
+    ),
+    ProviderDefinition(
+        "google-gemini-cli",
+        "Gemini CLI / Cloud Code",
+        ProviderAuthType.OAUTH_EXTERNAL,
+        "cloudcode-pa://google",
+        secret_fields=[
+            _secret_field("access_token", "Access Token", required=False),
+            _secret_field("refresh_token", "Refresh Token", required=False),
+        ],
+    ),
+    ProviderDefinition(
+        "gmi",
+        "GMI Cloud",
+        ProviderAuthType.API_KEY,
+        "https://api.gmi-serving.com/v1",
+        supports_health_check=True,
+        supports_model_discovery=True,
+        secret_fields=[_secret_field("api_token", "API Token")],
+    ),
+    ProviderDefinition(
+        "huggingface",
+        "Hugging Face",
+        ProviderAuthType.API_KEY,
+        "https://router.huggingface.co/v1",
+        supports_health_check=True,
+        supports_model_discovery=True,
+        secret_fields=[_secret_field("api_token", "HF Token")],
+    ),
+    ProviderDefinition(
+        "kilocode",
+        "Kilo Code",
+        ProviderAuthType.API_KEY,
+        "https://api.kilo.ai/api/gateway",
+        supports_health_check=True,
+        supports_model_discovery=True,
+        secret_fields=[_secret_field("api_token", "API Token")],
+        models_url="https://api.kilo.ai/api/gateway/models",
+    ),
+    ProviderDefinition(
+        "kimi-coding",
+        "Kimi / Moonshot",
+        ProviderAuthType.API_KEY,
+        "https://api.moonshot.ai/v1",
+        supports_health_check=True,
+        supports_model_discovery=True,
+        secret_fields=[_secret_field("api_token", "API Token")],
+    ),
+    ProviderDefinition(
+        "kimi-coding-cn",
+        "Kimi / Moonshot (China)",
+        ProviderAuthType.API_KEY,
+        "https://api.moonshot.cn/v1",
+        supports_health_check=True,
+        supports_model_discovery=True,
+        secret_fields=[_secret_field("api_token", "API Token")],
+    ),
+    ProviderDefinition(
+        "minimax",
+        "MiniMax",
+        ProviderAuthType.API_KEY,
+        "https://api.minimax.io/anthropic",
+        supports_health_check=True,
+        supports_model_discovery=True,
+        secret_fields=[_secret_field("api_token", "API Token")],
+        models_url="https://api.minimax.io/v1/models",
+    ),
+    ProviderDefinition(
+        "minimax-cn",
+        "MiniMax (China)",
+        ProviderAuthType.API_KEY,
+        "https://api.minimaxi.com/anthropic",
+        secret_fields=[_secret_field("api_token", "API Token")],
+        models_url="https://api.minimaxi.com/v1/models",
+    ),
+    ProviderDefinition(
+        "minimax-oauth",
+        "MiniMax (OAuth)",
+        ProviderAuthType.OAUTH_EXTERNAL,
+        "https://api.minimax.io/anthropic",
+        secret_fields=[
+            _secret_field("access_token", "Access Token", required=False),
+            _secret_field("refresh_token", "Refresh Token", required=False),
+        ],
+    ),
+    ProviderDefinition(
+        "nous",
+        "Nous Research",
+        ProviderAuthType.OAUTH_DEVICE_CODE,
+        "https://inference.nousresearch.com/v1",
+        secret_fields=[_secret_field("access_token", "Access Token", required=False)],
+    ),
+    ProviderDefinition(
+        "novita",
+        "NovitaAI",
+        ProviderAuthType.API_KEY,
+        "https://api.novita.ai/openai/v1",
+        supports_health_check=True,
+        supports_model_discovery=True,
+        secret_fields=[_secret_field("api_token", "API Token")],
+    ),
+    ProviderDefinition(
+        "nvidia",
+        "NVIDIA NIM",
+        ProviderAuthType.API_KEY,
+        "https://integrate.api.nvidia.com/v1",
+        supports_health_check=True,
+        supports_model_discovery=True,
+        secret_fields=[_secret_field("api_token", "API Token")],
+    ),
+    ProviderDefinition(
+        "ollama-cloud",
+        "Ollama Cloud",
+        ProviderAuthType.API_KEY,
+        "https://ollama.com/v1",
+        supports_health_check=True,
+        supports_model_discovery=True,
+        secret_fields=[_secret_field("api_token", "API Token")],
+    ),
+    ProviderDefinition(
+        "openai-codex",
+        "OpenAI Codex",
+        ProviderAuthType.OAUTH_EXTERNAL,
+        "https://chatgpt.com/backend-api/codex",
+        secret_fields=[_secret_field("access_token", "Access Token", required=False)],
+    ),
+    ProviderDefinition(
+        "opencode-zen",
+        "OpenCode Zen",
+        ProviderAuthType.API_KEY,
+        "https://opencode.ai/zen/v1",
+        supports_health_check=True,
+        supports_model_discovery=True,
+        secret_fields=[_secret_field("api_token", "API Token")],
+    ),
+    ProviderDefinition(
+        "opencode-go",
+        "OpenCode Go",
+        ProviderAuthType.API_KEY,
+        "https://opencode.ai/zen/go/v1",
+        supports_health_check=True,
+        supports_model_discovery=True,
+        secret_fields=[_secret_field("api_token", "API Token")],
+    ),
+    ProviderDefinition(
+        "openrouter",
+        "OpenRouter",
+        ProviderAuthType.API_KEY,
+        "https://openrouter.ai/api/v1",
+        supports_health_check=True,
+        supports_model_discovery=True,
+        secret_fields=[_secret_field("api_token", "API Token")],
+        models_url="https://openrouter.ai/api/v1/models",
+        auth_header_kind="none",
+    ),
+    ProviderDefinition(
+        "qwen-oauth",
+        "Qwen Portal",
+        ProviderAuthType.OAUTH_EXTERNAL,
+        "https://portal.qwen.ai/v1",
+        secret_fields=[_secret_field("access_token", "Access Token", required=False)],
+    ),
+    ProviderDefinition(
+        "stepfun",
+        "StepFun",
+        ProviderAuthType.API_KEY,
+        "https://api.stepfun.ai/step_plan/v1",
+        supports_health_check=True,
+        supports_model_discovery=True,
+        secret_fields=[_secret_field("api_token", "API Token")],
+    ),
+    ProviderDefinition(
+        "xai",
+        "xAI / Grok",
+        ProviderAuthType.API_KEY,
+        "https://api.x.ai/v1",
+        supports_health_check=True,
+        supports_model_discovery=True,
+        secret_fields=[_secret_field("api_token", "API Token")],
+    ),
+    ProviderDefinition(
+        "xiaomi",
+        "Xiaomi MiMo",
+        ProviderAuthType.API_KEY,
+        "https://api.xiaomimimo.com/v1",
+        secret_fields=[_secret_field("api_token", "API Token")],
+    ),
+    ProviderDefinition(
+        "zai",
+        "Z.AI (GLM)",
+        ProviderAuthType.API_KEY,
+        "https://api.z.ai/api/paas/v4",
+        supports_health_check=True,
+        supports_model_discovery=True,
+        secret_fields=[_secret_field("api_token", "API Token")],
+    ),
 )
 
 PROVIDER_DEFINITION_MAP = {item.provider_slug: item for item in PROVIDER_DEFINITIONS}
@@ -177,7 +442,9 @@ def seal_secret_payload(payload: dict[str, str]) -> str | None:
     nonce = os.urandom(16)
     keystream = _derive_keystream(len(raw), nonce)
     ciphertext = bytes(left ^ right for left, right in zip(raw, keystream, strict=True))
-    signature = hmac.new(_secret_key_bytes(), nonce + ciphertext, hashlib.sha256).digest()
+    signature = hmac.new(
+        _secret_key_bytes(), nonce + ciphertext, hashlib.sha256
+    ).digest()
     return ".".join(
         ["v1", _b64_encode(nonce), _b64_encode(ciphertext), _b64_encode(signature)]
     )
@@ -186,7 +453,9 @@ def seal_secret_payload(payload: dict[str, str]) -> str | None:
 def open_secret_payload(ciphertext: str | None) -> dict[str, str]:
     if not ciphertext:
         return {}
-    version, encoded_nonce, encoded_ciphertext, encoded_signature = ciphertext.split(".")
+    version, encoded_nonce, encoded_ciphertext, encoded_signature = ciphertext.split(
+        "."
+    )
     if version != "v1":
         raise ValueError("Unsupported secret payload version")
     nonce = _b64_decode(encoded_nonce)
@@ -215,8 +484,8 @@ def mask_secret_value(value: str | None) -> str | None:
 def get_primary_secret_mask(
     definition: ProviderDefinition, secret_inputs: dict[str, str]
 ) -> str | None:
-    for field in definition.secret_fields:
-        value = secret_inputs.get(field.name)
+    for secret_field in definition.secret_fields:
+        value = secret_inputs.get(secret_field.name)
         if value:
             return mask_secret_value(value)
     for value in secret_inputs.values():
@@ -237,7 +506,9 @@ def validate_secret_inputs(
         ProviderAuthType.EXTERNAL_PROCESS,
     }:
         return normalized
-    required_fields = [field.name for field in definition.secret_fields if field.required]
+    required_fields = [
+        field.name for field in definition.secret_fields if field.required
+    ]
     if required_fields and not all(normalized.get(name) for name in required_fields):
         names = ", ".join(required_fields)
         raise ValueError(f"Missing required secret fields: {names}")
@@ -301,7 +572,9 @@ def fetch_provider_models(
     return parse_model_ids(response.json())
 
 
-def validate_provider_connection(config: LlmProviderConfig) -> tuple[ProviderValidationStatus, str]:
+def validate_provider_connection(
+    config: LlmProviderConfig,
+) -> tuple[ProviderValidationStatus, str]:
     definition = get_provider_definition(config.provider_slug)
     if not definition.supports_health_check:
         return ProviderValidationStatus.UNSUPPORTED, "当前供应商暂不支持在线校验"
@@ -313,7 +586,10 @@ def validate_provider_connection(config: LlmProviderConfig) -> tuple[ProviderVal
             secret_inputs=secret_inputs,
         )
     except Exception as exc:
-        return ProviderValidationStatus.FAILED, f"连接校验失败: {sanitize_error_text(str(exc))}"
+        return (
+            ProviderValidationStatus.FAILED,
+            f"连接校验失败: {sanitize_error_text(str(exc))}",
+        )
     return ProviderValidationStatus.SUCCESS, "连接校验成功"
 
 
@@ -354,7 +630,9 @@ def merge_provider_models(
             discovered_ids.add(model_id)
             merged[model_id] = {
                 "model_id": model_id,
-                "display_name": item.get("name") or item.get("display_name") or model_id,
+                "display_name": item.get("name")
+                or item.get("display_name")
+                or model_id,
                 "source_type": ProviderModelSourceType.DISCOVERED,
                 "sync_status": ProviderModelSyncStatus.ACTIVE,
                 "raw_metadata": item,
@@ -389,10 +667,14 @@ def merge_provider_models(
     for model_id, payload in sorted(merged.items(), key=lambda item: item[0]):
         results.append(
             {
-                "id": existing_by_id.get(model_id).id if model_id in existing_by_id else None,
+                "id": existing_by_id.get(model_id).id
+                if model_id in existing_by_id
+                else None,
                 **payload,
                 "is_enabled": model_id in enabled_set,
-                "created_at": existing_by_id.get(model_id).created_at if model_id in existing_by_id else now,
+                "created_at": existing_by_id.get(model_id).created_at
+                if model_id in existing_by_id
+                else now,
                 "updated_at": now,
             }
         )

@@ -1,7 +1,7 @@
 import { EllipsisVertical } from "lucide-react"
 import { useState } from "react"
 
-import type { NamespacePublic } from "@/client/tenantApi"
+import type { NamespacePublic } from "@/api/tenantApi"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,

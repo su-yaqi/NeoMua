@@ -21,6 +21,8 @@ items ------> users
 namespaces --> users
 llm_configs -> namespaces
 llm_configs -> users
+runtime_management -> namespaces
+runtime_management -> llm_configs
 
 frontend routes --> frontend components --> client SDK / tenantApi
 backend routes --> deps / crud --> models --> db
@@ -32,7 +34,10 @@ backend routes --> deps / crud --> models --> db
 - `users` 负责账号生命周期与平台级用户管理，是 `items` 与 `namespaces` 的上游模块。
 - `items` 只管理归属到 `owner_id` 的个人条目，不感知空间维度。
 - `namespaces` 负责空间实体、用户-空间关联关系和空间管理员权限校验。
-- `llm_configs` 负责空间级供应商接入配置、密钥加密存储、供应商目录、连接校验和模型集合维护，运行时调用暂不在本期范围内。
+- `llm_configs` 负责空间级供应商接入配置；`runtime_management` 只通过同空间、已启用的配置引用模型。
+- `runtime_management` 的控制面仍位于 FastAPI；`runtime-worker` 独占平台 Claude SDK/CLI 生命周期；`model-gateway` 提供 Anthropic Messages API 并做供应商转换。
+- 节点守护进程只建立出站 WSS，使用短期握手签名、20 秒心跳、60 秒离线阈值和数据库连接代次；离线不删除配对。
+- 节点直连仅接受经节点实测通过的 Anthropic Messages API；非兼容供应商必须经 Model Gateway。
 
 ## 关键架构决策
 
@@ -55,6 +60,18 @@ browser
 Adminer 作为数据库管理工具挂在同一 Compose 拓扑中。
 Traefik 负责域名路由与 HTTPS 终止。
 prestart 容器负责迁移前准备与初始化检查。
+
+运行时拓扑：
+
+```text
+browser -> backend(control plane) -> PostgreSQL
+                         |-> runtime-worker -> Claude Agent SDK/CLI
+Claude SDK / node ------>|-> model-gateway -> Anthropic / OpenAI-compatible API
+node daemon -- outbound WSS --> backend
+backend <-> local volume or S3-compatible immutable artifact storage
+```
+
+FastAPI 多 worker 不共享内存连接表：节点每次连接写入 PostgreSQL `connection_id`，旧连接在下一消息时检测代次失效。任务和发布由连接所在 worker 查询数据库后下发。
 ```
 
 ## 非功能性约束

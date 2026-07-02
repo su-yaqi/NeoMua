@@ -9,7 +9,7 @@ import {
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
-import { LoginService } from "@/client"
+import { LoginService } from "@/api/generatedCompat"
 import { AuthLayout } from "@/components/Common/AuthLayout"
 import {
   Form,

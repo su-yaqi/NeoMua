@@ -173,7 +173,9 @@ def create_namespace(*, session: SessionDep, namespace_in: NamespaceCreate) -> A
     ).first()
     if existing:
         raise HTTPException(status_code=409, detail="Namespace code already exists")
-    namespace = Namespace.model_validate(namespace_in.model_dump(exclude={"admin_user_id"}))
+    namespace = Namespace.model_validate(
+        namespace_in.model_dump(exclude={"admin_user_id"})
+    )
     session.add(namespace)
     session.commit()
     session.refresh(namespace)
@@ -225,7 +227,9 @@ def delete_namespace(namespace_id: uuid.UUID, session: SessionDep) -> Message:
     namespace = session.get(Namespace, namespace_id)
     if not namespace:
         raise HTTPException(status_code=404, detail="Namespace not found")
-    links = select(UserNamespaceLink).where(UserNamespaceLink.namespace_id == namespace_id)
+    links = select(UserNamespaceLink).where(
+        UserNamespaceLink.namespace_id == namespace_id
+    )
     for link in session.exec(links).all():
         session.delete(link)
     session.delete(namespace)
@@ -244,7 +248,9 @@ def read_platform_users(session: SessionDep, skip: int = 0, limit: int = 100) ->
     users = session.exec(
         select(User).order_by(col(User.created_at).desc()).offset(skip).limit(limit)
     ).all()
-    return UsersPublic(data=[to_user_public(session, user) for user in users], count=count)
+    return UsersPublic(
+        data=[to_user_public(session, user) for user in users], count=count
+    )
 
 
 @platform_router.post(

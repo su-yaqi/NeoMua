@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app import crud
 from app.api.deps import CurrentUser, SessionDep, require_namespace_admin
 from app.llm_provider_service import (
+    fetch_provider_models,
     get_primary_secret_mask,
     get_provider_definition,
     list_provider_catalog_items,
@@ -16,7 +17,6 @@ from app.llm_provider_service import (
     to_provider_config_public,
     validate_provider_connection,
     validate_secret_inputs,
-    fetch_provider_models,
 )
 from app.models import (
     LlmProviderCatalogPublic,

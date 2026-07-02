@@ -1,8 +1,8 @@
 from sqlmodel import Session, SQLModel, create_engine, select
 
+from app import crud
 from app.core.config import settings
 from app.models import User, UserCreate
-from app import crud
 from tests.utils.db import cleanup_test_data
 
 
@@ -21,7 +21,9 @@ def test_cleanup_test_data_preserves_first_superuser() -> None:
         )
         normal_user = crud.create_user(
             session=session,
-            user_create=UserCreate(email="temp-user@example.com", password="changethis"),
+            user_create=UserCreate(
+                email="temp-user@example.com", password="changethis"
+            ),
         )
 
         cleanup_test_data(session)

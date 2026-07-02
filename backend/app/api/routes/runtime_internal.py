@@ -9,6 +9,7 @@ from app.api.deps import SessionDep
 from app.core.config import settings
 from app.llm_provider_service import open_secret_payload
 from app.models import LlmProviderConfig
+from app.runtime.gateway import UnsupportedGatewayProvider, gateway_provider_kind
 from app.runtime.models import (
     AgentEventType,
     AgentSession,
@@ -19,7 +20,7 @@ from app.runtime.models import (
     RuntimeType,
 )
 from app.runtime.policy import TaskStatus
-from app.runtime.repository import apply_event_state, append_event_idempotent
+from app.runtime.repository import append_event_idempotent, apply_event_state
 from app.runtime.security import (
     GatewayScopeError,
     issue_gateway_token,
@@ -112,16 +113,21 @@ def claim_platform_task(body: ClaimInput, session: SessionDep) -> dict:
     )
     env: dict[str, str]
     if runtime.route_mode == RuntimeRouteMode.DIRECT_ANTHROPIC:
-        secret = session.exec(select(RuntimeSecret).where(
-            RuntimeSecret.runtime_profile_id == runtime.id
-        )).first()
+        secret = session.exec(
+            select(RuntimeSecret).where(RuntimeSecret.runtime_profile_id == runtime.id)
+        ).first()
         if secret is None:
             raise HTTPException(409, "Runtime credential is not configured")
         values = open_secret_payload(secret.secret_ciphertext)
-        api_key = values.get("api_key") or values.get("api_token") or values.get("token")
+        api_key = (
+            values.get("api_key") or values.get("api_token") or values.get("token")
+        )
         if not api_key:
             raise HTTPException(409, "Runtime API key is missing")
-        env = {"ANTHROPIC_BASE_URL": runtime.base_url or "", "ANTHROPIC_API_KEY": api_key}
+        env = {
+            "ANTHROPIC_BASE_URL": runtime.base_url or "",
+            "ANTHROPIC_API_KEY": api_key,
+        }
     else:
         gateway_token = issue_gateway_token(
             task.namespace_id, runtime.id, task.id, runtime.model_id
@@ -129,9 +135,10 @@ def claim_platform_task(body: ClaimInput, session: SessionDep) -> dict:
         env = {
             "ANTHROPIC_BASE_URL": settings.MODEL_GATEWAY_URL,
             "ANTHROPIC_API_KEY": gateway_token,
-            "ANTHROPIC_CUSTOM_HEADERS": f"X-Runtime-ID: {runtime.id}",
         }
-    agent_session = session.get(AgentSession, task.session_id) if task.session_id else None
+    agent_session = (
+        session.get(AgentSession, task.session_id) if task.session_id else None
+    )
     return {
         "task_id": str(task.id),
         "revision": task.revision,
@@ -163,6 +170,8 @@ def renew_platform_task_lease(
         or task.revision != body.revision
     ):
         raise HTTPException(409, "Task lease scope mismatch")
+    if task.status == TaskStatus.CANCELLING:
+        return {"status": task.status.value}
     if task.status == TaskStatus.DISPATCHED:
         task.status = TaskStatus.RUNNING
     elif task.status != TaskStatus.RUNNING:
@@ -207,8 +216,12 @@ def resolve_route(
     provider = session.get(LlmProviderConfig, runtime.provider_config_id)
     if provider is None or not provider.enabled:
         raise HTTPException(409, "Provider config is unavailable")
+    try:
+        provider_kind = gateway_provider_kind(provider.provider_slug)
+    except UnsupportedGatewayProvider as exc:
+        raise HTTPException(422, str(exc)) from exc
     return {
-        "provider_kind": "anthropic" if provider.provider_slug == "anthropic" else "openai_compatible",
+        "provider_kind": provider_kind,
         "base_url": provider.base_url,
         "model_id": runtime.model_id,
         "secret_inputs": open_secret_payload(provider.secret_ciphertext),

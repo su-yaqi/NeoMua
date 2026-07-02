@@ -27,7 +27,11 @@ class RuntimeConfigManager:
         client = self.client or httpx.AsyncClient(timeout=30)
         try:
             base_url = str(payload["base_url"]).rstrip("/")
-            url = f"{base_url}/v1/messages" if not base_url.endswith("/v1") else f"{base_url}/messages"
+            url = (
+                f"{base_url}/v1/messages"
+                if not base_url.endswith("/v1")
+                else f"{base_url}/messages"
+            )
             response = await client.post(
                 url,
                 headers={
@@ -41,9 +45,17 @@ class RuntimeConfigManager:
                     "messages": [{"role": "user", "content": "Reply OK"}],
                 },
             )
-            body = response.json() if response.headers.get("content-type", "").startswith("application/json") else {}
+            body = (
+                response.json()
+                if response.headers.get("content-type", "").startswith(
+                    "application/json"
+                )
+                else {}
+            )
             if response.status_code >= 400 or body.get("type") != "message":
-                raise ValueError("endpoint failed Anthropic Messages API compatibility check")
+                raise ValueError(
+                    "endpoint failed Anthropic Messages API compatibility check"
+                )
             fingerprint = hashlib.sha256(
                 f"{base_url}\0{payload['model_id']}\0{payload['api_key']}".encode()
             ).hexdigest()

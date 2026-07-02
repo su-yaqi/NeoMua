@@ -34,7 +34,9 @@ def test_developer_cannot_create_enrollment_token(
     namespace = create_namespace(db)
     developer = create_random_user(db)
     crud.ensure_namespace_membership(
-        session=db, user_id=developer.id, namespace_id=namespace.id,
+        session=db,
+        user_id=developer.id,
+        namespace_id=namespace.id,
         role=NamespaceRole.DEVELOPER,
     )
     headers = namespace_headers(
@@ -84,8 +86,11 @@ def test_admin_lists_and_configures_enrolled_node_runtime(
     enrolled = client.post(
         f"{settings.API_V1_STR}/node/enroll",
         json={
-            "token": token, "name": "worker", "hostname": "host",
-            "os_name": "linux", "architecture": "amd64",
+            "token": token,
+            "name": "worker",
+            "hostname": "host",
+            "os_name": "linux",
+            "architecture": "amd64",
             "agent_version": "0.1.0",
             "public_key": base64.b64encode(b"b" * 32).decode(),
         },
@@ -98,7 +103,8 @@ def test_admin_lists_and_configures_enrolled_node_runtime(
         f"{settings.API_V1_STR}/runtimes/nodes/{enrolled['node_id']}/runtime",
         headers=headers,
         json={
-            "route_mode": "direct_anthropic", "model_id": "claude-node",
+            "route_mode": "direct_anthropic",
+            "model_id": "claude-node",
             "base_url": "https://anthropic-compatible.example",
             "secret_inputs": {"api_key": "node-secret"},
         },
@@ -113,20 +119,27 @@ def test_developer_can_list_but_cannot_configure_nodes(
     namespace = create_namespace(db)
     developer = create_random_user(db)
     crud.ensure_namespace_membership(
-        session=db, user_id=developer.id, namespace_id=namespace.id,
+        session=db,
+        user_id=developer.id,
+        namespace_id=namespace.id,
         role=NamespaceRole.DEVELOPER,
     )
     headers = namespace_headers(
         authentication_token_from_email(client=client, email=developer.email, db=db),
         namespace.id,
     )
-    assert client.get(
-        f"{settings.API_V1_STR}/runtimes/nodes", headers=headers
-    ).status_code == 200
+    assert (
+        client.get(f"{settings.API_V1_STR}/runtimes/nodes", headers=headers).status_code
+        == 200
+    )
     response = client.put(
         f"{settings.API_V1_STR}/runtimes/nodes/{'0' * 8}-{'0' * 4}-{'0' * 4}-{'0' * 4}-{'0' * 12}/runtime",
         headers=headers,
-        json={"route_mode": "direct_anthropic", "model_id": "x",
-              "base_url": "https://example.test", "secret_inputs": {"api_key": "x"}},
+        json={
+            "route_mode": "direct_anthropic",
+            "model_id": "x",
+            "base_url": "https://example.test",
+            "secret_inputs": {"api_key": "x"},
+        },
     )
     assert response.status_code == 403

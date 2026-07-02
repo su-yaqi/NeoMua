@@ -73,9 +73,12 @@ def _is_namespace_admin(
 ) -> bool:
     if current_user.is_superuser:
         return True
-    return crud.get_namespace_role(
-        session=session, user_id=current_user.id, namespace_id=namespace_id
-    ) == NamespaceRole.ADMIN
+    return (
+        crud.get_namespace_role(
+            session=session, user_id=current_user.id, namespace_id=namespace_id
+        )
+        == NamespaceRole.ADMIN
+    )
 
 
 def _validated_working_directory(
@@ -86,11 +89,18 @@ def _validated_working_directory(
     roots = runtime.config.get("allowed_working_roots", [])
     if not roots:
         raise HTTPException(422, "Runtime has no allowlisted working directory roots")
-    path_type = PureWindowsPath if node and node.os_name.lower() == "windows" else PurePosixPath
+    path_type = (
+        PureWindowsPath if node and node.os_name.lower() == "windows" else PurePosixPath
+    )
     candidate = path_type(requested)
     if not candidate.is_absolute() or ".." in candidate.parts:
-        raise HTTPException(422, "Working directory must be an absolute normalized path")
-    if not any(candidate == path_type(root) or path_type(root) in candidate.parents for root in roots):
+        raise HTTPException(
+            422, "Working directory must be an absolute normalized path"
+        )
+    if not any(
+        candidate == path_type(root) or path_type(root) in candidate.parents
+        for root in roots
+    ):
         raise HTTPException(422, "Working directory is outside runtime allowlist")
     return str(candidate)
 
@@ -119,7 +129,9 @@ def _resolve_target(
             runtime.route_mode == RuntimeRouteMode.DIRECT_ANTHROPIC
             and not runtime.config.get("direct_compatibility_verified")
         ):
-            raise HTTPException(422, "Node direct Anthropic compatibility is not verified")
+            raise HTTPException(
+                422, "Node direct Anthropic compatibility is not verified"
+            )
         if (
             runtime.route_mode == RuntimeRouteMode.PLATFORM_GATEWAY
             and not settings.MODEL_GATEWAY_PUBLIC_URL
@@ -127,6 +139,8 @@ def _resolve_target(
             raise HTTPException(409, "Public Model Gateway URL is not configured")
     elif body.node_id is not None:
         raise HTTPException(400, "node_id is not valid for platform runtime")
+    elif not runtime.config.get("compatibility_verified"):
+        raise HTTPException(409, "Platform runtime compatibility is not verified")
     return runtime, node
 
 
@@ -162,14 +176,18 @@ def create_task(
             raise HTTPException(409, "Idempotency-Key was used for a different task")
         return _public(existing)
     runtime, node = _resolve_target(session, namespace_id, body)
-    working_directory = _validated_working_directory(body.working_directory, runtime, node)
+    working_directory = _validated_working_directory(
+        body.working_directory, runtime, node
+    )
     snapshot = {
         "request": request_identity,
         "runtime_type": runtime.runtime_type.value,
         "runtime_profile_id": str(runtime.id),
         "runtime_revision": node.config_revision if node else 1,
         "route_mode": runtime.route_mode.value,
-        "provider_config_id": str(runtime.provider_config_id) if runtime.provider_config_id else None,
+        "provider_config_id": str(runtime.provider_config_id)
+        if runtime.provider_config_id
+        else None,
         "model_id": runtime.model_id,
         "base_url": runtime.base_url,
         "permission_mode": runtime.permission_mode,
@@ -217,7 +235,9 @@ def list_tasks(
     return TasksPublic(data=[_public(task) for task in tasks], count=len(tasks))
 
 
-def _get_task(session: SessionDep, task_id: uuid.UUID, namespace_id: uuid.UUID) -> AgentTask:
+def _get_task(
+    session: SessionDep, task_id: uuid.UUID, namespace_id: uuid.UUID
+) -> AgentTask:
     task = session.get(AgentTask, task_id)
     if task is None or task.namespace_id != namespace_id:
         raise HTTPException(404, "Task not found")
@@ -242,7 +262,11 @@ def cancel_task(
     namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
 ) -> TaskPublic:
     task = _get_task(session, task_id, namespace_id)
-    target = TaskStatus.CANCELLING if task.status == TaskStatus.RUNNING else TaskStatus.CANCELLED
+    target = (
+        TaskStatus.CANCELLING
+        if task.status == TaskStatus.RUNNING
+        else TaskStatus.CANCELLED
+    )
     try:
         require_task_transition(task.status, target)
     except ValueError as exc:

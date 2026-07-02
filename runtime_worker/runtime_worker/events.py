@@ -10,14 +10,21 @@ def _value(value: Any) -> Any:
     if isinstance(value, dict):
         return {key: _value(item) for key, item in value.items()}
     if hasattr(value, "__dict__"):
-        return {key: _value(item) for key, item in vars(value).items() if not key.startswith("_")}
+        return {
+            key: _value(item)
+            for key, item in vars(value).items()
+            if not key.startswith("_")
+        }
     return value
 
 
 def normalize_message(message: Any, sequence: int) -> dict[str, Any]:
     if hasattr(message, "result"):
         event_type = "result"
-        payload = {"session_id": getattr(message, "session_id", None), "result": message.result}
+        payload = {
+            "session_id": getattr(message, "session_id", None),
+            "result": message.result,
+        }
     elif hasattr(message, "content"):
         event_type = "assistant_message"
         payload = {"content": _value(message.content)}
@@ -48,9 +55,7 @@ def normalize_messages(message: Any, start_sequence: int) -> list[dict[str, Any]
             event_type = "tool_call"
         elif block_type == "tool_result":
             payload = {
-                "tool_use_id": getattr(
-                    block, "tool_use_id", value.get("tool_use_id")
-                ),
+                "tool_use_id": getattr(block, "tool_use_id", value.get("tool_use_id")),
                 "content": getattr(block, "content", value.get("content")),
                 "is_error": getattr(block, "is_error", value.get("is_error", False)),
             }

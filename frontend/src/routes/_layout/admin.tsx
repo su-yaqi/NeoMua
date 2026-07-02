@@ -1,9 +1,8 @@
 import { useSuspenseQuery } from "@tanstack/react-query"
 import { createFileRoute, redirect } from "@tanstack/react-router"
 import { Suspense } from "react"
-
-import { UsersService } from "@/client"
-import { type TenantUser, tenantApi } from "@/client/tenantApi"
+import { UsersService } from "@/api/generatedCompat"
+import { type TenantUser, tenantApi } from "@/api/tenantApi"
 import AddUser from "@/components/Admin/AddUser"
 import { columns, type UserTableData } from "@/components/Admin/columns"
 import { DataTable } from "@/components/Common/DataTable"

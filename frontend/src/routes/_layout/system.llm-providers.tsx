@@ -1,8 +1,8 @@
-import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
+import { useMemo, useState } from "react"
 
-import { type LlmProviderConfig, tenantApi } from "@/client/tenantApi"
+import { type LlmProviderConfig, tenantApi } from "@/api/tenantApi"
 import { DataTable } from "@/components/Common/DataTable"
 import { buildLlmProviderColumns } from "@/components/LlmProviders/columns"
 import ProviderConfigDialog from "@/components/LlmProviders/ProviderConfigDialog"
@@ -15,7 +15,9 @@ export const Route = createFileRoute("/_layout/system/llm-providers")({
 
 function SystemLlmProvidersPage() {
   const { user, isLoading } = useAuth()
-  const [editingConfig, setEditingConfig] = useState<LlmProviderConfig | null>(null)
+  const [editingConfig, setEditingConfig] = useState<LlmProviderConfig | null>(
+    null,
+  )
   const [editingOpen, setEditingOpen] = useState(false)
   const selectedNamespaceId = localStorage.getItem("selected_namespace_id")
 
@@ -80,7 +82,10 @@ function SystemLlmProvidersPage() {
           </p>
         </div>
         {catalogQuery.data ? (
-          <ProviderConfigDialog catalog={catalogQuery.data.data} triggerLabel="新增配置" />
+          <ProviderConfigDialog
+            catalog={catalogQuery.data.data}
+            triggerLabel="新增配置"
+          />
         ) : null}
       </div>
 

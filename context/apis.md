@@ -110,3 +110,26 @@
 | GET | /utils/health-check/ | 健康检查 |
 | POST | /utils/test-email/ | 超级管理员发送测试邮件 |
 | POST | /private/users/ | 仅本地环境可用的测试建用户接口 |
+
+### runtime management
+
+| Method | Path | 权限与用途 |
+|---|---|---|
+| GET/PUT | `/runtimes/platform` | admin 配置；admin/developer 读取空间平台运行时 |
+| POST | `/runtimes/platform/sessions` | admin/developer 创建多轮测试会话 |
+| POST | `/runtimes/sessions/{id}/messages` | admin/developer 提交会话消息 |
+| GET | `/runtimes/tasks/{id}/events` | 读取完整持久事件 |
+| GET | `/runtimes/tasks/{id}/stream` | 支持 Last-Event-ID 的鉴权 SSE |
+| POST/GET | `/runtimes/nodes/enrollment-tokens` | admin 创建一次性令牌/读取无明文列表 |
+| POST | `/node/enroll` | 节点使用一次性令牌和 Ed25519 公钥注册 |
+| WS | `/node/ws` | 设备 JWT + 时间戳签名鉴权的 WSS 心跳、任务和内容通道 |
+| GET/PUT | `/runtimes/nodes[/{id}/runtime]` | admin/developer 列表；admin 配置节点模型/API |
+| DELETE | `/runtimes/nodes/{id}/credential` | admin 吊销节点及全部凭证 |
+| POST/GET | `/runtime-tasks` | admin/developer 下发普通任务；admin 才可下发管理任务 |
+| POST | `/runtime-tasks/{id}/cancel|retry` | 显式取消或新建 retry 任务，要求幂等键 |
+| POST/GET | `/runtime-artifacts` | admin 流式上传；admin/developer 读取不可变制品 |
+| POST | `/runtime-artifacts/releases` | admin 创建有时效的节点发布 |
+| POST | `/runtime-artifacts/deployments/{id}/retry|rollback` | admin 显式重试或回滚 |
+| GET | `/node/artifacts/{id}/download` | 节点凭短期、部署范围 JWT 下载 |
+
+内部 `/internal/runtime/*` 仅接受独立服务凭证；浏览器 JWT 无法访问。Model Gateway token 绑定 namespace/runtime/task/model，不能换模型或跨空间使用。

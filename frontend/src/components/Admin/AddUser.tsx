@@ -5,7 +5,7 @@ import { useState } from "react"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
-import { tenantApi } from "@/client/tenantApi"
+import { tenantApi } from "@/api/tenantApi"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -189,8 +189,7 @@ const AddUser = () => {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>
-                      确认密码{" "}
-                      <span className="text-destructive">*</span>
+                      确认密码 <span className="text-destructive">*</span>
                     </FormLabel>
                     <FormControl>
                       <Input
@@ -216,7 +215,9 @@ const AddUser = () => {
                         onCheckedChange={field.onChange}
                       />
                     </FormControl>
-                    <FormLabel className="font-normal">全局超级管理员</FormLabel>
+                    <FormLabel className="font-normal">
+                      全局超级管理员
+                    </FormLabel>
                   </FormItem>
                 )}
               />

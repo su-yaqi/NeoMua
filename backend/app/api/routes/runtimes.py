@@ -13,8 +13,17 @@ from app.api.deps import (
     require_namespace_admin,
     require_namespace_runtime_user,
 )
-from app.llm_provider_service import mask_secret_value, seal_secret_payload
+from app.llm_provider_service import (
+    mask_secret_value,
+    open_secret_payload,
+    seal_secret_payload,
+)
 from app.models import LlmProviderConfig, LlmProviderModel
+from app.runtime.compatibility import (
+    AnthropicCompatibilityError,
+    check_anthropic_compatibility,
+)
+from app.runtime.gateway import UnsupportedGatewayProvider, gateway_provider_kind
 from app.runtime.models import (
     AgentEvent,
     AgentEventType,
@@ -49,6 +58,7 @@ class PlatformRuntimePublic(BaseModel):
     base_url: str | None
     permission_mode: str
     secret_masked: str | None
+    compatibility_verified: bool
 
 
 class SessionPublic(BaseModel):
@@ -73,7 +83,9 @@ class EventPublic(BaseModel):
     payload: dict
 
 
-def _public(runtime: RuntimeProfile, secret: RuntimeSecret | None) -> PlatformRuntimePublic:
+def _public(
+    runtime: RuntimeProfile, secret: RuntimeSecret | None
+) -> PlatformRuntimePublic:
     return PlatformRuntimePublic(
         id=runtime.id,
         namespace_id=runtime.namespace_id,
@@ -83,6 +95,7 @@ def _public(runtime: RuntimeProfile, secret: RuntimeSecret | None) -> PlatformRu
         base_url=runtime.base_url,
         permission_mode=runtime.permission_mode,
         secret_masked=secret.secret_masked if secret else None,
+        compatibility_verified=bool(runtime.config.get("compatibility_verified")),
     )
 
 
@@ -101,38 +114,107 @@ def upsert_platform_runtime(
         raise HTTPException(400, "direct_anthropic requires base_url and credentials")
     if body.route_mode == RuntimeRouteMode.PLATFORM_GATEWAY:
         provider = session.get(LlmProviderConfig, body.provider_config_id)
-        if provider is None or provider.namespace_id != namespace_id or not provider.enabled:
+        if (
+            provider is None
+            or provider.namespace_id != namespace_id
+            or not provider.enabled
+        ):
             raise HTTPException(404, "Enabled provider config not found")
-        model = session.exec(select(LlmProviderModel).where(
-            LlmProviderModel.provider_config_id == provider.id,
-            LlmProviderModel.model_id == body.model_id,
-            LlmProviderModel.is_enabled.is_(True),
-        )).first()
+        try:
+            gateway_provider_kind(provider.provider_slug)
+        except UnsupportedGatewayProvider as exc:
+            raise HTTPException(422, str(exc)) from exc
+        model = session.exec(
+            select(LlmProviderModel).where(
+                LlmProviderModel.provider_config_id == provider.id,
+                LlmProviderModel.model_id == body.model_id,
+                LlmProviderModel.is_enabled.is_(True),
+            )
+        ).first()
         if model is None:
             raise HTTPException(400, "Enabled model not found")
-    runtime = session.exec(select(RuntimeProfile).where(
-        RuntimeProfile.namespace_id == namespace_id,
-        RuntimeProfile.runtime_type == RuntimeType.PLATFORM,
-    )).first()
+    runtime = session.exec(
+        select(RuntimeProfile).where(
+            RuntimeProfile.namespace_id == namespace_id,
+            RuntimeProfile.runtime_type == RuntimeType.PLATFORM,
+        )
+    ).first()
     if runtime is None:
-        runtime = RuntimeProfile(namespace_id=namespace_id, runtime_type=RuntimeType.PLATFORM,
-            route_mode=body.route_mode, model_id=body.model_id)
+        runtime = RuntimeProfile(
+            namespace_id=namespace_id,
+            runtime_type=RuntimeType.PLATFORM,
+            route_mode=body.route_mode,
+            model_id=body.model_id,
+        )
     runtime.route_mode = body.route_mode
     runtime.model_id = body.model_id
     runtime.provider_config_id = body.provider_config_id
     runtime.base_url = body.base_url
     runtime.permission_mode = body.permission_mode
+    runtime.config = {
+        **runtime.config,
+        "compatibility_verified": body.route_mode == RuntimeRouteMode.PLATFORM_GATEWAY,
+    }
     session.add(runtime)
     session.flush()
-    secret = session.exec(select(RuntimeSecret).where(RuntimeSecret.runtime_profile_id == runtime.id)).first()
+    secret = session.exec(
+        select(RuntimeSecret).where(RuntimeSecret.runtime_profile_id == runtime.id)
+    ).first()
     if body.secret_inputs:
         if secret is None:
-            secret = RuntimeSecret(namespace_id=namespace_id, runtime_profile_id=runtime.id, secret_ciphertext="")
+            secret = RuntimeSecret(
+                namespace_id=namespace_id,
+                runtime_profile_id=runtime.id,
+                secret_ciphertext="",
+            )
         secret.secret_ciphertext = seal_secret_payload(body.secret_inputs) or ""
-        secret.secret_masked = mask_secret_value(next(iter(body.secret_inputs.values())))
+        secret.secret_masked = mask_secret_value(
+            next(iter(body.secret_inputs.values()))
+        )
         session.add(secret)
     session.commit()
     session.refresh(runtime)
+    return _public(runtime, secret)
+
+
+@router.post("/platform/validate", response_model=PlatformRuntimePublic)
+async def validate_platform_runtime(
+    session: SessionDep,
+    _: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
+) -> PlatformRuntimePublic:
+    runtime = session.exec(
+        select(RuntimeProfile).where(
+            RuntimeProfile.namespace_id == namespace_id,
+            RuntimeProfile.runtime_type == RuntimeType.PLATFORM,
+        )
+    ).first()
+    if runtime is None:
+        raise HTTPException(404, "Platform runtime not configured")
+    secret = session.exec(
+        select(RuntimeSecret).where(RuntimeSecret.runtime_profile_id == runtime.id)
+    ).first()
+    if runtime.route_mode == RuntimeRouteMode.DIRECT_ANTHROPIC:
+        if secret is None or not runtime.base_url:
+            raise HTTPException(409, "Runtime direct credential is missing")
+        values = open_secret_payload(secret.secret_ciphertext)
+        api_key = (
+            values.get("api_key") or values.get("api_token") or values.get("token")
+        )
+        if not api_key:
+            raise HTTPException(409, "Runtime API key is missing")
+        try:
+            await check_anthropic_compatibility(
+                runtime.base_url, api_key, runtime.model_id
+            )
+        except AnthropicCompatibilityError as exc:
+            runtime.config = {**runtime.config, "compatibility_verified": False}
+            session.add(runtime)
+            session.commit()
+            raise HTTPException(422, str(exc)) from exc
+    runtime.config = {**runtime.config, "compatibility_verified": True}
+    session.add(runtime)
+    session.commit()
     return _public(runtime, secret)
 
 
@@ -142,15 +224,17 @@ def read_platform_runtime(
     _: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
 ) -> PlatformRuntimePublic:
-    runtime = session.exec(select(RuntimeProfile).where(
-        RuntimeProfile.namespace_id == namespace_id,
-        RuntimeProfile.runtime_type == RuntimeType.PLATFORM,
-    )).first()
+    runtime = session.exec(
+        select(RuntimeProfile).where(
+            RuntimeProfile.namespace_id == namespace_id,
+            RuntimeProfile.runtime_type == RuntimeType.PLATFORM,
+        )
+    ).first()
     if runtime is None:
         raise HTTPException(404, "Platform runtime not configured")
-    secret = session.exec(select(RuntimeSecret).where(
-        RuntimeSecret.runtime_profile_id == runtime.id
-    )).first()
+    secret = session.exec(
+        select(RuntimeSecret).where(RuntimeSecret.runtime_profile_id == runtime.id)
+    ).first()
     return _public(runtime, secret)
 
 
@@ -160,12 +244,16 @@ def create_platform_session(
     current_user: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
 ) -> SessionPublic:
-    runtime = session.exec(select(RuntimeProfile).where(
-        RuntimeProfile.namespace_id == namespace_id,
-        RuntimeProfile.runtime_type == RuntimeType.PLATFORM,
-    )).first()
+    runtime = session.exec(
+        select(RuntimeProfile).where(
+            RuntimeProfile.namespace_id == namespace_id,
+            RuntimeProfile.runtime_type == RuntimeType.PLATFORM,
+        )
+    ).first()
     if runtime is None:
         raise HTTPException(409, "Platform runtime not configured")
+    if not runtime.config.get("compatibility_verified"):
+        raise HTTPException(409, "Platform runtime compatibility is not verified")
     agent_session = AgentSession(
         namespace_id=namespace_id,
         runtime_profile_id=runtime.id,
@@ -181,7 +269,9 @@ def create_platform_session(
     )
 
 
-@router.post("/sessions/{session_id}/messages", response_model=TaskPublic, status_code=202)
+@router.post(
+    "/sessions/{session_id}/messages", response_model=TaskPublic, status_code=202
+)
 def create_session_message(
     session_id: uuid.UUID,
     body: MessageInput,
@@ -247,10 +337,12 @@ def read_task_events(
 ) -> list[EventPublic]:
     _namespace_task(session, task_id, namespace_id)
     events = session.exec(
-        select(AgentEvent).where(
+        select(AgentEvent)
+        .where(
             AgentEvent.task_id == task_id,
             AgentEvent.sequence > after_sequence,
-        ).order_by(AgentEvent.sequence)
+        )
+        .order_by(AgentEvent.sequence)
     ).all()
     return [
         EventPublic(sequence=e.sequence, event_type=e.event_type, payload=e.payload)
@@ -268,8 +360,10 @@ async def stream_task_events(
     last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
     namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
 ) -> StreamingResponse:
-    task = _namespace_task(session, task_id, namespace_id)
-    cursor = max(after_sequence, int(last_event_id)) if last_event_id else after_sequence
+    _namespace_task(session, task_id, namespace_id)
+    cursor = (
+        max(after_sequence, int(last_event_id)) if last_event_id else after_sequence
+    )
     terminal = {
         TaskStatus.SUCCEEDED,
         TaskStatus.FAILED,
@@ -283,16 +377,21 @@ async def stream_task_events(
         while not await request.is_disconnected():
             session.expire_all()
             events = session.exec(
-                select(AgentEvent).where(
+                select(AgentEvent)
+                .where(
                     AgentEvent.task_id == task_id,
                     AgentEvent.sequence > cursor,
-                ).order_by(AgentEvent.sequence)
+                )
+                .order_by(AgentEvent.sequence)
             ).all()
             for event in events:
                 cursor = event.sequence
                 data = json.dumps(
-                    {"sequence": event.sequence, "event_type": event.event_type.value,
-                     "payload": event.payload},
+                    {
+                        "sequence": event.sequence,
+                        "event_type": event.event_type.value,
+                        "payload": event.payload,
+                    },
                     ensure_ascii=False,
                 )
                 yield f"id: {event.sequence}\nevent: {event.event_type.value}\ndata: {data}\n\n"

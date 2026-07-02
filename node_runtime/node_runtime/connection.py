@@ -2,6 +2,7 @@ import asyncio
 import base64
 import json
 import random
+import secrets
 import time
 from collections.abc import Awaitable, Callable
 
@@ -26,13 +27,15 @@ def handshake_headers(
     identity: DeviceIdentity, *, timestamp: int | None = None
 ) -> dict[str, str]:
     value = timestamp if timestamp is not None else int(time.time())
+    nonce = secrets.token_urlsafe(32)
     private = Ed25519PrivateKey.from_private_bytes(
         base64.b64decode(identity.private_key)
     )
-    signature = private.sign(f"neomua-ws-v1:{value}".encode())
+    signature = private.sign(f"neomua-ws-v1:{value}:{nonce}".encode())
     return {
         "Authorization": f"Bearer {identity.credential}",
         "X-Node-Timestamp": str(value),
+        "X-Node-Nonce": nonce,
         "X-Node-Signature": base64.b64encode(signature).decode(),
     }
 
@@ -88,13 +91,17 @@ class NodeConnection:
                 if self.identity.previous_credential_id:
                     await websocket.send(
                         envelope(
-                            "credential_rotation_ack", self.identity.node_id,
-                            {"previous_credential_id": self.identity.previous_credential_id},
+                            "credential_rotation_ack",
+                            self.identity.node_id,
+                            {
+                                "previous_credential_id": self.identity.previous_credential_id
+                            },
                         ).model_dump_json()
                     )
                 await websocket.send(
                     envelope(
-                        "reconcile", self.identity.node_id,
+                        "reconcile",
+                        self.identity.node_id,
                         self.reconcile_state.model_dump(mode="json"),
                     ).model_dump_json()
                 )
@@ -142,7 +149,9 @@ class NodeConnection:
                 continue
             if message.type == "credential_rotated":
                 if self.identity_store is None:
-                    raise RuntimeError("identity store is required for credential rotation")
+                    raise RuntimeError(
+                        "identity store is required for credential rotation"
+                    )
                 self.identity.credential = str(message.payload["credential"])
                 self.identity.previous_credential_id = str(
                     message.payload["previous_credential_id"]
@@ -151,7 +160,9 @@ class NodeConnection:
                 return
             if message.type == "credential_rotation_acknowledged":
                 if self.identity_store is None:
-                    raise RuntimeError("identity store is required for credential rotation")
+                    raise RuntimeError(
+                        "identity store is required for credential rotation"
+                    )
                 self.identity.previous_credential_id = None
                 self.identity_store.save(self.identity)
                 continue
@@ -168,19 +179,24 @@ class NodeConnection:
                     }
                     response_type = "runtime_config_rejected"
                 await websocket.send(
-                    envelope(response_type, self.identity.node_id, result).model_dump_json()
+                    envelope(
+                        response_type, self.identity.node_id, result
+                    ).model_dump_json()
                 )
                 continue
             if self.artifact_controller:
                 artifact_responses = await self.artifact_controller.handle(message)
                 for response in artifact_responses:
-                    await websocket.send(response.model_dump_json())
+                    if self.task_controller:
+                        self.task_controller.outbox.put_nowait(response)
+                    else:
+                        await websocket.send(response.model_dump_json())
                 if artifact_responses:
                     continue
             if self.task_controller:
                 responses = await self.task_controller.handle(message)
                 for response in responses:
-                    await websocket.send(response.model_dump_json())
+                    self.task_controller.outbox.put_nowait(response)
             if self.on_message:
                 await self.on_message(message)
 

@@ -1,7 +1,7 @@
 import { EllipsisVertical } from "lucide-react"
 import { useState } from "react"
 
-import type { TenantUser } from "@/client/tenantApi"
+import type { TenantUser } from "@/api/tenantApi"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,

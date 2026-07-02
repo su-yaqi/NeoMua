@@ -56,7 +56,9 @@ def get_user_by_email(*, session: Session, email: str) -> User | None:
     return session.exec(statement).first()
 
 
-def get_user_namespace_links(*, session: Session, user_id: uuid.UUID) -> list[UserNamespaceLink]:
+def get_user_namespace_links(
+    *, session: Session, user_id: uuid.UUID
+) -> list[UserNamespaceLink]:
     statement = select(UserNamespaceLink).where(UserNamespaceLink.user_id == user_id)
     return session.exec(statement).all()
 
@@ -147,7 +149,11 @@ def create_namespace_user(
 
 
 def update_namespace_user(
-    *, session: Session, user: User, namespace_id: uuid.UUID, user_in: NamespaceUserUpdate
+    *,
+    session: Session,
+    user: User,
+    namespace_id: uuid.UUID,
+    user_in: NamespaceUserUpdate,
 ) -> User:
     user_data = user_in.model_dump(exclude_unset=True, exclude={"role"})
     extra_data = {}

@@ -5,13 +5,26 @@ import zipfile
 from pathlib import Path
 
 from node_runtime.artifacts.state import ArtifactState
-from node_runtime.artifacts.validator import validate_archive, validate_instruction
+from node_runtime.artifacts.validator import (
+    validate_archive,
+    validate_directory,
+    validate_instruction,
+)
+
+
+def _fsync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 class ArtifactInstaller:
-    def __init__(self, roots: dict[str, Path], node_id: str) -> None:
+    def __init__(self, roots: dict[str, Path], node_id: str, namespace_id: str) -> None:
         self.roots = {key: value.resolve() for key, value in roots.items()}
         self.node_id = node_id
+        self.namespace_id = namespace_id
 
     def recover(self) -> None:
         for root in self.roots.values():
@@ -22,7 +35,9 @@ class ArtifactInstaller:
                     shutil.rmtree(path)
 
     def apply_archive(self, command: dict, archive_path: Path) -> dict:
-        manifest, deployment = validate_instruction(command, node_id=self.node_id)
+        manifest, deployment = validate_instruction(
+            command, node_id=self.node_id, namespace_id=self.namespace_id
+        )
         root = self.roots.get(manifest.logical_target)
         if root is None:
             raise ValueError("logical target has no local allowlisted root")
@@ -37,21 +52,27 @@ class ArtifactInstaller:
                 for item in manifest.files:
                     destination = staging / item.path
                     destination.parent.mkdir(parents=True, exist_ok=True)
-                    with archive.open(item.path) as source, destination.open("xb") as target:
+                    with (
+                        archive.open(item.path) as source,
+                        destination.open("xb") as target,
+                    ):
                         shutil.copyfileobj(source, target, length=1024 * 1024)
                         target.flush()
                         os.fsync(target.fileno())
             version_path = versions / manifest.artifact_id
             if version_path.exists():
+                validate_directory(version_path, manifest)
                 shutil.rmtree(staging)
             else:
                 os.replace(staging, version_path)
+                _fsync_directory(versions)
             state = ArtifactState(root)
             old = state.read().get("current")
             temporary_link = root / f".current-{uuid.uuid4().hex}"
             os.symlink(Path("versions") / manifest.artifact_id, temporary_link)
             os.replace(temporary_link, root / "current")
             state.write(manifest.artifact_id, old)
+            _fsync_directory(root)
             return {
                 "deployment_id": deployment.deployment_id,
                 "artifact_id": manifest.artifact_id,

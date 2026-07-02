@@ -6,7 +6,10 @@ import { logInUser } from "./utils/user"
 
 test.describe.configure({ mode: "serial" })
 
-const namespaceRow = (page: import("@playwright/test").Page, namespaceName: string) =>
+const namespaceRow = (
+  page: import("@playwright/test").Page,
+  namespaceName: string,
+) =>
   page.locator("tr").filter({
     has: page.getByRole("cell", { name: namespaceName, exact: true }),
   })

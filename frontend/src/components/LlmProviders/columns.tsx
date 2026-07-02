@@ -1,8 +1,8 @@
 import type { ColumnDef } from "@tanstack/react-table"
 
-import type { LlmProviderConfig } from "@/client/tenantApi"
-import { Button } from "@/components/ui/button"
+import type { LlmProviderConfig } from "@/api/tenantApi"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 
 const statusLabel: Record<LlmProviderConfig["validation_status"], string> = {
   unverified: "未校验",
@@ -37,7 +37,10 @@ export function buildLlmProviderColumns(
       accessorKey: "base_url",
       header: "接入地址",
       cell: ({ row }) => (
-        <span className="block max-w-[320px] truncate" title={row.original.base_url}>
+        <span
+          className="block max-w-[320px] truncate"
+          title={row.original.base_url}
+        >
           {row.original.base_url}
         </span>
       ),

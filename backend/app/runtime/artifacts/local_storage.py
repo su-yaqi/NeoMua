@@ -19,7 +19,9 @@ class LocalArtifactStorage:
         destination = self._path(key)
         destination.parent.mkdir(parents=True, exist_ok=True)
         try:
-            descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            descriptor = os.open(
+                destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600
+            )
         except FileExistsError:
             return
         try:

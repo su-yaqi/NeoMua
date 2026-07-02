@@ -1,4 +1,4 @@
-import { Briefcase, Building2, Home, Sparkles, Users } from "lucide-react"
+import { Briefcase, Building2, Cpu, Home, Sparkles, Users } from "lucide-react"
 
 import { SidebarAppearance } from "@/components/Common/Appearance"
 import { Logo } from "@/components/Common/Logo"
@@ -22,11 +22,21 @@ export function AppSidebar() {
   const selectedNamespaceId = localStorage.getItem("selected_namespace_id")
   const canManageSelectedNamespace =
     Boolean(currentUser) && Boolean(selectedNamespaceId)
+  const selectedRole = currentUser?.namespace_roles?.find(
+    (assignment) => assignment.namespace_id === selectedNamespaceId,
+  )?.role
+  const canUseRuntimes =
+    currentUser?.is_superuser ||
+    selectedRole === "admin" ||
+    selectedRole === "developer"
 
   const items: Item[] = [...baseItems]
 
   if (currentUser) {
     if (canManageSelectedNamespace && selectedNamespaceId) {
+      if (canUseRuntimes) {
+        items.push({ icon: Cpu, title: "运行时管理", path: "/system/runtimes" })
+      }
       items.push({
         icon: Users,
         title: "空间成员管理",

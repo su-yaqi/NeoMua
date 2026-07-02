@@ -29,4 +29,6 @@ class SystemdServiceManager:
         )
         self.unit_path.write_text(unit, encoding="utf-8")
         subprocess.run(["systemctl", "daemon-reload"], check=True)
-        subprocess.run(["systemctl", "enable", "--now", "neomua-node.service"], check=True)
+        subprocess.run(
+            ["systemctl", "enable", "--now", "neomua-node.service"], check=True
+        )

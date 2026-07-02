@@ -21,8 +21,10 @@ class ArtifactManifest(BaseModel):
 
     def canonical_bytes(self) -> bytes:
         return json.dumps(
-            self.model_dump(mode="json"), sort_keys=True,
-            separators=(",", ":"), ensure_ascii=False,
+            self.model_dump(mode="json"),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
         ).encode()
 
 
@@ -39,6 +41,8 @@ class DeploymentManifest(BaseModel):
 
     def canonical_bytes(self) -> bytes:
         return json.dumps(
-            self.model_dump(mode="json"), sort_keys=True,
-            separators=(",", ":"), ensure_ascii=False,
+            self.model_dump(mode="json"),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
         ).encode()

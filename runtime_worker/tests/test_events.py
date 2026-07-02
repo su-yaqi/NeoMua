@@ -38,11 +38,14 @@ class ToolMessage:
 
 def test_normalize_tool_call_as_distinct_event() -> None:
     events = normalize_messages(ToolMessage(), start_sequence=3)
-    assert events == [{
-        "sequence": 3,
-        "event_type": "tool_call",
-        "payload": {
-            "id": "tool-1", "name": "Read",
-            "input": {"file_path": "/workspace/README.md"},
-        },
-    }]
+    assert events == [
+        {
+            "sequence": 3,
+            "event_type": "tool_call",
+            "payload": {
+                "id": "tool-1",
+                "name": "Read",
+                "input": {"file_path": "/workspace/README.md"},
+            },
+        }
+    ]

@@ -1,6 +1,6 @@
 import axios from "axios"
 
-import { OpenAPI } from "@/client"
+import { client } from "@/client/client.gen"
 
 export type NamespaceRole = "admin" | "developer" | "user"
 
@@ -140,11 +140,89 @@ export interface PlatformUserCreateBody {
   namespace_assignments?: UserNamespaceAssignment[]
 }
 
+export type RuntimeRouteMode = "platform_gateway" | "direct_anthropic"
+
+export interface PlatformRuntime {
+  id: string
+  namespace_id: string
+  route_mode: RuntimeRouteMode
+  model_id: string
+  provider_config_id: string | null
+  base_url: string | null
+  permission_mode: string
+  secret_masked: string | null
+  compatibility_verified: boolean
+}
+
+export interface RuntimeNode {
+  id: string
+  name: string
+  hostname: string
+  os_name: string
+  architecture: string
+  agent_version: string
+  sdk_version: string | null
+  online: boolean
+  last_seen_at: string | null
+  revoked_at: string | null
+  runtime_profile_id: string | null
+}
+
+export interface RuntimeEvent {
+  sequence: number
+  event_type: string
+  payload: Record<string, unknown>
+}
+
+export interface RuntimeTask {
+  id: string
+  runtime_profile_id: string
+  node_id: string | null
+  task_kind: "ordinary" | "admin"
+  status: string
+  prompt: string
+  snapshot: Record<string, unknown>
+  final_result: Record<string, unknown> | null
+  retry_of_task_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface RuntimeArtifact {
+  id: string
+  kind: string
+  logical_target: string
+  version: string
+  content_sha256: string
+  size: number
+  manifest: Record<string, unknown>
+  signature: string
+  signing_public_key: string
+}
+
+export interface ArtifactDeployment {
+  id: string
+  node_id: string
+  artifact_id: string
+  previous_artifact_id: string | null
+  attempt: number
+  status: string
+  error: Record<string, unknown> | null
+}
+
+export interface ArtifactRelease {
+  id: string
+  artifact_id: string
+  valid_until: string
+  rollback_of_release_id: string | null
+  deployments: ArtifactDeployment[]
+}
+
 const api = axios.create()
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("access_token") || ""
-  config.baseURL = OpenAPI.BASE
+  config.baseURL = client.getConfig().baseURL
   config.headers = config.headers || {}
   config.headers.Authorization = `Bearer ${token}`
   const selectedNamespaceId = localStorage.getItem("selected_namespace_id")
@@ -253,9 +331,10 @@ export const tenantApi = {
     return data
   },
   readLlmProviderConfigs: async () => {
-    const { data } = await api.get<{ data: LlmProviderConfig[]; count: number }>(
-      "/api/v1/llm/provider-configs",
-    )
+    const { data } = await api.get<{
+      data: LlmProviderConfig[]
+      count: number
+    }>("/api/v1/llm/provider-configs")
     return data
   },
   createLlmProviderConfig: async (body: LlmProviderConfigCreateBody) => {
@@ -291,6 +370,189 @@ export const tenantApi = {
     const { data } = await api.post<LlmProviderConfig>(
       `/api/v1/llm/provider-configs/${configId}/sync-models`,
       body,
+    )
+    return data
+  },
+  readPlatformRuntime: async () => {
+    const { data } = await api.get<PlatformRuntime>("/api/v1/runtimes/platform")
+    return data
+  },
+  upsertPlatformRuntime: async (body: Record<string, unknown>) => {
+    const { data } = await api.put<PlatformRuntime>(
+      "/api/v1/runtimes/platform",
+      body,
+    )
+    return data
+  },
+  validatePlatformRuntime: async () => {
+    const { data } = await api.post<PlatformRuntime>(
+      "/api/v1/runtimes/platform/validate",
+    )
+    return data
+  },
+  createRuntimeSession: async () => {
+    const { data } = await api.post<{ id: string }>(
+      "/api/v1/runtimes/platform/sessions",
+      {},
+    )
+    return data
+  },
+  sendRuntimeMessage: async (sessionId: string, prompt: string) => {
+    const { data } = await api.post<{ id: string; status: string }>(
+      `/api/v1/runtimes/sessions/${sessionId}/messages`,
+      { prompt },
+    )
+    return data
+  },
+  readRuntimeEvents: async (taskId: string, afterSequence = -1) => {
+    const { data } = await api.get<RuntimeEvent[]>(
+      `/api/v1/runtimes/tasks/${taskId}/events`,
+      { params: { after_sequence: afterSequence } },
+    )
+    return data
+  },
+  streamRuntimeEvents: async (
+    taskId: string,
+    onEvent: (event: RuntimeEvent) => void,
+    signal?: AbortSignal,
+  ) => {
+    const token = localStorage.getItem("access_token") || ""
+    const namespaceId = localStorage.getItem("selected_namespace_id") || ""
+    const response = await fetch(
+      `${client.getConfig().baseURL}/api/v1/runtimes/tasks/${taskId}/stream`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "X-Namespace-Id": namespaceId,
+        },
+        signal,
+      },
+    )
+    if (!response.ok || !response.body) {
+      throw new Error(`事件流连接失败 (${response.status})`)
+    }
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ""
+    while (true) {
+      const { done, value } = await reader.read()
+      buffer += decoder.decode(value, { stream: !done })
+      const frames = buffer.split("\n\n")
+      buffer = frames.pop() ?? ""
+      for (const frame of frames) {
+        const data = frame.split("\n").find((line) => line.startsWith("data: "))
+        if (data) onEvent(JSON.parse(data.slice(6)) as RuntimeEvent)
+      }
+      if (done) break
+    }
+  },
+  readRuntimeNodes: async () => {
+    const { data } = await api.get<{ data: RuntimeNode[]; count: number }>(
+      "/api/v1/runtimes/nodes",
+    )
+    return data
+  },
+  readRuntimeNode: async (nodeId: string) => {
+    const { data } = await api.get<RuntimeNode>(
+      `/api/v1/runtimes/nodes/${nodeId}`,
+    )
+    return data
+  },
+  createNodeEnrollmentToken: async () => {
+    const { data } = await api.post<{
+      id: string
+      token: string
+      expires_at: string
+    }>("/api/v1/runtimes/nodes/enrollment-tokens")
+    return data
+  },
+  configureNodeRuntime: async (
+    nodeId: string,
+    body: Record<string, unknown>,
+  ) => {
+    const { data } = await api.put(
+      `/api/v1/runtimes/nodes/${nodeId}/runtime`,
+      body,
+    )
+    return data
+  },
+  revokeNodeCredential: async (nodeId: string) => {
+    await api.delete(`/api/v1/runtimes/nodes/${nodeId}/credential`)
+  },
+  createRuntimeTask: async (
+    body: Record<string, unknown>,
+    idempotencyKey: string,
+  ) => {
+    const { data } = await api.post<RuntimeTask>(
+      "/api/v1/runtime-tasks",
+      body,
+      {
+        headers: { "Idempotency-Key": idempotencyKey },
+      },
+    )
+    return data
+  },
+  readRuntimeTasks: async () => {
+    const { data } = await api.get<{ data: RuntimeTask[]; count: number }>(
+      "/api/v1/runtime-tasks",
+    )
+    return data
+  },
+  readRuntimeTask: async (taskId: string) => {
+    const { data } = await api.get<RuntimeTask>(
+      `/api/v1/runtime-tasks/${taskId}`,
+    )
+    return data
+  },
+  cancelRuntimeTask: async (taskId: string) => {
+    const { data } = await api.post<RuntimeTask>(
+      `/api/v1/runtime-tasks/${taskId}/cancel`,
+    )
+    return data
+  },
+  retryRuntimeTask: async (taskId: string, idempotencyKey: string) => {
+    const { data } = await api.post<RuntimeTask>(
+      `/api/v1/runtime-tasks/${taskId}/retry`,
+      {},
+      { headers: { "Idempotency-Key": idempotencyKey } },
+    )
+    return data
+  },
+  readRuntimeArtifacts: async () => {
+    const { data } = await api.get<{ data: RuntimeArtifact[]; count: number }>(
+      "/api/v1/runtime-artifacts",
+    )
+    return data
+  },
+  uploadRuntimeArtifact: async (form: FormData) => {
+    const { data } = await api.post<RuntimeArtifact>(
+      "/api/v1/runtime-artifacts",
+      form,
+    )
+    return data
+  },
+  createArtifactRelease: async (body: Record<string, unknown>) => {
+    const { data } = await api.post<ArtifactRelease>(
+      "/api/v1/runtime-artifacts/releases",
+      body,
+    )
+    return data
+  },
+  readArtifactRelease: async (releaseId: string) => {
+    const { data } = await api.get<ArtifactRelease>(
+      `/api/v1/runtime-artifacts/releases/${releaseId}`,
+    )
+    return data
+  },
+  retryArtifactDeployment: async (deploymentId: string) => {
+    const { data } = await api.post<ArtifactDeployment>(
+      `/api/v1/runtime-artifacts/deployments/${deploymentId}/retry`,
+    )
+    return data
+  },
+  rollbackArtifactDeployment: async (deploymentId: string) => {
+    const { data } = await api.post<ArtifactRelease>(
+      `/api/v1/runtime-artifacts/deployments/${deploymentId}/rollback`,
     )
     return data
   },

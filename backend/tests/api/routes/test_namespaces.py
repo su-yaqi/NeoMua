@@ -9,9 +9,6 @@ from app.models import (
     Namespace,
     NamespaceCreate,
     NamespaceRole,
-    NamespaceUserCreate,
-    User,
-    UserCreate,
 )
 from tests.utils.user import authentication_token_from_email, create_random_user
 from tests.utils.utils import random_email, random_lower_string
@@ -100,8 +97,6 @@ def test_namespace_admin_cannot_manage_other_namespace(
     admin_user = create_random_user(db)
     own_namespace = create_namespace(db, admin_user_id=admin_user.id)
     other_namespace = create_namespace(db)
-    target_user = create_random_user(db)
-
     headers = namespace_headers(
         authentication_token_from_email(client=client, email=admin_user.email, db=db),
         own_namespace.id,
@@ -134,9 +129,7 @@ def test_namespace_admin_cannot_remove_own_membership(
     assert "cannot remove themselves" in response.json()["detail"]
 
 
-def test_namespace_admin_cannot_downgrade_self(
-    client: TestClient, db: Session
-) -> None:
+def test_namespace_admin_cannot_downgrade_self(client: TestClient, db: Session) -> None:
     admin_user = create_random_user(db)
     namespace = create_namespace(db, admin_user_id=admin_user.id)
 

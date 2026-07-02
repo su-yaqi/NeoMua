@@ -1,4 +1,8 @@
-import type { NamespacePublic, NamespaceRole, UserNamespaceAssignment } from "@/client/tenantApi"
+import type {
+  NamespacePublic,
+  NamespaceRole,
+  UserNamespaceAssignment,
+} from "@/api/tenantApi"
 import { Checkbox } from "@/components/ui/checkbox"
 import { FormControl, FormItem, FormLabel } from "@/components/ui/form"
 import {
@@ -78,7 +82,9 @@ export function NamespaceAssignmentsField({
                     />
                   </FormControl>
                   <div>
-                    <FormLabel className="font-normal">{namespace.name}</FormLabel>
+                    <FormLabel className="font-normal">
+                      {namespace.name}
+                    </FormLabel>
                     <p className="text-xs text-muted-foreground">
                       编码：{namespace.code}
                     </p>

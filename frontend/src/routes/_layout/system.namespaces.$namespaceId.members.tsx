@@ -2,13 +2,15 @@ import { useQuery } from "@tanstack/react-query"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useEffect } from "react"
 
-import { tenantApi } from "@/client/tenantApi"
+import { tenantApi } from "@/api/tenantApi"
 import { DataTable } from "@/components/Common/DataTable"
 import AddNamespaceMember from "@/components/System/AddNamespaceMember"
 import { buildNamespaceMemberColumns } from "@/components/System/namespaceMemberColumns"
 import useAuth from "@/hooks/useAuth"
 
-export const Route = createFileRoute("/_layout/system/namespaces/$namespaceId/members")({
+export const Route = createFileRoute(
+  "/_layout/system/namespaces/$namespaceId/members",
+)({
   component: NamespaceMembersPage,
 })
 

@@ -10,9 +10,10 @@ from app.runtime.models import (
     ArtifactRelease,
     NodeCredential,
     NodeEnrollmentToken,
+    NodeHandshakeNonce,
+    RuntimeArtifact,
     RuntimeNode,
     RuntimeNodeArtifact,
-    RuntimeArtifact,
     RuntimeProfile,
     RuntimeSecret,
 )
@@ -28,6 +29,7 @@ def cleanup_test_data(session: Session) -> None:
     session.execute(delete(RuntimeArtifact))
     session.execute(delete(NodeCredential))
     session.execute(delete(NodeEnrollmentToken))
+    session.execute(delete(NodeHandshakeNonce))
     session.execute(delete(RuntimeNode))
     session.execute(delete(RuntimeSecret))
     session.execute(delete(RuntimeProfile))

@@ -2,11 +2,38 @@ import hashlib
 import hmac
 import uuid
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 import jwt
 from fastapi import Header, HTTPException
 
 from app.core.config import settings
+
+_SENSITIVE_EVENT_KEYS = {
+    "api_key",
+    "api_token",
+    "token",
+    "access_token",
+    "refresh_token",
+    "authorization",
+    "password",
+    "secret",
+    "cookie",
+    "set-cookie",
+}
+
+
+def redact_event_payload(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: "[REDACTED]"
+            if key.lower() in _SENSITIVE_EVENT_KEYS
+            else redact_event_payload(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [redact_event_payload(item) for item in value]
+    return value
 
 
 def expected_internal_token() -> str:
@@ -52,9 +79,7 @@ def issue_gateway_token(
     )
 
 
-def verify_gateway_token(
-    token: str, *, runtime_id: uuid.UUID, model_id: str
-) -> dict:
+def verify_gateway_token(token: str, *, runtime_id: uuid.UUID, model_id: str) -> dict:
     try:
         claims = jwt.decode(
             token,
@@ -64,6 +89,9 @@ def verify_gateway_token(
         )
     except jwt.PyJWTError as exc:
         raise GatewayScopeError("invalid gateway token") from exc
-    if claims.get("runtime_id") != str(runtime_id) or claims.get("model_id") != model_id:
+    if (
+        claims.get("runtime_id") != str(runtime_id)
+        or claims.get("model_id") != model_id
+    ):
         raise GatewayScopeError("gateway token scope mismatch")
     return claims

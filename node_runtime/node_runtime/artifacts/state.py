@@ -25,3 +25,8 @@ class ArtifactState:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary, self.path)
+        descriptor = os.open(self.root, os.O_RDONLY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)

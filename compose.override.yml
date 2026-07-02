@@ -86,6 +86,7 @@ services:
       SMTP_PORT: "1025"
       SMTP_TLS: "false"
       EMAILS_FROM_EMAIL: "noreply@example.com"
+      MODEL_GATEWAY_PUBLIC_URL: "http://localhost:8090"
 
   mailcatcher:
     image: schickling/mailcatcher
@@ -104,6 +105,14 @@ services:
         - NODE_ENV=production
     ports:
       - "5173:80"
+
+  model-gateway:
+    restart: "no"
+    ports:
+      - "8090:8090"
+
+  runtime-worker:
+    restart: "no"
 
   frontend-dev:
     restart: "no"

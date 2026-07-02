@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from enum import Enum
 from pathlib import PurePosixPath
 
@@ -79,6 +80,26 @@ class ArtifactManifest(BaseModel):
         if allowed[self.kind] != self.logical_target:
             raise ValueError("artifact kind does not match logical target")
         return self
+
+    def canonical_bytes(self) -> bytes:
+        return json.dumps(
+            self.model_dump(mode="json"),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode()
+
+
+class DeploymentManifest(BaseModel):
+    schema_version: str = "1"
+    namespace_id: str
+    node_id: str
+    release_id: str
+    deployment_id: str
+    artifact_id: str
+    logical_target: LogicalTarget
+    artifact_manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    valid_until: datetime
 
     def canonical_bytes(self) -> bytes:
         return json.dumps(

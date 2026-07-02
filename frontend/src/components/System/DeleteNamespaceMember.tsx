@@ -3,7 +3,7 @@ import { Trash2 } from "lucide-react"
 import { useState } from "react"
 import { useForm } from "react-hook-form"
 
-import { type TenantUser, tenantApi } from "@/client/tenantApi"
+import { type TenantUser, tenantApi } from "@/api/tenantApi"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -44,7 +44,9 @@ function DeleteNamespaceMember({
     },
     onError: handleError.bind(showErrorToast),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["namespace-users", namespaceId] })
+      queryClient.invalidateQueries({
+        queryKey: ["namespace-users", namespaceId],
+      })
     },
   })
 

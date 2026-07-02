@@ -6,14 +6,20 @@ import boto3
 
 class S3ArtifactStorage:
     def __init__(
-        self, *, bucket: str, endpoint_url: str | None = None,
-        access_key: str | None = None, secret_key: str | None = None,
+        self,
+        *,
+        bucket: str,
+        endpoint_url: str | None = None,
+        access_key: str | None = None,
+        secret_key: str | None = None,
         region: str | None = None,
     ) -> None:
         self.bucket = bucket
         self.client = boto3.client(
-            "s3", endpoint_url=endpoint_url,
-            aws_access_key_id=access_key, aws_secret_access_key=secret_key,
+            "s3",
+            endpoint_url=endpoint_url,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
             region_name=region,
         )
 

@@ -1,4 +1,5 @@
 import base64
+import secrets
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -38,9 +39,13 @@ def _enroll(
     enrolled = client.post(
         f"{settings.API_V1_STR}/node/enroll",
         json={
-            "token": token, "name": "node", "hostname": "node-1",
-            "os_name": "linux", "architecture": "arm64",
-            "agent_version": "0.1.0", "sdk_version": "0.2.110",
+            "token": token,
+            "name": "node",
+            "hostname": "node-1",
+            "os_name": "linux",
+            "architecture": "arm64",
+            "agent_version": "0.1.0",
+            "sdk_version": "0.2.110",
             "public_key": base64.b64encode(public).decode(),
         },
     ).json()
@@ -50,9 +55,15 @@ def _enroll(
 def test_presence_becomes_offline_without_revoking_pairing() -> None:
     now = datetime.now(timezone.utc)
     node = RuntimeNode(
-        namespace_id=uuid.uuid4(), name="n", hostname="h", os_name="linux",
-        architecture="arm64", agent_version="1", public_key="key",
-        key_fingerprint="fingerprint", connection_id=uuid.uuid4(),
+        namespace_id=uuid.uuid4(),
+        name="n",
+        hostname="h",
+        os_name="linux",
+        architecture="arm64",
+        agent_version="1",
+        public_key="key",
+        key_fingerprint="fingerprint",
+        connection_id=uuid.uuid4(),
         last_seen_at=now,
     )
     assert node_is_online(node, now=now + timedelta(seconds=59))
@@ -65,10 +76,12 @@ def test_authenticated_node_connects_and_heartbeats(
 ) -> None:
     enrolled, private = _enroll(client, db, superuser_token_headers)
     timestamp = str(int(time.time()))
-    signature = private.sign(f"neomua-ws-v1:{timestamp}".encode())
+    nonce = secrets.token_urlsafe(32)
+    signature = private.sign(f"neomua-ws-v1:{timestamp}:{nonce}".encode())
     headers = {
         "Authorization": f"Bearer {enrolled['credential']}",
         "X-Node-Timestamp": timestamp,
+        "X-Node-Nonce": nonce,
         "X-Node-Signature": base64.b64encode(signature).decode(),
     }
     with client.websocket_connect(
@@ -77,12 +90,17 @@ def test_authenticated_node_connects_and_heartbeats(
         hello = websocket.receive_json()
         assert hello["type"] == "hello_ack"
         message_id = str(uuid.uuid4())
-        websocket.send_json({
-            "type": "heartbeat", "protocol_version": "1",
-            "message_id": message_id, "correlation_id": None,
-            "node_id": enrolled["node_id"],
-            "sent_at": datetime.now(timezone.utc).isoformat(), "payload": {},
-        })
+        websocket.send_json(
+            {
+                "type": "heartbeat",
+                "protocol_version": "1",
+                "message_id": message_id,
+                "correlation_id": None,
+                "node_id": enrolled["node_id"],
+                "sent_at": datetime.now(timezone.utc).isoformat(),
+                "payload": {},
+            }
+        )
         ack = websocket.receive_json()
         assert ack["type"] == "heartbeat_ack"
         assert ack["correlation_id"] == message_id
@@ -116,15 +134,15 @@ def test_node_dispatch_ack_and_result_are_persisted(
     db.add(task)
     db.commit()
     db.refresh(task)
-    append_event_idempotent(
-        db, task, 0, AgentEventType.USER_MESSAGE, {"text": "work"}
-    )
+    append_event_idempotent(db, task, 0, AgentEventType.USER_MESSAGE, {"text": "work"})
     timestamp = str(int(time.time()))
+    nonce = secrets.token_urlsafe(32)
     headers = {
         "Authorization": f"Bearer {enrolled['credential']}",
         "X-Node-Timestamp": timestamp,
+        "X-Node-Nonce": nonce,
         "X-Node-Signature": base64.b64encode(
-            private.sign(f"neomua-ws-v1:{timestamp}".encode())
+            private.sign(f"neomua-ws-v1:{timestamp}:{nonce}".encode())
         ).decode(),
     }
     with client.websocket_connect(
@@ -133,21 +151,38 @@ def test_node_dispatch_ack_and_result_are_persisted(
         assert websocket.receive_json()["type"] == "hello_ack"
         dispatch = websocket.receive_json()
         assert dispatch["type"] == "task_dispatch"
-        websocket.send_json({
-            "type": "task_accepted", "protocol_version": "1",
-            "message_id": str(uuid.uuid4()), "correlation_id": None,
-            "node_id": enrolled["node_id"], "sent_at": datetime.now(timezone.utc).isoformat(),
-            "payload": {"task_id": str(task.id), "revision": 1},
-        })
+        websocket.send_json(
+            {
+                "type": "task_accepted",
+                "protocol_version": "1",
+                "message_id": str(uuid.uuid4()),
+                "correlation_id": None,
+                "node_id": enrolled["node_id"],
+                "sent_at": datetime.now(timezone.utc).isoformat(),
+                "payload": {"task_id": str(task.id), "revision": 1},
+            }
+        )
         assert websocket.receive_json()["type"] == "task_accept_ack"
-        websocket.send_json({
-            "type": "task_events", "protocol_version": "1",
-            "message_id": str(uuid.uuid4()), "correlation_id": None,
-            "node_id": enrolled["node_id"], "sent_at": datetime.now(timezone.utc).isoformat(),
-            "payload": {"task_id": str(task.id), "events": [
-                {"sequence": 2, "event_type": "result", "payload": {"result": "done"}}
-            ]},
-        })
+        websocket.send_json(
+            {
+                "type": "task_events",
+                "protocol_version": "1",
+                "message_id": str(uuid.uuid4()),
+                "correlation_id": None,
+                "node_id": enrolled["node_id"],
+                "sent_at": datetime.now(timezone.utc).isoformat(),
+                "payload": {
+                    "task_id": str(task.id),
+                    "events": [
+                        {
+                            "sequence": 2,
+                            "event_type": "result",
+                            "payload": {"result": "done"},
+                        }
+                    ],
+                },
+            }
+        )
         event_ack = websocket.receive_json()
         assert event_ack["type"] == "task_events_ack"
         assert event_ack["payload"]["through_sequence"] == 2

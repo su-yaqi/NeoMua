@@ -10,7 +10,9 @@ from app.runtime.artifacts.signing import ArtifactSigner
 def test_modified_manifest_fails_signature() -> None:
     signer = ArtifactSigner.generate()
     manifest = ArtifactManifest(
-        artifact_id="artifact-1", version="1", kind=ArtifactKind.AGENT,
+        artifact_id="artifact-1",
+        version="1",
+        kind=ArtifactKind.AGENT,
         logical_target=LogicalTarget.AGENTS,
         files=[ArtifactFile(path="agent/AGENT.md", sha256="a" * 64, size=12)],
     )

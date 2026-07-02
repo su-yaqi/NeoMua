@@ -9,7 +9,7 @@ import {
   type PlatformUserUpdateBody,
   type TenantUser,
   tenantApi,
-} from "@/client/tenantApi"
+} from "@/api/tenantApi"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -120,7 +120,9 @@ const EditUser = ({ user, onSuccess }: EditUserProps) => {
           <form onSubmit={form.handleSubmit(onSubmit)}>
             <DialogHeader>
               <DialogTitle>编辑平台用户</DialogTitle>
-              <DialogDescription>更新用户基础信息、账号状态与全局角色。</DialogDescription>
+              <DialogDescription>
+                更新用户基础信息、账号状态与全局角色。
+              </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <FormField
@@ -205,7 +207,9 @@ const EditUser = ({ user, onSuccess }: EditUserProps) => {
                         onCheckedChange={field.onChange}
                       />
                     </FormControl>
-                    <FormLabel className="font-normal">全局超级管理员</FormLabel>
+                    <FormLabel className="font-normal">
+                      全局超级管理员
+                    </FormLabel>
                   </FormItem>
                 )}
               />

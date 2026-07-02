@@ -4,8 +4,8 @@ import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlmodel import Session, select
 import jwt
+from sqlmodel import Session, select
 
 from app.core.config import settings
 from app.runtime.models import NodeCredential, NodeEnrollmentToken, RuntimeNode
@@ -42,9 +42,7 @@ def create_enrollment_token(
     return raw, record
 
 
-def consume_enrollment_token(
-    session: Session, raw_token: str
-) -> NodeEnrollmentToken:
+def consume_enrollment_token(session: Session, raw_token: str) -> NodeEnrollmentToken:
     now = datetime.now(timezone.utc)
     record = session.exec(
         select(NodeEnrollmentToken)

@@ -63,7 +63,9 @@ class NodeTaskExecutor:
             raise ValueError("bypassPermissions is not allowed")
         cwd = snapshot.get("working_directory")
         roots = snapshot.get("allowed_working_roots", [])
-        if cwd and not any(cwd == root or cwd.startswith(f"{root.rstrip('/')}/") for root in roots):
+        if cwd and not any(
+            cwd == root or cwd.startswith(f"{root.rstrip('/')}/") for root in roots
+        ):
             raise ValueError("working directory is outside snapshot allowlist")
         build_route_env(command["route"], snapshot, self.route_store)
 
@@ -88,7 +90,8 @@ class NodeTaskExecutor:
             await asyncio.sleep(60)
             await self.outbox.put(
                 envelope(
-                    "lease_renewed", self.node_id,
+                    "lease_renewed",
+                    self.node_id,
                     {"task_id": task_id, "revision": revision},
                 )
             )
@@ -115,7 +118,10 @@ class NodeTaskExecutor:
                     event = {
                         "sequence": sequence,
                         "event_type": "status",
-                        "payload": {"state": "cancelling", "sdk_terminal": event["payload"]},
+                        "payload": {
+                            "state": "sdk_interrupted",
+                            "sdk_terminal": event["payload"],
+                        },
                     }
                 self.spool.append(
                     task_id, sequence, event["event_type"], event["payload"]
@@ -193,35 +199,45 @@ class NodeTaskController:
             except Exception as exc:
                 return [
                     envelope(
-                        "task_rejected", self.node_id,
+                        "task_rejected",
+                        self.node_id,
                         {"task_id": message.payload.get("task_id"), "reason": str(exc)},
                     )
                 ]
             if decision in {DispatchDecision.ACCEPTED, DispatchDecision.DUPLICATE}:
                 return [
                     envelope(
-                        "task_accepted", self.node_id,
-                        {"task_id": message.payload["task_id"],
-                         "revision": message.payload["revision"],
-                         "duplicate": decision == DispatchDecision.DUPLICATE},
+                        "task_accepted",
+                        self.node_id,
+                        {
+                            "task_id": message.payload["task_id"],
+                            "revision": message.payload["revision"],
+                            "duplicate": decision == DispatchDecision.DUPLICATE,
+                        },
                     )
                 ]
             return [
                 envelope(
-                    "task_rejected", self.node_id,
+                    "task_rejected",
+                    self.node_id,
                     {"task_id": message.payload["task_id"], "reason": decision.value},
                 )
             ]
         if message.type == "task_events_ack":
             self.spool.acknowledge(
-                str(message.payload["task_id"]), int(message.payload["through_sequence"])
+                str(message.payload["task_id"]),
+                int(message.payload["through_sequence"]),
             )
         elif message.type == "task_cancel":
             await self.executor.cancel(str(message.payload["task_id"]))
             return [
                 envelope(
-                    "task_cancelled", self.node_id,
-                    {"task_id": message.payload["task_id"], "revision": message.payload["revision"]},
+                    "task_cancelled",
+                    self.node_id,
+                    {
+                        "task_id": message.payload["task_id"],
+                        "revision": message.payload["revision"],
+                    },
                 )
             ]
         return []

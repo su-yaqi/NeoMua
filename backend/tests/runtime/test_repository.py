@@ -21,14 +21,18 @@ def runtime_task_factory(db: Session):
         namespace = create_namespace(db)
         user = create_random_user(db)
         runtime = RuntimeProfile(
-            namespace_id=namespace.id, runtime_type=RuntimeType.PLATFORM,
-            route_mode=RuntimeRouteMode.DIRECT_ANTHROPIC, model_id="test",
+            namespace_id=namespace.id,
+            runtime_type=RuntimeType.PLATFORM,
+            route_mode=RuntimeRouteMode.DIRECT_ANTHROPIC,
+            model_id="test",
         )
         db.add(runtime)
         db.flush()
         task = AgentTask(
-            namespace_id=namespace.id, runtime_profile_id=runtime.id,
-            prompt="test", created_by=user.id,
+            namespace_id=namespace.id,
+            runtime_profile_id=runtime.id,
+            prompt="test",
+            created_by=user.id,
         )
         db.add(task)
         db.commit()
@@ -41,12 +45,18 @@ def runtime_task_factory(db: Session):
 
 def test_append_event_is_idempotent(db: Session, runtime_task_factory) -> None:
     task = runtime_task_factory()
-    first = append_event_idempotent(db, task, 1, AgentEventType.STATUS, {"state": "running"})
-    second = append_event_idempotent(db, task, 1, AgentEventType.STATUS, {"state": "running"})
+    first = append_event_idempotent(
+        db, task, 1, AgentEventType.STATUS, {"state": "running"}
+    )
+    second = append_event_idempotent(
+        db, task, 1, AgentEventType.STATUS, {"state": "running"}
+    )
     assert first.id == second.id
 
 
-def test_conflicting_event_sequence_is_rejected(db: Session, runtime_task_factory) -> None:
+def test_conflicting_event_sequence_is_rejected(
+    db: Session, runtime_task_factory
+) -> None:
     task = runtime_task_factory()
     append_event_idempotent(db, task, 1, AgentEventType.STATUS, {"state": "running"})
     try:

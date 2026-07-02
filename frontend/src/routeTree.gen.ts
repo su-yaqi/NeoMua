@@ -18,8 +18,13 @@ import { Route as LayoutIndexRouteImport } from './routes/_layout/index'
 import { Route as LayoutSettingsRouteImport } from './routes/_layout/settings'
 import { Route as LayoutItemsRouteImport } from './routes/_layout/items'
 import { Route as LayoutAdminRouteImport } from './routes/_layout/admin'
+import { Route as LayoutSystemRuntimesRouteImport } from './routes/_layout/system.runtimes'
 import { Route as LayoutSystemNamespacesRouteImport } from './routes/_layout/system.namespaces'
 import { Route as LayoutSystemLlmProvidersRouteImport } from './routes/_layout/system.llm-providers'
+import { Route as LayoutSystemRuntimesArtifactsRouteImport } from './routes/_layout/system.runtimes_.artifacts'
+import { Route as LayoutSystemRuntimesTasksTaskIdRouteImport } from './routes/_layout/system.runtimes_.tasks.$taskId'
+import { Route as LayoutSystemRuntimesReleasesReleaseIdRouteImport } from './routes/_layout/system.runtimes_.releases.$releaseId'
+import { Route as LayoutSystemRuntimesNodesNodeIdRouteImport } from './routes/_layout/system.runtimes_.nodes.$nodeId'
 import { Route as LayoutSystemNamespacesNamespaceIdMembersRouteImport } from './routes/_layout/system.namespaces.$namespaceId.members'
 
 const SignupRoute = SignupRouteImport.update({
@@ -66,6 +71,11 @@ const LayoutAdminRoute = LayoutAdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => LayoutRoute,
 } as any)
+const LayoutSystemRuntimesRoute = LayoutSystemRuntimesRouteImport.update({
+  id: '/system/runtimes',
+  path: '/system/runtimes',
+  getParentRoute: () => LayoutRoute,
+} as any)
 const LayoutSystemNamespacesRoute = LayoutSystemNamespacesRouteImport.update({
   id: '/system/namespaces',
   path: '/system/namespaces',
@@ -75,6 +85,30 @@ const LayoutSystemLlmProvidersRoute =
   LayoutSystemLlmProvidersRouteImport.update({
     id: '/system/llm-providers',
     path: '/system/llm-providers',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutSystemRuntimesArtifactsRoute =
+  LayoutSystemRuntimesArtifactsRouteImport.update({
+    id: '/system/runtimes_/artifacts',
+    path: '/system/runtimes/artifacts',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutSystemRuntimesTasksTaskIdRoute =
+  LayoutSystemRuntimesTasksTaskIdRouteImport.update({
+    id: '/system/runtimes_/tasks/$taskId',
+    path: '/system/runtimes/tasks/$taskId',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutSystemRuntimesReleasesReleaseIdRoute =
+  LayoutSystemRuntimesReleasesReleaseIdRouteImport.update({
+    id: '/system/runtimes_/releases/$releaseId',
+    path: '/system/runtimes/releases/$releaseId',
+    getParentRoute: () => LayoutRoute,
+  } as any)
+const LayoutSystemRuntimesNodesNodeIdRoute =
+  LayoutSystemRuntimesNodesNodeIdRouteImport.update({
+    id: '/system/runtimes_/nodes/$nodeId',
+    path: '/system/runtimes/nodes/$nodeId',
     getParentRoute: () => LayoutRoute,
   } as any)
 const LayoutSystemNamespacesNamespaceIdMembersRoute =
@@ -95,7 +129,12 @@ export interface FileRoutesByFullPath {
   '/settings': typeof LayoutSettingsRoute
   '/system/llm-providers': typeof LayoutSystemLlmProvidersRoute
   '/system/namespaces': typeof LayoutSystemNamespacesRouteWithChildren
+  '/system/runtimes': typeof LayoutSystemRuntimesRoute
+  '/system/runtimes/artifacts': typeof LayoutSystemRuntimesArtifactsRoute
   '/system/namespaces/$namespaceId/members': typeof LayoutSystemNamespacesNamespaceIdMembersRoute
+  '/system/runtimes/nodes/$nodeId': typeof LayoutSystemRuntimesNodesNodeIdRoute
+  '/system/runtimes/releases/$releaseId': typeof LayoutSystemRuntimesReleasesReleaseIdRoute
+  '/system/runtimes/tasks/$taskId': typeof LayoutSystemRuntimesTasksTaskIdRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -108,7 +147,12 @@ export interface FileRoutesByTo {
   '/': typeof LayoutIndexRoute
   '/system/llm-providers': typeof LayoutSystemLlmProvidersRoute
   '/system/namespaces': typeof LayoutSystemNamespacesRouteWithChildren
+  '/system/runtimes': typeof LayoutSystemRuntimesRoute
+  '/system/runtimes/artifacts': typeof LayoutSystemRuntimesArtifactsRoute
   '/system/namespaces/$namespaceId/members': typeof LayoutSystemNamespacesNamespaceIdMembersRoute
+  '/system/runtimes/nodes/$nodeId': typeof LayoutSystemRuntimesNodesNodeIdRoute
+  '/system/runtimes/releases/$releaseId': typeof LayoutSystemRuntimesReleasesReleaseIdRoute
+  '/system/runtimes/tasks/$taskId': typeof LayoutSystemRuntimesTasksTaskIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -123,7 +167,12 @@ export interface FileRoutesById {
   '/_layout/': typeof LayoutIndexRoute
   '/_layout/system/llm-providers': typeof LayoutSystemLlmProvidersRoute
   '/_layout/system/namespaces': typeof LayoutSystemNamespacesRouteWithChildren
+  '/_layout/system/runtimes': typeof LayoutSystemRuntimesRoute
+  '/_layout/system/runtimes_/artifacts': typeof LayoutSystemRuntimesArtifactsRoute
   '/_layout/system/namespaces/$namespaceId/members': typeof LayoutSystemNamespacesNamespaceIdMembersRoute
+  '/_layout/system/runtimes_/nodes/$nodeId': typeof LayoutSystemRuntimesNodesNodeIdRoute
+  '/_layout/system/runtimes_/releases/$releaseId': typeof LayoutSystemRuntimesReleasesReleaseIdRoute
+  '/_layout/system/runtimes_/tasks/$taskId': typeof LayoutSystemRuntimesTasksTaskIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -138,7 +187,12 @@ export interface FileRouteTypes {
     | '/settings'
     | '/system/llm-providers'
     | '/system/namespaces'
+    | '/system/runtimes'
+    | '/system/runtimes/artifacts'
     | '/system/namespaces/$namespaceId/members'
+    | '/system/runtimes/nodes/$nodeId'
+    | '/system/runtimes/releases/$releaseId'
+    | '/system/runtimes/tasks/$taskId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -151,7 +205,12 @@ export interface FileRouteTypes {
     | '/'
     | '/system/llm-providers'
     | '/system/namespaces'
+    | '/system/runtimes'
+    | '/system/runtimes/artifacts'
     | '/system/namespaces/$namespaceId/members'
+    | '/system/runtimes/nodes/$nodeId'
+    | '/system/runtimes/releases/$releaseId'
+    | '/system/runtimes/tasks/$taskId'
   id:
     | '__root__'
     | '/_layout'
@@ -165,7 +224,12 @@ export interface FileRouteTypes {
     | '/_layout/'
     | '/_layout/system/llm-providers'
     | '/_layout/system/namespaces'
+    | '/_layout/system/runtimes'
+    | '/_layout/system/runtimes_/artifacts'
     | '/_layout/system/namespaces/$namespaceId/members'
+    | '/_layout/system/runtimes_/nodes/$nodeId'
+    | '/_layout/system/runtimes_/releases/$releaseId'
+    | '/_layout/system/runtimes_/tasks/$taskId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -241,6 +305,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutAdminRouteImport
       parentRoute: typeof LayoutRoute
     }
+    '/_layout/system/runtimes': {
+      id: '/_layout/system/runtimes'
+      path: '/system/runtimes'
+      fullPath: '/system/runtimes'
+      preLoaderRoute: typeof LayoutSystemRuntimesRouteImport
+      parentRoute: typeof LayoutRoute
+    }
     '/_layout/system/namespaces': {
       id: '/_layout/system/namespaces'
       path: '/system/namespaces'
@@ -253,6 +324,34 @@ declare module '@tanstack/react-router' {
       path: '/system/llm-providers'
       fullPath: '/system/llm-providers'
       preLoaderRoute: typeof LayoutSystemLlmProvidersRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/system/runtimes_/artifacts': {
+      id: '/_layout/system/runtimes_/artifacts'
+      path: '/system/runtimes/artifacts'
+      fullPath: '/system/runtimes/artifacts'
+      preLoaderRoute: typeof LayoutSystemRuntimesArtifactsRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/system/runtimes_/tasks/$taskId': {
+      id: '/_layout/system/runtimes_/tasks/$taskId'
+      path: '/system/runtimes/tasks/$taskId'
+      fullPath: '/system/runtimes/tasks/$taskId'
+      preLoaderRoute: typeof LayoutSystemRuntimesTasksTaskIdRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/system/runtimes_/releases/$releaseId': {
+      id: '/_layout/system/runtimes_/releases/$releaseId'
+      path: '/system/runtimes/releases/$releaseId'
+      fullPath: '/system/runtimes/releases/$releaseId'
+      preLoaderRoute: typeof LayoutSystemRuntimesReleasesReleaseIdRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/system/runtimes_/nodes/$nodeId': {
+      id: '/_layout/system/runtimes_/nodes/$nodeId'
+      path: '/system/runtimes/nodes/$nodeId'
+      fullPath: '/system/runtimes/nodes/$nodeId'
+      preLoaderRoute: typeof LayoutSystemRuntimesNodesNodeIdRouteImport
       parentRoute: typeof LayoutRoute
     }
     '/_layout/system/namespaces/$namespaceId/members': {
@@ -287,6 +386,11 @@ interface LayoutRouteChildren {
   LayoutIndexRoute: typeof LayoutIndexRoute
   LayoutSystemLlmProvidersRoute: typeof LayoutSystemLlmProvidersRoute
   LayoutSystemNamespacesRoute: typeof LayoutSystemNamespacesRouteWithChildren
+  LayoutSystemRuntimesRoute: typeof LayoutSystemRuntimesRoute
+  LayoutSystemRuntimesArtifactsRoute: typeof LayoutSystemRuntimesArtifactsRoute
+  LayoutSystemRuntimesNodesNodeIdRoute: typeof LayoutSystemRuntimesNodesNodeIdRoute
+  LayoutSystemRuntimesReleasesReleaseIdRoute: typeof LayoutSystemRuntimesReleasesReleaseIdRoute
+  LayoutSystemRuntimesTasksTaskIdRoute: typeof LayoutSystemRuntimesTasksTaskIdRoute
 }
 
 const LayoutRouteChildren: LayoutRouteChildren = {
@@ -296,6 +400,12 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutIndexRoute: LayoutIndexRoute,
   LayoutSystemLlmProvidersRoute: LayoutSystemLlmProvidersRoute,
   LayoutSystemNamespacesRoute: LayoutSystemNamespacesRouteWithChildren,
+  LayoutSystemRuntimesRoute: LayoutSystemRuntimesRoute,
+  LayoutSystemRuntimesArtifactsRoute: LayoutSystemRuntimesArtifactsRoute,
+  LayoutSystemRuntimesNodesNodeIdRoute: LayoutSystemRuntimesNodesNodeIdRoute,
+  LayoutSystemRuntimesReleasesReleaseIdRoute:
+    LayoutSystemRuntimesReleasesReleaseIdRoute,
+  LayoutSystemRuntimesTasksTaskIdRoute: LayoutSystemRuntimesTasksTaskIdRoute,
 }
 
 const LayoutRouteWithChildren =

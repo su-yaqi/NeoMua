@@ -15,7 +15,7 @@ def test_handshake_is_signed_by_persisted_device_key() -> None:
     public = Ed25519PublicKey.from_public_bytes(base64.b64decode(keypair.public_key))
     public.verify(
         base64.b64decode(headers["X-Node-Signature"]),
-        b"neomua-ws-v1:1700000000",
+        f"neomua-ws-v1:1700000000:{headers['X-Node-Nonce']}".encode(),
     )
     assert headers["Authorization"] == "Bearer credential"
 

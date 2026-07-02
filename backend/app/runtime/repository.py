@@ -5,7 +5,12 @@ from datetime import datetime, timezone
 from sqlmodel import Session, select
 
 from app.runtime.models import AgentEvent, AgentEventType, AgentTask
-from app.runtime.policy import InvalidTaskTransition, TaskStatus, require_task_transition
+from app.runtime.policy import (
+    InvalidTaskTransition,
+    TaskStatus,
+    require_task_transition,
+)
+from app.runtime.security import redact_event_payload
 
 
 def append_event_idempotent(
@@ -15,6 +20,7 @@ def append_event_idempotent(
     event_type: AgentEventType,
     payload: dict,
 ) -> AgentEvent:
+    payload = redact_event_payload(payload)
     existing = session.exec(
         select(AgentEvent).where(
             AgentEvent.task_id == task.id, AgentEvent.sequence == sequence
@@ -31,7 +37,10 @@ def append_event_idempotent(
                     task.status = TaskStatus.RUNNING
                 require_task_transition(task.status, TaskStatus.FAILED)
                 task.status = TaskStatus.FAILED
-                task.final_result = {"code": "event_sequence_conflict", "sequence": sequence}
+                task.final_result = {
+                    "code": "event_sequence_conflict",
+                    "sequence": sequence,
+                }
                 task.completed_at = datetime.now(timezone.utc)
                 session.add(task)
                 session.commit()
@@ -60,18 +69,26 @@ def apply_event_state(
         task.status = target
 
     try:
-        if event_type in {
-            AgentEventType.ASSISTANT_MESSAGE,
-            AgentEventType.TOOL_CALL,
-            AgentEventType.TOOL_RESULT,
-        } and task.status == TaskStatus.DISPATCHED:
+        if (
+            event_type
+            in {
+                AgentEventType.ASSISTANT_MESSAGE,
+                AgentEventType.TOOL_CALL,
+                AgentEventType.TOOL_RESULT,
+            }
+            and task.status == TaskStatus.DISPATCHED
+        ):
             transition(TaskStatus.RUNNING)
         elif event_type == AgentEventType.STATUS:
             state = payload.get("state")
             if state in {status.value for status in TaskStatus}:
                 transition(TaskStatus(state))
         elif event_type in {AgentEventType.RESULT, AgentEventType.ERROR}:
-            target = TaskStatus.SUCCEEDED if event_type == AgentEventType.RESULT else TaskStatus.FAILED
+            target = (
+                TaskStatus.SUCCEEDED
+                if event_type == AgentEventType.RESULT
+                else TaskStatus.FAILED
+            )
             if task.status == TaskStatus.DISPATCHED:
                 transition(TaskStatus.RUNNING)
             if task.status != target:
@@ -131,9 +148,7 @@ def retry_task(
     return retried
 
 
-def expire_task_leases(
-    session: Session, *, now: datetime | None = None
-) -> int:
+def expire_task_leases(session: Session, *, now: datetime | None = None) -> int:
     current = now or datetime.now(timezone.utc)
     tasks = session.exec(
         select(AgentTask)

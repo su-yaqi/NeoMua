@@ -37,7 +37,11 @@ _ACTIONS = {
 }
 
 _TRANSITIONS = {
-    TaskStatus.QUEUED: {TaskStatus.DISPATCHED, TaskStatus.CANCELLED, TaskStatus.REJECTED},
+    TaskStatus.QUEUED: {
+        TaskStatus.DISPATCHED,
+        TaskStatus.CANCELLED,
+        TaskStatus.REJECTED,
+    },
     TaskStatus.DISPATCHED: {
         TaskStatus.RUNNING,
         TaskStatus.REJECTED,

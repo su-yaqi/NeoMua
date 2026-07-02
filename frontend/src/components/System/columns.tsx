@@ -1,7 +1,7 @@
-import type { ColumnDef } from "@tanstack/react-table"
 import { Link } from "@tanstack/react-router"
+import type { ColumnDef } from "@tanstack/react-table"
 
-import type { NamespacePublic } from "@/client/tenantApi"
+import type { NamespacePublic } from "@/api/tenantApi"
 import { Button } from "@/components/ui/button"
 import { NamespaceActionsMenu } from "./NamespaceActionsMenu"
 

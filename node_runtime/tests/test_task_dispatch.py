@@ -22,6 +22,7 @@ def test_duplicate_revision_starts_one_executor(tmp_path) -> None:
 def test_stale_revision_is_rejected(tmp_path) -> None:
     dispatcher = TaskDispatcher(EventSpool(tmp_path / "spool.db"), FakeExecutor())
     dispatcher.accept({"task_id": "task-1", "revision": 2, "snapshot": {}})
-    assert dispatcher.accept(
-        {"task_id": "task-1", "revision": 1, "snapshot": {}}
-    ) == DispatchDecision.STALE
+    assert (
+        dispatcher.accept({"task_id": "task-1", "revision": 1, "snapshot": {}})
+        == DispatchDecision.STALE
+    )

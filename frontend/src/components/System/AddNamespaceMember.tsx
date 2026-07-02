@@ -5,7 +5,7 @@ import { useState } from "react"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
-import { tenantApi } from "@/client/tenantApi"
+import { tenantApi } from "@/api/tenantApi"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -37,14 +37,13 @@ import {
 import useCustomToast from "@/hooks/useCustomToast"
 import { handleError } from "@/utils"
 
-const formSchema = z
-  .object({
-    email: z.email({ message: "请输入正确的邮箱" }),
-    full_name: z.string().optional(),
-    password: z.string().min(8, { message: "密码至少 8 位" }),
-    role: z.enum(["admin", "developer", "user"]),
-    is_active: z.boolean(),
-  })
+const formSchema = z.object({
+  email: z.email({ message: "请输入正确的邮箱" }),
+  full_name: z.string().optional(),
+  password: z.string().min(8, { message: "密码至少 8 位" }),
+  role: z.enum(["admin", "developer", "user"]),
+  is_active: z.boolean(),
+})
 
 type FormData = z.infer<typeof formSchema>
 
@@ -69,7 +68,8 @@ function AddNamespaceMember({ namespaceId }: AddNamespaceMemberProps) {
   })
 
   const mutation = useMutation({
-    mutationFn: (data: FormData) => tenantApi.createNamespaceUser(namespaceId, data),
+    mutationFn: (data: FormData) =>
+      tenantApi.createNamespaceUser(namespaceId, data),
     onSuccess: () => {
       showSuccessToast("空间成员添加成功")
       form.reset()
@@ -77,7 +77,9 @@ function AddNamespaceMember({ namespaceId }: AddNamespaceMemberProps) {
     },
     onError: handleError.bind(showErrorToast),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["namespace-users", namespaceId] })
+      queryClient.invalidateQueries({
+        queryKey: ["namespace-users", namespaceId],
+      })
     },
   })
 
@@ -132,7 +134,11 @@ function AddNamespaceMember({ namespaceId }: AddNamespaceMemberProps) {
                   <FormItem>
                     <FormLabel>初始密码</FormLabel>
                     <FormControl>
-                      <Input placeholder="仅新用户会使用此密码" type="password" {...field} />
+                      <Input
+                        placeholder="仅新用户会使用此密码"
+                        type="password"
+                        {...field}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
