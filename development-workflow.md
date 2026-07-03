@@ -45,7 +45,7 @@ make generate-client
 - Backend Docs: <http://localhost:8000/docs>
 - Adminer: <http://localhost:8080>
 - MailCatcher: <http://localhost:1080>
-- Traefik UI: <http://localhost:8090>
+- Traefik UI: <http://localhost:8091>
 
 ## 6) 约定
 
