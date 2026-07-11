@@ -53,6 +53,7 @@ def test_offline_node_does_not_apply_expired_release(db: Session) -> None:
         release_id=release.id,
         node_id=node.id,
         artifact_id=artifact.id,
+        logical_target=artifact.logical_target,
     )
     db.add(deployment)
     db.commit()

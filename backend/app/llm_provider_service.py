@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import httpx
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from app.core.config import settings
 from app.models import (
@@ -439,25 +440,40 @@ def seal_secret_payload(payload: dict[str, str]) -> str | None:
     if not payload:
         return None
     raw = json.dumps(payload, sort_keys=True).encode("utf-8")
-    nonce = os.urandom(16)
-    keystream = _derive_keystream(len(raw), nonce)
-    ciphertext = bytes(left ^ right for left, right in zip(raw, keystream, strict=True))
-    signature = hmac.new(
-        _secret_key_bytes(), nonce + ciphertext, hashlib.sha256
-    ).digest()
-    return ".".join(
-        ["v1", _b64_encode(nonce), _b64_encode(ciphertext), _b64_encode(signature)]
+    nonce = os.urandom(12)
+    ciphertext = AESGCM(_secret_key_bytes()).encrypt(
+        nonce, raw, b"neomua:secret-payload:v2"
     )
+    return ".".join(["v2", _b64_encode(nonce), _b64_encode(ciphertext)])
+
+
+def _decode_secret_json(raw: bytes) -> dict[str, str]:
+    decoded: Any = json.loads(raw.decode("utf-8"))
+    if not isinstance(decoded, dict) or not all(
+        isinstance(key, str) and isinstance(value, str)
+        for key, value in decoded.items()
+    ):
+        raise ValueError("Secret payload must be a string mapping")
+    return dict(decoded)
 
 
 def open_secret_payload(ciphertext: str | None) -> dict[str, str]:
     if not ciphertext:
         return {}
-    version, encoded_nonce, encoded_ciphertext, encoded_signature = ciphertext.split(
-        "."
-    )
-    if version != "v1":
+    parts = ciphertext.split(".")
+    version = parts[0]
+    if version == "v2":
+        if len(parts) != 3:
+            raise ValueError("Invalid v2 secret payload")
+        nonce = _b64_decode(parts[1])
+        encrypted = _b64_decode(parts[2])
+        raw = AESGCM(_secret_key_bytes()).decrypt(
+            nonce, encrypted, b"neomua:secret-payload:v2"
+        )
+        return _decode_secret_json(raw)
+    if version != "v1" or len(parts) != 4:
         raise ValueError("Unsupported secret payload version")
+    _, encoded_nonce, encoded_ciphertext, encoded_signature = parts
     nonce = _b64_decode(encoded_nonce)
     encrypted = _b64_decode(encoded_ciphertext)
     expected_signature = _b64_decode(encoded_signature)
@@ -468,17 +484,13 @@ def open_secret_payload(ciphertext: str | None) -> dict[str, str]:
         raise ValueError("Secret payload signature mismatch")
     keystream = _derive_keystream(len(encrypted), nonce)
     raw = bytes(left ^ right for left, right in zip(encrypted, keystream, strict=True))
-    return json.loads(raw.decode("utf-8"))
+    return _decode_secret_json(raw)
 
 
 def mask_secret_value(value: str | None) -> str | None:
     if not value:
         return None
-    suffix = value[-4:] if len(value) >= 4 else value
-    if len(value) <= 4:
-        return "*" * len(value)
-    prefix = value[:3]
-    return f"{prefix}***{suffix}"
+    return "****"
 
 
 def get_primary_secret_mask(
@@ -652,10 +664,10 @@ def merge_provider_models(
                     "last_synced_at": model.last_synced_at,
                 }
 
-    for item in manual_models:
-        merged[item.model_id] = {
-            "model_id": item.model_id,
-            "display_name": item.display_name or item.model_id,
+    for manual_model in manual_models:
+        merged[manual_model.model_id] = {
+            "model_id": manual_model.model_id,
+            "display_name": manual_model.display_name or manual_model.model_id,
             "source_type": ProviderModelSourceType.MANUAL,
             "sync_status": ProviderModelSyncStatus.ACTIVE,
             "raw_metadata": {},
@@ -665,16 +677,13 @@ def merge_provider_models(
     enabled_set = set(enabled_model_ids)
     results: list[dict[str, Any]] = []
     for model_id, payload in sorted(merged.items(), key=lambda item: item[0]):
+        existing = existing_by_id.get(model_id)
         results.append(
             {
-                "id": existing_by_id.get(model_id).id
-                if model_id in existing_by_id
-                else None,
+                "id": existing.id if existing else None,
                 **payload,
                 "is_enabled": model_id in enabled_set,
-                "created_at": existing_by_id.get(model_id).created_at
-                if model_id in existing_by_id
-                else now,
+                "created_at": existing.created_at if existing else now,
                 "updated_at": now,
             }
         )

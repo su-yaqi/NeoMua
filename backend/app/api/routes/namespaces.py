@@ -314,6 +314,6 @@ def delete_platform_user(
         raise HTTPException(status_code=404, detail="User not found")
     if user.id == current_user.id:
         raise HTTPException(status_code=403, detail="Cannot delete yourself")
-    session.exec(delete(User).where(User.id == user_id))
+    session.exec(delete(User).where(col(User.id) == user_id))
     session.commit()
     return Message(message="User deleted successfully")

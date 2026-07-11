@@ -6,6 +6,7 @@ from node_runtime.model_route import ModelRouteStore, build_route_env
 from node_runtime.protocol import Envelope, envelope
 from node_runtime.spool import EventSpool
 from runtime_worker.agent_shell import AgentShell, RunCommand
+from runtime_worker.permissions import validate_permission_mode
 
 
 class DispatchDecision(str, Enum):
@@ -59,8 +60,7 @@ class NodeTaskExecutor:
 
     def validate(self, command: dict) -> None:
         snapshot = command["snapshot"]
-        if snapshot.get("permission_mode") == "bypassPermissions":
-            raise ValueError("bypassPermissions is not allowed")
+        validate_permission_mode(snapshot.get("permission_mode", "default"))
         cwd = snapshot.get("working_directory")
         roots = snapshot.get("allowed_working_roots", [])
         if cwd and not any(
@@ -111,22 +111,50 @@ class NodeTaskExecutor:
                 cwd=snapshot.get("working_directory"),
                 env=env,
                 start_sequence=int(command.get("event_sequence_start", 1)),
+                timeout_seconds=int(snapshot.get("timeout_seconds", 3600)),
             )
-            async for event in self.shell.run_session(run_command, task_id=task_id):
-                sequence = int(event["sequence"])
-                if task_id in self.cancelling and event["event_type"] == "result":
-                    event = {
-                        "sequence": sequence,
-                        "event_type": "status",
-                        "payload": {
-                            "state": "sdk_interrupted",
-                            "sdk_terminal": event["payload"],
-                        },
-                    }
+            async def consume() -> None:
+                nonlocal sequence
+                async for event in self.shell.run_session(run_command, task_id=task_id):
+                    sequence = int(event["sequence"])
+                    if task_id in self.cancelling and event["event_type"] == "result":
+                        event = {
+                            "sequence": sequence,
+                            "event_type": "status",
+                            "payload": {
+                                "state": "sdk_interrupted",
+                                "sdk_terminal": event["payload"],
+                            },
+                        }
+                    self.spool.append(
+                        task_id, sequence, event["event_type"], event["payload"]
+                    )
+                    await self._queue_pending(task_id)
+
+            execution = asyncio.create_task(consume())
+            done, _ = await asyncio.wait(
+                {execution}, timeout=run_command.timeout_seconds
+            )
+            if not done:
+                await self.shell.interrupt(task_id)
+                try:
+                    await asyncio.wait_for(asyncio.shield(execution), timeout=10)
+                except TimeoutError:
+                    execution.cancel()
+                    await asyncio.gather(execution, return_exceptions=True)
+                sequence += 1
                 self.spool.append(
-                    task_id, sequence, event["event_type"], event["payload"]
+                    task_id,
+                    sequence,
+                    "error",
+                    {
+                        "code": "task_timeout",
+                        "timeout_seconds": run_command.timeout_seconds,
+                    },
                 )
                 await self._queue_pending(task_id)
+            else:
+                execution.result()
         except asyncio.CancelledError:
             raise
         except Exception as exc:

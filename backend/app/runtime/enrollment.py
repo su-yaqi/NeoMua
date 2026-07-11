@@ -27,7 +27,7 @@ def create_enrollment_token(
     namespace_id: uuid.UUID,
     created_by: uuid.UUID,
     *,
-    ttl: timedelta = timedelta(minutes=15),
+    ttl: timedelta = timedelta(minutes=10),
 ) -> tuple[str, NodeEnrollmentToken]:
     raw = f"nmenr_{secrets.token_urlsafe(32)}"
     record = NodeEnrollmentToken(
@@ -110,10 +110,37 @@ def rotate_node_credential(
     ):
         raise ValueError("credential cannot be rotated")
     replacement, token = issue_node_credential(session, node)
+    now = datetime.now(timezone.utc)
     current.replaced_by_id = replacement.id
+    current.replacement_issued_at = now
+    current.replacement_grace_until = now + timedelta(hours=24)
     session.add(current)
     session.flush()
     return replacement, token
+
+
+def recover_node_credential_rotation(
+    session: Session,
+    node: RuntimeNode,
+    current: NodeCredential,
+) -> tuple[NodeCredential, str]:
+    now = datetime.now(timezone.utc)
+    if (
+        current.replaced_by_id is None
+        or current.replacement_grace_until is None
+        or current.replacement_grace_until <= now
+    ):
+        raise ValueError("credential rotation recovery window expired")
+    abandoned = session.get(NodeCredential, current.replaced_by_id)
+    if abandoned is not None:
+        abandoned.revoked_at = now
+        session.add(abandoned)
+    current.replaced_by_id = None
+    current.replacement_issued_at = None
+    current.replacement_grace_until = None
+    session.add(current)
+    session.flush()
+    return rotate_node_credential(session, node, current)
 
 
 def retire_replaced_credential(
@@ -133,5 +160,6 @@ def retire_replaced_credential(
     ):
         raise ValueError("credential rotation acknowledgement is invalid")
     old.revoked_at = datetime.now(timezone.utc)
+    old.replacement_grace_until = None
     session.add(old)
     session.flush()

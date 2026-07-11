@@ -1,6 +1,5 @@
-import axios from "axios"
-
 import { client } from "@/client/client.gen"
+import { browserAxios } from "@/lib/browserApi"
 
 export type NamespaceRole = "admin" | "developer" | "user"
 
@@ -218,13 +217,11 @@ export interface ArtifactRelease {
   deployments: ArtifactDeployment[]
 }
 
-const api = axios.create()
+const api = browserAxios
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("access_token") || ""
   config.baseURL = client.getConfig().baseURL
   config.headers = config.headers || {}
-  config.headers.Authorization = `Bearer ${token}`
   const selectedNamespaceId = localStorage.getItem("selected_namespace_id")
   if (selectedNamespaceId) {
     config.headers["X-Namespace-Id"] = selectedNamespaceId
@@ -416,15 +413,14 @@ export const tenantApi = {
     onEvent: (event: RuntimeEvent) => void,
     signal?: AbortSignal,
   ) => {
-    const token = localStorage.getItem("access_token") || ""
     const namespaceId = localStorage.getItem("selected_namespace_id") || ""
     const response = await fetch(
       `${client.getConfig().baseURL}/api/v1/runtimes/tasks/${taskId}/stream`,
       {
         headers: {
-          Authorization: `Bearer ${token}`,
           "X-Namespace-Id": namespaceId,
         },
+        credentials: "include",
         signal,
       },
     )

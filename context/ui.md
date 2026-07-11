@@ -54,7 +54,7 @@
 
 ## 路由与权限约定
 
-- `/_layout` 在 `beforeLoad` 中检查本地 Token，并调用 `/users/me` 验证登录态。
+- `/_layout` 在 `beforeLoad` 中调用 `/users/me` 验证 HttpOnly Cookie 会话；不读取本地 Token。
 - `/login`、`/signup`、`/recover-password`、`/reset-password` 对已登录用户做重定向。
 - `/admin` 在进入页面前再次验证 `is_superuser`。
 - 顶部空间选择器将当前空间写入 `localStorage.selected_namespace_id`，并通过 `tenantApi` 自动附加到请求头。

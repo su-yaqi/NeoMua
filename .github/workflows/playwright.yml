@@ -77,6 +77,8 @@ jobs:
     - run: bun ci
       working-directory: frontend
     - run: bash scripts/generate-client.sh
+    - name: Verify generated API client is committed
+      run: git diff --exit-code -- frontend/src/client
     - run: docker compose build
     - run: docker compose down -v --remove-orphans
     - name: Run Playwright tests

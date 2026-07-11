@@ -3,7 +3,7 @@ from collections.abc import Generator
 from typing import Annotated
 
 import jwt
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Cookie, Depends, Header, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jwt.exceptions import InvalidTokenError
 from pydantic import ValidationError
@@ -16,7 +16,7 @@ from app.core.db import engine
 from app.models import NamespaceRole, TokenPayload, User
 
 reusable_oauth2 = OAuth2PasswordBearer(
-    tokenUrl=f"{settings.API_V1_STR}/login/access-token"
+    tokenUrl=f"{settings.API_V1_STR}/login/access-token", auto_error=False
 )
 
 
@@ -26,18 +26,28 @@ def get_db() -> Generator[Session, None, None]:
 
 
 SessionDep = Annotated[Session, Depends(get_db)]
-TokenDep = Annotated[str, Depends(reusable_oauth2)]
+TokenDep = Annotated[str | None, Depends(reusable_oauth2)]
 
 
-def get_current_user(session: SessionDep, token: TokenDep) -> User:
+def get_current_user(
+    request: Request,
+    session: SessionDep,
+    token: TokenDep,
+    access_cookie: Annotated[
+        str | None, Cookie(alias="neomua_access")
+    ] = None,
+) -> User:
+    credential = token or access_cookie
+    if credential is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
     try:
         payload = jwt.decode(
-            token, settings.SECRET_KEY, algorithms=[security.ALGORITHM]
+            credential, settings.SECRET_KEY, algorithms=[security.ALGORITHM]
         )
         token_data = TokenPayload(**payload)
     except (InvalidTokenError, ValidationError):
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
         )
     user = session.get(User, token_data.sub)
@@ -45,6 +55,7 @@ def get_current_user(session: SessionDep, token: TokenDep) -> User:
         raise HTTPException(status_code=404, detail="User not found")
     if not user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
+    request.state.auth_source = "bearer" if token else "cookie"
     return user
 
 
@@ -87,6 +98,8 @@ def require_namespace_admin(
         raise HTTPException(status_code=404, detail="Namespace not found")
     if current_user.is_superuser:
         return current_namespace_id
+    if not namespace.is_active:
+        raise HTTPException(status_code=409, detail="Namespace is inactive")
     role = crud.get_namespace_role(
         session=session,
         user_id=current_user.id,
@@ -108,8 +121,11 @@ def require_namespace_runtime_user(
 ) -> uuid.UUID:
     if current_namespace_id is None:
         raise HTTPException(status_code=400, detail="namespace_id is required")
-    if crud.get_namespace(session=session, namespace_id=current_namespace_id) is None:
+    namespace = crud.get_namespace(session=session, namespace_id=current_namespace_id)
+    if namespace is None:
         raise HTTPException(status_code=404, detail="Namespace not found")
+    if not namespace.is_active:
+        raise HTTPException(status_code=409, detail="Namespace is inactive")
     if current_user.is_superuser:
         return current_namespace_id
     role = crud.get_namespace_role(

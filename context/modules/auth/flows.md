@@ -1,50 +1,26 @@
 # auth 业务流程
 
-## 核心流程
+## 登录、刷新与退出
 
-### 登录并建立会话
+1. 浏览器以 OAuth2 表单调用 `/login/access-token`。
+2. 后端校验用户后返回兼容 Bearer 客户端的 access token，同时设置三个 host-only Cookie：15 分钟 HttpOnly access、8 天 HttpOnly refresh、页面可读的 CSRF token。
+3. SPA 不保存 access/refresh token；通过携带 Cookie 的 `/users/me` 判断登录态。
+4. access 过期出现 401 时，浏览器只发起一个受控 `/login/refresh` 请求；refresh token 每次使用后立即轮换，原请求只重试一次。
+5. 已轮换 refresh token 被重放时，后端吊销同一 family 的全部 refresh session。
+6. 退出调用 `/login/logout`，服务端吊销 refresh session 并清理三个 Cookie。
 
-**步骤**
-1. 用户在登录页输入邮箱和密码。
-2. 前端调用 `/login/access-token`。
-3. 后端通过 `crud.authenticate()` 校验邮箱、密码和激活状态。
-4. 校验成功后生成 JWT，前端将 `access_token` 写入 `localStorage`。
-5. 跳转到 `/`，后续由受保护布局调用 `/users/me` 获取用户信息。
+非浏览器集成继续使用 `Authorization: Bearer <access token>`，不依赖 Cookie 或 CSRF。
 
-### 前端 E2E 测试的登录隔离
+## CSRF
 
-**步骤**
-1. 前端 Playwright 用例不再依赖 `.env` 中的 `FIRST_SUPERUSER` 固定账号。
-2. 登录页、设置页相关用例在运行前通过 `/private/users/` 创建临时测试用户。
-3. 平台治理相关用例在 `auth.setup.ts` 中创建一次性的临时 `superuser`，写入独立 `storageState`。
-4. 因此，`admin@example.com / changethis` 仅保留给人工联调使用，不再属于前端测试链路的一部分。
+- Cookie 鉴权的 POST/PUT/PATCH/DELETE 必须同时满足：`Origin` 在配置的前端 origin 中，且 `X-CSRF-Token` 与 CSRF Cookie 一致。
+- Bearer、内部服务凭证、节点注册和公开认证入口不套用 Cookie CSRF 规则。
+- Cookie 为 host-only；非 local 环境设置 `Secure`，统一 `SameSite=Lax`。
 
-### 找回并重置密码
+## 找回密码
 
-**步骤**
-1. 用户在找回密码页提交邮箱。
-2. 后端若查询到用户，则生成 reset token 并发送邮件；无论是否存在都返回统一消息。
-3. 用户从邮件进入 `/reset-password?token=...`。
-4. 前端提交新密码到 `/reset-password/`。
-5. 后端验证 token、用户存在性和激活状态后更新密码。
+找回密码对存在与不存在邮箱返回相同结果。重置 token 验证成功且用户仍启用时才更新密码。
 
-## 业务规则
+## E2E 登录隔离
 
-- 登录用户名固定为邮箱。
-- 未激活用户不能登录，也不能通过重置密码接口更新密码。
-- 找回密码接口不能暴露邮箱是否存在。
-- 前端自动化测试不应依赖固定开发账号是否存在。
-
-## 数据读写
-
-| 操作 | 表 | 说明 |
-|------|-----|------|
-| 读 | user | 登录校验、邮箱查找、重置密码 |
-| 写 | user | 更新 `hashed_password` |
-
-## 异常场景处理
-| 场景 | 处理方式 |
-|------|---------|
-| 邮箱或密码错误 | 返回 400，提示用户名或密码错误 |
-| reset token 无效 | 返回 400 `Invalid token` |
-| 用户不存在或被禁用 | 返回 400 / 404，由后端按场景抛错 |
+Playwright 创建临时用户后通过真实登录页建立 Cookie `storageState`；测试不写入 `localStorage.access_token`，固定开发账号不属于自动化链路。

@@ -1,7 +1,9 @@
 from pathlib import Path
-from typing import BinaryIO
+from typing import cast
 
 import boto3
+
+from app.runtime.artifacts.storage import ReadableBinaryStream
 
 
 class S3ArtifactStorage:
@@ -34,8 +36,9 @@ class S3ArtifactStorage:
                 if status not in {409, 412}:
                     raise
 
-    def open(self, key: str) -> BinaryIO:
-        return self.client.get_object(Bucket=self.bucket, Key=key)["Body"]
+    def open(self, key: str) -> ReadableBinaryStream:
+        body = self.client.get_object(Bucket=self.bucket, Key=key)["Body"]
+        return cast(ReadableBinaryStream, body)
 
     def issue_download(self, key: str, expires_in_seconds: int) -> str:
         return self.client.generate_presigned_url(

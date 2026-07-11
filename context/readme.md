@@ -13,11 +13,15 @@ context/
 ├── apis.md
 ├── ui.md
 ├── prds/
-│   └── v0.1/
-│       └── readme.md
+│   ├── v0.1/
+│   ├── v0.2/
+│   ├── v0.3/
+│   └── v0.4/
 ├── changelogs/
 │   ├── v0.1.md
-│   └── v0.2.md
+│   ├── v0.2.md
+│   ├── v0.3.md
+│   └── v0.4.md
 └── modules/
     ├── auth/
     │   ├── api.md
@@ -31,17 +35,19 @@ context/
     │   ├── api.md
     │   ├── flows.md
     │   └── ui.md
-    └── namespaces/
+    ├── namespaces/
         ├── api.md
         ├── flows.md
         └── ui.md
+    ├── llm_configs/
+    └── runtime_management/
 ```
 
 ## 文件职责
 
 - 根目录文件维护全局事实，反映当前主干代码已实现状态。
 - `modules/` 目录维护各业务模块的接口、流程和页面细节。
-- `prds/` 与 `changelogs/` 记录历史版本快照；当前 v0.2 已补齐空间治理与空间成员管理闭环。
+- `prds/` 与 `changelogs/` 记录 v0.1-v0.4 历史快照；当前实现包含空间治理、LLM 配置和 runtime_management 完整链路。
 
 ## 使用约定
 

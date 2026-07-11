@@ -30,6 +30,12 @@ export async function logInUser(page: Page, email: string, password: string) {
 
 export async function logOutUser(page: Page) {
   await page.getByTestId("user-menu").click()
+  const logoutResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/v1/login/logout") &&
+      response.request().method() === "POST",
+  )
   await page.getByRole("menuitem", { name: "Log out" }).click()
-  await page.goto("/login")
+  await logoutResponse
+  await page.waitForURL(/\/login$/)
 }

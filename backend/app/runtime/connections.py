@@ -7,7 +7,7 @@ import jwt
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import Session, delete
+from sqlmodel import Session, col, delete
 
 from app.core.config import settings
 from app.runtime.models import NodeCredential, NodeHandshakeNonce, RuntimeNode
@@ -80,7 +80,9 @@ def authenticate_node_connection(
     except (ValueError, InvalidSignature) as exc:
         raise NodeAuthenticationError("invalid device signature") from exc
     nonce_hash = hashlib.sha256(nonce_bytes).hexdigest()
-    session.exec(delete(NodeHandshakeNonce).where(NodeHandshakeNonce.expires_at < now))
+    session.exec(
+        delete(NodeHandshakeNonce).where(col(NodeHandshakeNonce.expires_at) < now)
+    )
     session.add(
         NodeHandshakeNonce(
             node_id=node.id,

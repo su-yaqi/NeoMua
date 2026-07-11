@@ -140,6 +140,7 @@ services:
       - "5173:5173"
 
   playwright:
+    profiles: ["test"]
     build:
       context: .
       dockerfile: frontend/Dockerfile.playwright

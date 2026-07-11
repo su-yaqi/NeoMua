@@ -272,9 +272,7 @@ test("Selected mode is preserved across sessions", async ({ page }) => {
   )
   expect(isDarkMode).toBe(true)
 
-  await page.evaluate(() => {
-    localStorage.removeItem("access_token")
-  })
+  await page.context().clearCookies()
   await page.goto("/login")
   await logInUser(page, email, password)
 

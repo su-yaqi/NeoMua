@@ -1,12 +1,23 @@
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 
 from pydantic import EmailStr
-from sqlalchemy import JSON, Column, DateTime, UniqueConstraint
-from sqlalchemy import Enum as SAEnum
+from sqlalchemy import JSON, Column, UniqueConstraint
+from sqlalchemy import DateTime as _DateTime
+from sqlalchemy import Enum as _SAEnum
 from sqlmodel import Field, Relationship, SQLModel
+
+
+# SQLModel accepts SQLAlchemy TypeEngine instances for ``sa_type`` at runtime,
+# while its current type signature only declares Python ``type`` objects.
+def DateTime(*args: Any, **kwargs: Any) -> type[Any]:
+    return cast(type[Any], _DateTime(*args, **kwargs))
+
+
+def SAEnum(*args: Any, **kwargs: Any) -> type[Any]:
+    return cast(type[Any], _SAEnum(*args, **kwargs))
 
 
 def get_datetime_utc() -> datetime:
@@ -105,11 +116,32 @@ class User(UserBase, table=True):
     hashed_password: str
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
-        sa_type=DateTime(timezone=True),  # type: ignore
+        sa_type=DateTime(timezone=True),
     )
     items: list["Item"] = Relationship(back_populates="owner", cascade_delete=True)
     namespaces: list["Namespace"] = Relationship(
         back_populates="users", link_model=UserNamespaceLink
+    )
+
+
+class RefreshSession(SQLModel, table=True):
+    __tablename__ = "refresh_session"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    family_id: uuid.UUID = Field(default_factory=uuid.uuid4, index=True)
+    user_id: uuid.UUID = Field(
+        foreign_key="user.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    token_hash: str = Field(max_length=64, unique=True, index=True)
+    expires_at: datetime = Field(sa_type=DateTime(timezone=True), index=True)
+    replaced_by_id: uuid.UUID | None = Field(
+        default=None, foreign_key="refresh_session.id", ondelete="SET NULL"
+    )
+    revoked_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    created_at: datetime = Field(
+        default_factory=get_datetime_utc, sa_type=DateTime(timezone=True)
+    )
+    last_used_at: datetime | None = Field(
+        default=None, sa_type=DateTime(timezone=True)
     )
 
 
@@ -134,7 +166,7 @@ class Namespace(NamespaceBase, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
-        sa_type=DateTime(timezone=True),  # type: ignore
+        sa_type=DateTime(timezone=True),
     )
     users: list[User] = Relationship(
         back_populates="namespaces", link_model=UserNamespaceLink
@@ -216,18 +248,18 @@ class LlmProviderConfig(SQLModel, table=True):
     validation_message: str | None = Field(default=None, max_length=1024)
     last_validated_at: datetime | None = Field(
         default=None,
-        sa_type=DateTime(timezone=True),  # type: ignore
+        sa_type=DateTime(timezone=True),
     )
     enabled: bool = True
     created_by: uuid.UUID = Field(foreign_key="user.id", nullable=False)
     updated_by: uuid.UUID = Field(foreign_key="user.id", nullable=False)
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
-        sa_type=DateTime(timezone=True),  # type: ignore
+        sa_type=DateTime(timezone=True),
     )
     updated_at: datetime | None = Field(
         default_factory=get_datetime_utc,
-        sa_type=DateTime(timezone=True),  # type: ignore
+        sa_type=DateTime(timezone=True),
     )
     models: list["LlmProviderModel"] = Relationship(
         back_populates="provider_config", cascade_delete=True
@@ -266,15 +298,15 @@ class LlmProviderModel(SQLModel, table=True):
     )
     last_synced_at: datetime | None = Field(
         default=None,
-        sa_type=DateTime(timezone=True),  # type: ignore
+        sa_type=DateTime(timezone=True),
     )
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
-        sa_type=DateTime(timezone=True),  # type: ignore
+        sa_type=DateTime(timezone=True),
     )
     updated_at: datetime | None = Field(
         default_factory=get_datetime_utc,
-        sa_type=DateTime(timezone=True),  # type: ignore
+        sa_type=DateTime(timezone=True),
     )
     provider_config: LlmProviderConfig | None = Relationship(back_populates="models")
 
@@ -409,7 +441,7 @@ class Item(ItemBase, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
-        sa_type=DateTime(timezone=True),  # type: ignore
+        sa_type=DateTime(timezone=True),
     )
     owner_id: uuid.UUID = Field(
         foreign_key="user.id", nullable=False, ondelete="CASCADE"

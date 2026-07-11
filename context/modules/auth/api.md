@@ -1,82 +1,25 @@
 # auth 接口详情
 
-> 全局规范见 `context/apis.md`。
+## 接口
 
-## 接口列表
-| Method | Path | 描述 |
-|--------|------|------|
-| POST | /login/access-token | 用户登录 |
-| POST | /login/test-token | 校验当前 Token |
-| POST | /password-recovery/{email} | 发起找回密码 |
-| POST | /reset-password/ | 重置密码 |
-| POST | /password-recovery-html-content/{email} | 预览找回密码邮件 HTML |
+| Method | Path | 权限 | 说明 |
+|---|---|---|---|
+| POST | `/login/access-token` | 公开 | 表单登录；返回 Bearer 兼容响应并设置会话 Cookie |
+| POST | `/login/refresh` | refresh Cookie + CSRF | 轮换 refresh session，签发新 access/refresh Cookie |
+| POST | `/login/logout` | refresh Cookie + CSRF | 吊销 refresh session 并清理 Cookie |
+| POST | `/login/test-token` | Cookie 或 Bearer | 返回当前用户 |
+| POST | `/password-recovery/{email}` | 公开 | 发送找回密码邮件，响应不暴露邮箱是否存在 |
+| POST | `/reset-password/` | 公开 | 使用 reset token 更新密码 |
+| POST | `/password-recovery-html-content/{email}` | 超级管理员 | 预览邮件 HTML |
 
-## 接口详情
+登录响应仍为 `{ "access_token": "...", "token_type": "bearer" }`，用于 CLI/OpenAPI 客户端兼容。浏览器不读取或持久化响应中的 token。
 
-### 登录
-- **Method**：POST
-- **Path**：`/api/v1/login/access-token`
-- **描述**：使用 OAuth2 表单登录，返回 JWT。
-- **权限**：公开
+## Cookie
 
-**请求体**
+| 名称 | Path | 有效期 | 属性 |
+|---|---|---|---|
+| `neomua_access` | `/api/v1` | 15 分钟 | HttpOnly, SameSite=Lax, 非 local Secure |
+| `neomua_refresh` | `/api/v1/login` | 8 天 | HttpOnly, SameSite=Lax, 非 local Secure |
+| `neomua_csrf` | `/` | 8 天 | SameSite=Lax, 非 local Secure，供页面复制到 Header |
 
-```text
-username=<email>
-password=<password>
-```
-
-**响应体**
-
-```json
-{
-  "access_token": "jwt",
-  "token_type": "bearer"
-}
-```
-
-**可能返回的错误**
-
-- `400 Incorrect email or password`
-- `400 Inactive user`
-
-### 校验 Token
-- **Method**：POST
-- **Path**：`/api/v1/login/test-token`
-- **描述**：返回当前登录用户。
-- **权限**：需要登录
-
-### 找回密码
-- **Method**：POST
-- **Path**：`/api/v1/password-recovery/{email}`
-- **描述**：对存在与不存在邮箱均返回统一提示，避免邮箱枚举。
-- **权限**：公开
-
-**响应体**
-
-```json
-{
-  "message": "If that email is registered, we sent a password recovery link"
-}
-```
-
-### 重置密码
-- **Method**：POST
-- **Path**：`/api/v1/reset-password/`
-- **描述**：使用找回密码 token 更新密码。
-- **权限**：公开
-
-**请求体**
-
-```json
-{
-  "token": "reset-token",
-  "new_password": "new-password"
-}
-```
-
-### 预览找回密码邮件
-- **Method**：POST
-- **Path**：`/api/v1/password-recovery-html-content/{email}`
-- **描述**：超级管理员查看找回密码邮件 HTML 内容。
-- **权限**：超级管理员
+refresh 数据库只保存 HMAC，不保存明文。无效、过期或重放 refresh 返回 401。Cookie mutation 的 Origin/CSRF 失败返回 403。

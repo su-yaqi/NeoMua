@@ -9,7 +9,8 @@
 - Base URL：`/api/v1`
 - 协议：开发环境支持 HTTP，本地/生产通常由 Traefik 统一接入
 - 请求格式：JSON 为主，登录接口使用 OAuth2 表单
-- 认证方式：`Authorization: Bearer <token>`
+- 认证方式：浏览器使用 HttpOnly Cookie 会话；CLI/API 使用 `Authorization: Bearer <token>`
+- 浏览器请求统一携带 credentials；Cookie 鉴权的状态修改请求还必须发送 `X-CSRF-Token` 并通过 Origin 校验
 
 ### 响应风格
 
@@ -45,6 +46,8 @@
 | Method | Path | 描述 |
 |--------|------|------|
 | POST | /login/access-token | 登录并签发 JWT |
+| POST | /login/refresh | 轮换浏览器 refresh session |
+| POST | /login/logout | 吊销浏览器会话并清理 Cookie |
 | POST | /login/test-token | 校验当前 Token |
 | POST | /password-recovery/{email} | 发送找回密码邮件 |
 | POST | /reset-password/ | 使用 token 重置密码 |

@@ -8,6 +8,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from node_runtime.artifacts.installer import ArtifactInstaller
+from node_runtime.artifacts.state import ArtifactState
 from node_runtime.artifacts.validator import ArtifactValidationError
 import pytest
 from node_runtime.artifacts.protocol import ArtifactManifest, DeploymentManifest
@@ -105,3 +106,28 @@ def test_existing_tampered_version_is_not_reused(tmp_path) -> None:
     (root / "versions" / "artifact-v1" / "demo" / "SKILL.md").write_text("tampered")
     with pytest.raises(ArtifactValidationError, match="hash"):
         installer.apply_archive(command, archive)
+
+
+def test_recovery_repairs_state_after_power_loss_post_symlink_switch(
+    tmp_path, monkeypatch
+) -> None:
+    root = tmp_path / "skills"
+    installer = ArtifactInstaller({"skills": root}, NODE_ID, "ns")
+    first, first_zip = command_for(tmp_path, "v1", "artifact-v1")
+    installer.apply_archive(first, first_zip)
+    second, second_zip = command_for(tmp_path, "v2", "artifact-v2")
+    original_write = ArtifactState.write
+
+    def fail_state_write(self, current, previous, *, degraded=False):
+        raise OSError("simulated power loss before state persistence")
+
+    monkeypatch.setattr(ArtifactState, "write", fail_state_write)
+    with pytest.raises(OSError, match="simulated power loss"):
+        installer.apply_archive(second, second_zip)
+    assert (root / "current" / "demo" / "SKILL.md").read_text() == "v2"
+
+    monkeypatch.setattr(ArtifactState, "write", original_write)
+    installer.recover()
+    recovered = ArtifactState(root).read()
+    assert recovered["current"] == "artifact-v2"
+    assert recovered["previous"] == "artifact-v1"

@@ -23,6 +23,7 @@
 
 ```text
 User 1 ---- N Item
+User 1 ---- N RefreshSession
 User 1 ---- N UserNamespaceLink N ---- 1 Namespace
 Namespace 1 ---- N LlmProviderConfig 1 ---- N LlmProviderModel
 Namespace 1 ---- N RuntimeProfile / RuntimeNode / AgentTask / RuntimeArtifact
@@ -49,7 +50,22 @@ AgentTask 1 ---- N AgentEvent
 | `artifact_deployment` | 每节点每次发布尝试及 pending/dispatched/applied/failed/expired 状态 |
 | `runtime_node_artifact` | 节点每个逻辑目标的 current/previous 制品指针 |
 
-任务状态只允许显式状态机迁移；运行租约过期变为 `interrupted`，不会自动创建 retry。制品路径只保存逻辑目标，物理目录仅存在节点本地配置。
+`agent_task` 额外以 `dispatch_connection_id/dispatch_reserved_until` 记录短期发送预留；预留不改变 QUEUED，超时后可重新领取。`artifact_deployment` 固化 `logical_target`，部分唯一索引保证每个 `(node_id, logical_target)` 最多一个 pending/dispatched。`node_credential` 记录 replacement 签发时间和宽限截止时间。任务状态只允许显式迁移；租约过期变为 interrupted，不自动 retry。
+
+### refresh_session
+
+| 字段 | 说明 |
+|---|---|
+| `id` | refresh session 主键 |
+| `family_id` | 轮换链；检测重放时整链吊销 |
+| `user_id` | 所属用户，用户删除时级联删除 |
+| `token_hash` | refresh token 的 keyed HMAC，唯一；不保存明文 |
+| `expires_at` | 绝对过期时间 |
+| `replaced_by_id` | 下一枚 refresh session |
+| `revoked_at` | 轮换、退出、重放或用户失效时写入 |
+| `created_at/last_used_at` | 审计时间 |
+
+删除语义：用户删除级联 refresh session；runtime/节点/任务/事件按现有外键级联或 SET NULL；制品被 deployment 引用时 RESTRICT，不能删除破坏历史审计。
 
 ### user
 系统用户表，保存登录账号、平台权限和基础资料。

@@ -1,14 +1,24 @@
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 
-from sqlalchemy import JSON, Column, DateTime, Index, UniqueConstraint, text
-from sqlalchemy import Enum as SAEnum
+from sqlalchemy import JSON, Column, Index, UniqueConstraint, text
+from sqlalchemy import DateTime as _DateTime
+from sqlalchemy import Enum as _SAEnum
 from sqlmodel import Field, SQLModel
 
 from app.runtime.artifacts.manifest import ArtifactKind, LogicalTarget
 from app.runtime.policy import TaskKind, TaskStatus
+
+
+# See app.models: SQLModel's annotation is narrower than its supported runtime API.
+def DateTime(*args: Any, **kwargs: Any) -> type[Any]:
+    return cast(type[Any], _DateTime(*args, **kwargs))
+
+
+def SAEnum(*args: Any, **kwargs: Any) -> type[Any]:
+    return cast(type[Any], _SAEnum(*args, **kwargs))
 
 
 def utcnow() -> datetime:
@@ -123,6 +133,12 @@ class AgentTask(SQLModel, table=True):
             "idempotency_key",
             name="uq_agent_task_namespace_idempotency",
         ),
+        Index(
+            "ix_agent_task_dispatch_candidate",
+            "target_node_id",
+            "status",
+            "dispatch_reserved_until",
+        ),
     )
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     namespace_id: uuid.UUID = Field(
@@ -164,6 +180,10 @@ class AgentTask(SQLModel, table=True):
     claimed_by: str | None = Field(default=None, max_length=255)
     lease_expires_at: datetime | None = Field(
         default=None, sa_type=DateTime(timezone=True)
+    )
+    dispatch_connection_id: uuid.UUID | None = Field(default=None, index=True)
+    dispatch_reserved_until: datetime | None = Field(
+        default=None, sa_type=DateTime(timezone=True), index=True
     )
     retry_of_task_id: uuid.UUID | None = Field(
         default=None, foreign_key="agent_task.id", ondelete="SET NULL"
@@ -270,6 +290,12 @@ class NodeCredential(SQLModel, table=True):
     replaced_by_id: uuid.UUID | None = Field(
         default=None, foreign_key="node_credential.id", ondelete="SET NULL"
     )
+    replacement_issued_at: datetime | None = Field(
+        default=None, sa_type=DateTime(timezone=True)
+    )
+    replacement_grace_until: datetime | None = Field(
+        default=None, sa_type=DateTime(timezone=True), index=True
+    )
 
 
 class DeploymentStatus(str, Enum):
@@ -353,6 +379,14 @@ class ArtifactDeployment(SQLModel, table=True):
         UniqueConstraint(
             "release_id", "node_id", "attempt", name="uq_artifact_deployment_attempt"
         ),
+        Index(
+            "uq_artifact_deployment_active_target",
+            "node_id",
+            "logical_target",
+            unique=True,
+            postgresql_where=text("status IN ('pending', 'dispatched')"),
+            sqlite_where=text("status IN ('pending', 'dispatched')"),
+        ),
     )
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     namespace_id: uuid.UUID = Field(
@@ -373,6 +407,13 @@ class ArtifactDeployment(SQLModel, table=True):
     previous_artifact_id: uuid.UUID | None = Field(
         default=None, foreign_key="runtime_artifact.id", ondelete="SET NULL"
     )
+    logical_target: LogicalTarget = Field(
+        sa_type=SAEnum(
+            LogicalTarget,
+            name="logicaltarget",
+            values_callable=lambda v: [x.value for x in v],
+        )
+    )
     attempt: int = 1
     status: DeploymentStatus = Field(
         default=DeploymentStatus.PENDING,
@@ -387,6 +428,10 @@ class ArtifactDeployment(SQLModel, table=True):
     )
     dispatched_at: datetime | None = Field(
         default=None, sa_type=DateTime(timezone=True)
+    )
+    dispatch_connection_id: uuid.UUID | None = Field(default=None, index=True)
+    dispatch_reserved_until: datetime | None = Field(
+        default=None, sa_type=DateTime(timezone=True), index=True
     )
     applied_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     created_at: datetime = Field(

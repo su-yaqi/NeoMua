@@ -57,7 +57,7 @@ class RuntimeConfigManager:
                     "endpoint failed Anthropic Messages API compatibility check"
                 )
             fingerprint = hashlib.sha256(
-                f"{base_url}\0{payload['model_id']}\0{payload['api_key']}".encode()
+                f"{base_url}\0{payload['model_id']}".encode()
             ).hexdigest()
             self.store.save(
                 DirectRoute(

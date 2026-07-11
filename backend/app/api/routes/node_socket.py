@@ -19,7 +19,11 @@ from app.runtime.connections import (
     NodeAuthenticationError,
     authenticate_node_connection,
 )
-from app.runtime.enrollment import retire_replaced_credential, rotate_node_credential
+from app.runtime.enrollment import (
+    recover_node_credential_rotation,
+    retire_replaced_credential,
+    rotate_node_credential,
+)
 from app.runtime.models import (
     AgentEventType,
     AgentTask,
@@ -35,10 +39,11 @@ from app.runtime.models import (
 )
 from app.runtime.policy import TaskStatus, require_task_transition
 from app.runtime.repository import (
-    append_event_idempotent,
-    apply_event_state,
-    expire_task_leases,
+    EventSequenceConflict,
+    append_and_apply_event,
     last_contiguous_event_sequence,
+    release_task_reservation,
+    reserve_node_tasks,
 )
 from app.runtime.security import issue_gateway_token
 
@@ -47,7 +52,7 @@ router = APIRouter(prefix="/node", tags=["node-socket"])
 
 class Envelope(BaseModel):
     type: str
-    protocol_version: Literal["1"]
+    protocol_version: Literal["2"]
     message_id: uuid.UUID
     correlation_id: uuid.UUID | None = None
     node_id: uuid.UUID
@@ -63,7 +68,7 @@ def _envelope(
 ) -> dict[str, Any]:
     return Envelope(
         type=message_type,
-        protocol_version="1",
+        protocol_version="2",
         message_id=uuid.uuid4(),
         correlation_id=correlation_id,
         node_id=node_id,
@@ -73,23 +78,27 @@ def _envelope(
 
 
 async def _send_pending_control(
-    websocket: WebSocket, session: SessionDep, node: RuntimeNode
+    websocket: WebSocket,
+    session: SessionDep,
+    node: RuntimeNode,
+    connection_id: uuid.UUID,
 ) -> None:
-    expire_task_leases(session)
-    queued = session.exec(
-        select(AgentTask)
-        .where(
-            AgentTask.target_node_id == node.id,
-            AgentTask.status == TaskStatus.QUEUED,
-        )
-        .order_by(AgentTask.created_at)
-        .limit(10)
-    ).all()
+    if not await _connection_is_current(websocket, session, node.id, connection_id):
+        return
+    queued = reserve_node_tasks(
+        session, node_id=node.id, connection_id=connection_id, limit=10
+    )
     for task in queued:
+        if not await _connection_is_current(
+            websocket, session, node.id, connection_id
+        ):
+            return
         runtime = session.get(RuntimeProfile, task.runtime_profile_id)
         if runtime is None:
             task.status = TaskStatus.REJECTED
             task.final_result = {"code": "runtime_unavailable"}
+            task.dispatch_connection_id = None
+            task.dispatch_reserved_until = None
             session.add(task)
             session.commit()
             continue
@@ -98,6 +107,8 @@ async def _send_pending_control(
             if not settings.MODEL_GATEWAY_PUBLIC_URL:
                 task.status = TaskStatus.REJECTED
                 task.final_result = {"code": "gateway_public_url_not_configured"}
+                task.dispatch_connection_id = None
+                task.dispatch_reserved_until = None
                 session.add(task)
                 session.commit()
                 continue
@@ -106,25 +117,31 @@ async def _send_pending_control(
             )
             route.update(
                 {
-                    "base_url": settings.MODEL_GATEWAY_PUBLIC_URL,
+                    "base_url": (
+                        f"{settings.MODEL_GATEWAY_PUBLIC_URL.rstrip('/')}/tasks/{task.id}"
+                    ),
                     "api_key": token,
                     "runtime_id": str(runtime.id),
                 }
             )
-        await websocket.send_json(
-            _envelope(
-                "task_dispatch",
-                node.id,
-                {
-                    "task_id": str(task.id),
-                    "revision": task.revision,
-                    "prompt": task.prompt,
-                    "snapshot": task.snapshot,
-                    "route": route,
-                    "event_sequence_start": 1,
-                },
+        try:
+            await websocket.send_json(
+                _envelope(
+                    "task_dispatch",
+                    node.id,
+                    {
+                        "task_id": str(task.id),
+                        "revision": task.revision,
+                        "prompt": task.prompt,
+                        "snapshot": task.snapshot,
+                        "route": route,
+                        "event_sequence_start": 1,
+                    },
+                )
             )
-        )
+        except Exception:
+            release_task_reservation(session, task.id, connection_id)
+            raise
     cancelling = session.exec(
         select(AgentTask).where(
             AgentTask.target_node_id == node.id,
@@ -132,6 +149,10 @@ async def _send_pending_control(
         )
     ).all()
     for task in cancelling:
+        if not await _connection_is_current(
+            websocket, session, node.id, connection_id
+        ):
+            return
         await websocket.send_json(
             _envelope(
                 "task_cancel",
@@ -142,8 +163,13 @@ async def _send_pending_control(
 
 
 async def _send_runtime_config(
-    websocket: WebSocket, session: SessionDep, node: RuntimeNode
+    websocket: WebSocket,
+    session: SessionDep,
+    node: RuntimeNode,
+    connection_id: uuid.UUID,
 ) -> None:
+    if not await _connection_is_current(websocket, session, node.id, connection_id):
+        return
     if node.runtime_profile_id is None:
         return
     runtime = session.get(RuntimeProfile, node.runtime_profile_id)
@@ -169,14 +195,25 @@ async def _send_runtime_config(
         if not api_key:
             return
         payload["api_key"] = api_key
-    await websocket.send_json(_envelope("runtime_config", node.id, payload))
+    if await _connection_is_current(websocket, session, node.id, connection_id):
+        await websocket.send_json(_envelope("runtime_config", node.id, payload))
 
 
 async def _send_pending_artifacts(
-    websocket: WebSocket, session: SessionDep, node: RuntimeNode
+    websocket: WebSocket,
+    session: SessionDep,
+    node: RuntimeNode,
+    connection_id: uuid.UUID,
 ) -> None:
-    deployments = ArtifactReleaseService(session).pending_for_node(node.id)
+    if not await _connection_is_current(websocket, session, node.id, connection_id):
+        return
+    service = ArtifactReleaseService(session)
+    deployments = service.reserve_pending_for_node(node.id, connection_id)
     for deployment in deployments:
+        if not await _connection_is_current(
+            websocket, session, node.id, connection_id
+        ):
+            return
         release = session.get(ArtifactRelease, deployment.release_id)
         artifact = session.get(RuntimeArtifact, deployment.artifact_id)
         if release is None or artifact is None:
@@ -207,8 +244,9 @@ async def _send_pending_artifacts(
         )
         deployment_bytes = deployment_manifest.canonical_bytes()
         signer = configured_artifact_signer()
-        await websocket.send_json(
-            _envelope(
+        try:
+            await websocket.send_json(
+                _envelope(
                 "artifact_deploy",
                 node.id,
                 {
@@ -226,29 +264,48 @@ async def _send_pending_artifacts(
                     "deployment_manifest": deployment_manifest.model_dump(mode="json"),
                     "deployment_signature": signer.sign(deployment_bytes),
                 },
+                )
             )
-        )
-        deployment.status = DeploymentStatus.DISPATCHED
-        deployment.dispatched_at = datetime.now(timezone.utc)
-        session.add(deployment)
-        session.commit()
+        except Exception:
+            service.release_reservation(deployment.id, connection_id)
+            raise
+        if not service.mark_dispatched(deployment.id, connection_id):
+            await websocket.close(code=4409, reason="connection superseded")
+            return
+
+
+async def _connection_is_current(
+    websocket: WebSocket,
+    session: SessionDep,
+    node_id: uuid.UUID,
+    connection_id: uuid.UUID,
+) -> bool:
+    session.expire_all()
+    current = session.get(RuntimeNode, node_id)
+    if current is None or current.connection_id != connection_id:
+        await websocket.close(code=4409, reason="connection superseded")
+        return False
+    return True
 
 
 @router.websocket("/ws")
 async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
+    if websocket.headers.get("x-node-protocol-version") != "2":
+        await websocket.close(code=4406, reason="node protocol upgrade required")
+        return
     authorization = websocket.headers.get("authorization", "")
     timestamp = websocket.headers.get("x-node-timestamp", "")
     nonce = websocket.headers.get("x-node-nonce", "")
     signature = websocket.headers.get("x-node-signature", "")
     if not authorization.startswith("Bearer "):
-        await websocket.close(code=4401, reason="node credential required")
+        await websocket.close(code=4401, reason="authentication failed")
         return
     try:
         node, credential = authenticate_node_connection(
             session, authorization[7:], timestamp, nonce, signature
         )
-    except NodeAuthenticationError as exc:
-        await websocket.close(code=4403, reason=str(exc))
+    except NodeAuthenticationError:
+        await websocket.close(code=4403, reason="authentication failed")
         return
     connection_id = uuid.uuid4()
     now = datetime.now(timezone.utc)
@@ -261,6 +318,28 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
     await websocket.send_json(
         _envelope("hello_ack", node.id, {"heartbeat_interval_seconds": 20})
     )
+    if credential.replaced_by_id is not None:
+        try:
+            replacement, token = recover_node_credential_rotation(
+                session, node, credential
+            )
+        except ValueError:
+            await websocket.close(code=4403, reason="authentication failed")
+            return
+        session.commit()
+        await websocket.send_json(
+            _envelope(
+                "credential_rotated",
+                node.id,
+                {
+                    "credential": token,
+                    "credential_id": str(replacement.id),
+                    "previous_credential_id": str(credential.id),
+                    "expires_at": replacement.expires_at.isoformat(),
+                },
+            )
+        )
+        return
     if credential.expires_at <= now + timedelta(days=30):
         await websocket.send_json(
             _envelope(
@@ -269,11 +348,21 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                 {"credential_expires_at": credential.expires_at.isoformat()},
             )
         )
-    await _send_pending_control(websocket, session, node)
-    await _send_pending_artifacts(websocket, session, node)
+    await _send_pending_control(websocket, session, node, connection_id)
+    await _send_pending_artifacts(websocket, session, node, connection_id)
     try:
         while True:
             raw = await websocket.receive_json()
+            if raw.get("protocol_version") != "2":
+                await websocket.send_json(
+                    _envelope(
+                        "error",
+                        node.id,
+                        {"code": "protocol_upgrade_required", "required": "2"},
+                    )
+                )
+                await websocket.close(code=4406, reason="node protocol upgrade required")
+                return
             try:
                 message = Envelope.model_validate(raw)
             except ValidationError as exc:
@@ -300,8 +389,12 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                 await websocket.send_json(
                     _envelope("heartbeat_ack", node.id, {}, message.message_id)
                 )
-                await _send_pending_control(websocket, session, current)
-                await _send_pending_artifacts(websocket, session, current)
+                await _send_pending_control(
+                    websocket, session, current, connection_id
+                )
+                await _send_pending_artifacts(
+                    websocket, session, current, connection_id
+                )
             elif message.type == "reconcile":
                 current.last_seen_at = datetime.now(timezone.utc)
                 for task_id_value in message.payload.get("interrupted_task_ids", []):
@@ -336,8 +429,12 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                     int(message.payload.get("config_revision", 0))
                     < current.config_revision
                 ):
-                    await _send_runtime_config(websocket, session, current)
-                await _send_pending_artifacts(websocket, session, current)
+                    await _send_runtime_config(
+                        websocket, session, current, connection_id
+                    )
+                await _send_pending_artifacts(
+                    websocket, session, current, connection_id
+                )
             elif message.type == "rotate_credential":
                 try:
                     replacement, token = rotate_node_credential(
@@ -421,11 +518,25 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                     )
                     continue
                 if task.status == TaskStatus.QUEUED:
+                    if (
+                        task.dispatch_connection_id != connection_id
+                        or task.dispatch_reserved_until is None
+                        or task.dispatch_reserved_until < datetime.now(timezone.utc)
+                    ):
+                        await websocket.send_json(
+                            _envelope(
+                                "error",
+                                node.id,
+                                {"code": "task_reservation_scope_mismatch"},
+                                message.message_id,
+                            )
+                        )
+                        continue
                     require_task_transition(task.status, TaskStatus.DISPATCHED)
                     task.status = TaskStatus.DISPATCHED
-                    append_event_idempotent(
+                    append_and_apply_event(
                         session,
-                        task,
+                        task.id,
                         1,
                         AgentEventType.STATUS,
                         {
@@ -444,6 +555,8 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                     )
                     continue
                 task.claimed_by = f"node:{node.id}"
+                task.dispatch_connection_id = None
+                task.dispatch_reserved_until = None
                 task.lease_expires_at = datetime.now(timezone.utc) + timedelta(
                     minutes=5
                 )
@@ -520,17 +633,27 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                 try:
                     for event in message.payload.get("events", []):
                         event_type = AgentEventType(event["event_type"])
-                        append_event_idempotent(
+                        append_and_apply_event(
                             session,
-                            task,
+                            task.id,
                             int(event["sequence"]),
                             event_type,
                             event["payload"],
                         )
-                        apply_event_state(task, event_type, event["payload"])
-                        session.add(task)
-                        session.commit()
-                except (KeyError, ValueError) as exc:
+                    session.commit()
+                except EventSequenceConflict as exc:
+                    session.commit()
+                    await websocket.send_json(
+                        _envelope(
+                            "error",
+                            node.id,
+                            {"code": "event_sequence_conflict", "detail": str(exc)},
+                            message.message_id,
+                        )
+                    )
+                    continue
+                except (KeyError, ValueError, LookupError) as exc:
+                    session.rollback()
                     await websocket.send_json(
                         _envelope(
                             "error",

@@ -36,13 +36,17 @@ async def check_anthropic_compatibility(
                 f"Anthropic compatibility request failed: {exc}"
             ) from exc
     try:
-        payload = response.json()
+        payload: Any = response.json()
     except ValueError as exc:
         raise AnthropicCompatibilityError(
             "Endpoint did not return Anthropic JSON"
         ) from exc
-    if response.status_code >= 400 or payload.get("type") != "message":
+    if (
+        response.status_code >= 400
+        or not isinstance(payload, dict)
+        or payload.get("type") != "message"
+    ):
         raise AnthropicCompatibilityError(
             f"Endpoint failed Anthropic Messages API check ({response.status_code})"
         )
-    return payload
+    return {str(key): value for key, value in payload.items()}

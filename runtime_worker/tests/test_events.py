@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 from runtime_worker.events import normalize_message, normalize_messages
 
 
@@ -49,3 +51,32 @@ def test_normalize_tool_call_as_distinct_event() -> None:
             },
         }
     ]
+
+
+def test_normalize_message_bounds_cycles_and_depth() -> None:
+    cycle: list[object] = []
+    cycle.append(cycle)
+
+    class CyclicMessage:
+        content = cycle
+
+    event = normalize_message(CyclicMessage(), sequence=1)
+    assert event["payload"]["content"] == ["[CIRCULAR_REFERENCE]"]
+
+    @dataclass
+    class Link:
+        child: object | None = None
+
+    root = Link()
+    current = root
+    for _ in range(30):
+        child = Link()
+        current.child = child
+        current = child
+
+    class DeepMessage:
+        content = root
+
+    assert "DEPTH_LIMIT_EXCEEDED" in str(
+        normalize_message(DeepMessage(), sequence=2)
+    )

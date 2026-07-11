@@ -23,8 +23,8 @@ from app.models import (
 )
 
 
-def _namespace_role_value(role: NamespaceRole | str) -> str:
-    return role.value if isinstance(role, NamespaceRole) else role
+def _namespace_role_value(role: NamespaceRole | str) -> NamespaceRole:
+    return role if isinstance(role, NamespaceRole) else NamespaceRole(role)
 
 
 def create_user(*, session: Session, user_create: UserCreate) -> User:
@@ -60,7 +60,7 @@ def get_user_namespace_links(
     *, session: Session, user_id: uuid.UUID
 ) -> list[UserNamespaceLink]:
     statement = select(UserNamespaceLink).where(UserNamespaceLink.user_id == user_id)
-    return session.exec(statement).all()
+    return list(session.exec(statement).all())
 
 
 def set_user_namespace_assignments(
@@ -110,14 +110,14 @@ def ensure_namespace_membership(
 
 def list_namespaces_for_user(*, session: Session, user: User) -> list[Namespace]:
     if user.is_superuser:
-        return session.exec(select(Namespace)).all()
+        return list(session.exec(select(Namespace)).all())
     statement = (
         select(Namespace)
-        .join(UserNamespaceLink, UserNamespaceLink.namespace_id == Namespace.id)
+        .join(UserNamespaceLink, col(UserNamespaceLink.namespace_id) == Namespace.id)
         .where(UserNamespaceLink.user_id == user.id)
-        .where(Namespace.is_active.is_(True))
+        .where(col(Namespace.is_active).is_(True))
     )
-    return session.exec(statement).all()
+    return list(session.exec(statement).all())
 
 
 def get_namespace(*, session: Session, namespace_id: uuid.UUID) -> Namespace | None:
@@ -201,8 +201,8 @@ def list_namespace_users(
     *, session: Session, namespace_id: uuid.UUID
 ) -> list[tuple[User, NamespaceRole]]:
     statement = (
-        select(User, UserNamespaceLink.role)
-        .join(UserNamespaceLink, UserNamespaceLink.user_id == User.id)
+        select(User, col(UserNamespaceLink.role))
+        .join(UserNamespaceLink, col(UserNamespaceLink.user_id) == User.id)
         .where(UserNamespaceLink.namespace_id == namespace_id)
         .order_by(col(User.created_at).desc())
     )
@@ -244,7 +244,7 @@ def list_llm_provider_configs(
         .where(LlmProviderConfig.namespace_id == namespace_id)
         .order_by(col(LlmProviderConfig.created_at).desc())
     )
-    return session.exec(statement).all()
+    return list(session.exec(statement).all())
 
 
 def get_llm_provider_config(

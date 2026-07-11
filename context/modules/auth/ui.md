@@ -21,7 +21,7 @@
 **核心交互**
 | 操作 | 触发方式 | 行为描述 |
 |------|---------|---------|
-| 登录 | 提交表单 | 调用登录接口，成功后写入 Token 并跳转首页 |
+| 登录 | 提交表单 | 调用登录接口，由 HttpOnly Cookie 建立会话并跳转首页 |
 | 跳转找回密码 | 点击链接 | 前往 `/recover-password` |
 | 跳转注册 | 点击链接 | 前往 `/signup` |
 
@@ -47,3 +47,5 @@
 - **路由**：`/reset-password?token=...`
 - **说明**：携带 token 设置新密码；无 token 时直接重定向登录页。
 - **权限**：未登录用户
+
+浏览器端不在 localStorage、sessionStorage 或 JavaScript 状态中保存 access/refresh token。受保护布局调用 `/users/me`，access 过期时由共享 HTTP 客户端执行一次 refresh 后重试。

@@ -4,7 +4,6 @@ test.use({ storageState: { cookies: [], origins: [] } })
 
 test("interrupted task offers explicit retry only", async ({ page }) => {
   await page.addInitScript(() => {
-    localStorage.setItem("access_token", "test-token")
     localStorage.setItem(
       "selected_namespace_id",
       "00000000-0000-0000-0000-000000000010",

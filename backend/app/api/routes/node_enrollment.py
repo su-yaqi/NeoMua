@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlmodel import select
+from sqlmodel import col, select
 
 from app.api.deps import (
     CurrentUser,
@@ -13,9 +13,10 @@ from app.api.deps import (
     require_namespace_admin,
     require_namespace_runtime_user,
 )
-from app.llm_provider_service import mask_secret_value, seal_secret_payload
+from app.llm_provider_service import seal_secret_payload
 from app.models import LlmProviderConfig, LlmProviderModel
 from app.runtime.connections import node_is_online
+from app.runtime.endpoints import EndpointValidationError, canonical_endpoint
 from app.runtime.enrollment import (
     EnrollmentTokenInvalid,
     consume_enrollment_token,
@@ -32,6 +33,7 @@ from app.runtime.models import (
     RuntimeSecret,
     RuntimeType,
 )
+from app.runtime.policy import PermissionMode
 
 admin_router = APIRouter(prefix="/runtimes/nodes", tags=["runtime-nodes"])
 node_router = APIRouter(prefix="/node", tags=["node-enrollment"])
@@ -97,7 +99,7 @@ class NodeRuntimeUpsert(BaseModel):
     model_id: str = Field(min_length=1, max_length=255)
     provider_config_id: uuid.UUID | None = None
     base_url: str | None = None
-    permission_mode: str = "default"
+    permission_mode: PermissionMode = PermissionMode.DEFAULT
     secret_inputs: dict[str, str] | None = None
 
 
@@ -108,7 +110,7 @@ class NodeRuntimePublic(BaseModel):
     model_id: str
     provider_config_id: uuid.UUID | None
     base_url: str | None
-    permission_mode: str
+    permission_mode: PermissionMode
     secret_masked: str | None
 
 
@@ -158,7 +160,7 @@ def list_tokens(
     records = session.exec(
         select(NodeEnrollmentToken)
         .where(NodeEnrollmentToken.namespace_id == namespace_id)
-        .order_by(NodeEnrollmentToken.created_at.desc())
+        .order_by(col(NodeEnrollmentToken.created_at).desc())
     ).all()
     return EnrollmentTokensPublic(
         data=[_public_token(record) for record in records], count=len(records)
@@ -174,7 +176,7 @@ def list_nodes(
     nodes = session.exec(
         select(RuntimeNode)
         .where(RuntimeNode.namespace_id == namespace_id)
-        .order_by(RuntimeNode.created_at.desc())
+        .order_by(col(RuntimeNode.created_at).desc())
     ).all()
     return NodesPublic(data=[_public_node(node) for node in nodes], count=len(nodes))
 
@@ -203,17 +205,29 @@ def configure_node_runtime(
     node = session.get(RuntimeNode, node_id)
     if node is None or node.namespace_id != namespace_id or node.revoked_at is not None:
         raise HTTPException(404, "Active node not found")
-    if body.permission_mode == "bypassPermissions":
-        raise HTTPException(400, "bypassPermissions is not allowed")
     existing_secret = None
+    runtime = (
+        session.get(RuntimeProfile, node.runtime_profile_id)
+        if node.runtime_profile_id
+        else None
+    )
     if node.runtime_profile_id:
         existing_secret = session.exec(
             select(RuntimeSecret).where(
                 RuntimeSecret.runtime_profile_id == node.runtime_profile_id
             )
         ).first()
+    canonical_base_url = None
+    if body.base_url:
+        try:
+            canonical_base_url = canonical_endpoint(body.base_url)
+        except EndpointValidationError as exc:
+            raise HTTPException(422, str(exc)) from exc
+    endpoint_changed = bool(runtime and runtime.base_url != canonical_base_url)
     if body.route_mode == RuntimeRouteMode.DIRECT_ANTHROPIC:
-        if not body.base_url or (not body.secret_inputs and existing_secret is None):
+        if not canonical_base_url or (
+            not body.secret_inputs and (existing_secret is None or endpoint_changed)
+        ):
             raise HTTPException(
                 400,
                 "direct_anthropic requires an Anthropic-compatible URL and credential",
@@ -234,16 +248,11 @@ def configure_node_runtime(
             select(LlmProviderModel).where(
                 LlmProviderModel.provider_config_id == provider.id,
                 LlmProviderModel.model_id == body.model_id,
-                LlmProviderModel.is_enabled.is_(True),
+                col(LlmProviderModel.is_enabled).is_(True),
             )
         ).first()
         if model is None:
             raise HTTPException(400, "Enabled model not found")
-    runtime = (
-        session.get(RuntimeProfile, node.runtime_profile_id)
-        if node.runtime_profile_id
-        else None
-    )
     if runtime is None:
         runtime = RuntimeProfile(
             namespace_id=namespace_id,
@@ -257,8 +266,8 @@ def configure_node_runtime(
     runtime.route_mode = body.route_mode
     runtime.model_id = body.model_id
     runtime.provider_config_id = body.provider_config_id
-    runtime.base_url = body.base_url
-    runtime.permission_mode = body.permission_mode
+    runtime.base_url = canonical_base_url
+    runtime.permission_mode = body.permission_mode.value
     runtime.config = {
         **runtime.config,
         "direct_compatibility_verified": False
@@ -272,9 +281,7 @@ def configure_node_runtime(
             secret_ciphertext="",
         )
         secret.secret_ciphertext = seal_secret_payload(body.secret_inputs) or ""
-        secret.secret_masked = mask_secret_value(
-            next(iter(body.secret_inputs.values()))
-        )
+        secret.secret_masked = "****"
         session.add(secret)
         existing_secret = secret
     node.config_revision += 1
@@ -288,7 +295,7 @@ def configure_node_runtime(
         model_id=runtime.model_id,
         provider_config_id=runtime.provider_config_id,
         base_url=runtime.base_url,
-        permission_mode=runtime.permission_mode,
+        permission_mode=PermissionMode(runtime.permission_mode),
         secret_masked=existing_secret.secret_masked if existing_secret else None,
     )
 
@@ -309,7 +316,7 @@ def revoke_node(
     credentials = session.exec(
         select(NodeCredential).where(
             NodeCredential.node_id == node.id,
-            NodeCredential.revoked_at.is_(None),
+            col(NodeCredential.revoked_at).is_(None),
         )
     ).all()
     for credential in credentials:

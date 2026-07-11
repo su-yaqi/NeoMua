@@ -8,6 +8,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi.testclient import TestClient
 from sqlmodel import Session
+from starlette.websockets import WebSocketDisconnect
 
 from app.core.config import settings
 from app.runtime.connections import node_is_online
@@ -52,6 +53,19 @@ def _enroll(
     return enrolled, private
 
 
+def _connection_headers(enrolled: dict, private: Ed25519PrivateKey) -> dict[str, str]:
+    timestamp = str(int(time.time()))
+    nonce = secrets.token_urlsafe(32)
+    signature = private.sign(f"neomua-ws-v1:{timestamp}:{nonce}".encode())
+    return {
+        "Authorization": f"Bearer {enrolled['credential']}",
+        "X-Node-Protocol-Version": "2",
+        "X-Node-Timestamp": timestamp,
+        "X-Node-Nonce": nonce,
+        "X-Node-Signature": base64.b64encode(signature).decode(),
+    }
+
+
 def test_presence_becomes_offline_without_revoking_pairing() -> None:
     now = datetime.now(timezone.utc)
     node = RuntimeNode(
@@ -80,6 +94,7 @@ def test_authenticated_node_connects_and_heartbeats(
     signature = private.sign(f"neomua-ws-v1:{timestamp}:{nonce}".encode())
     headers = {
         "Authorization": f"Bearer {enrolled['credential']}",
+        "X-Node-Protocol-Version": "2",
         "X-Node-Timestamp": timestamp,
         "X-Node-Nonce": nonce,
         "X-Node-Signature": base64.b64encode(signature).decode(),
@@ -93,7 +108,7 @@ def test_authenticated_node_connects_and_heartbeats(
         websocket.send_json(
             {
                 "type": "heartbeat",
-                "protocol_version": "1",
+                "protocol_version": "2",
                 "message_id": message_id,
                 "correlation_id": None,
                 "node_id": enrolled["node_id"],
@@ -104,6 +119,39 @@ def test_authenticated_node_connects_and_heartbeats(
         ack = websocket.receive_json()
         assert ack["type"] == "heartbeat_ack"
         assert ack["correlation_id"] == message_id
+
+
+def test_new_connection_supersedes_old_generation(
+    client: TestClient, db: Session, superuser_token_headers: dict[str, str]
+) -> None:
+    enrolled, private = _enroll(client, db, superuser_token_headers)
+    with client.websocket_connect(
+        f"{settings.API_V1_STR}/node/ws",
+        headers=_connection_headers(enrolled, private),
+    ) as old_websocket:
+        assert old_websocket.receive_json()["type"] == "hello_ack"
+        with client.websocket_connect(
+            f"{settings.API_V1_STR}/node/ws",
+            headers=_connection_headers(enrolled, private),
+        ) as current_websocket:
+            assert current_websocket.receive_json()["type"] == "hello_ack"
+            old_websocket.send_json(
+                {
+                    "type": "heartbeat",
+                    "protocol_version": "2",
+                    "message_id": str(uuid.uuid4()),
+                    "correlation_id": None,
+                    "node_id": enrolled["node_id"],
+                    "sent_at": datetime.now(timezone.utc).isoformat(),
+                    "payload": {},
+                }
+            )
+            try:
+                old_websocket.receive_json()
+            except WebSocketDisconnect as exc:
+                assert exc.code == 4409
+            else:
+                raise AssertionError("superseded connection remained active")
 
 
 def test_node_dispatch_ack_and_result_are_persisted(
@@ -135,10 +183,12 @@ def test_node_dispatch_ack_and_result_are_persisted(
     db.commit()
     db.refresh(task)
     append_event_idempotent(db, task, 0, AgentEventType.USER_MESSAGE, {"text": "work"})
+    db.commit()
     timestamp = str(int(time.time()))
     nonce = secrets.token_urlsafe(32)
     headers = {
         "Authorization": f"Bearer {enrolled['credential']}",
+        "X-Node-Protocol-Version": "2",
         "X-Node-Timestamp": timestamp,
         "X-Node-Nonce": nonce,
         "X-Node-Signature": base64.b64encode(
@@ -154,7 +204,7 @@ def test_node_dispatch_ack_and_result_are_persisted(
         websocket.send_json(
             {
                 "type": "task_accepted",
-                "protocol_version": "1",
+                "protocol_version": "2",
                 "message_id": str(uuid.uuid4()),
                 "correlation_id": None,
                 "node_id": enrolled["node_id"],
@@ -166,7 +216,7 @@ def test_node_dispatch_ack_and_result_are_persisted(
         websocket.send_json(
             {
                 "type": "task_events",
-                "protocol_version": "1",
+                "protocol_version": "2",
                 "message_id": str(uuid.uuid4()),
                 "correlation_id": None,
                 "node_id": enrolled["node_id"],

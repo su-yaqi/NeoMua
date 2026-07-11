@@ -1895,8 +1895,7 @@ export const NodeRuntimePublicSchema = {
             title: 'Base Url'
         },
         permission_mode: {
-            type: 'string',
-            title: 'Permission Mode'
+            $ref: '#/components/schemas/PermissionMode'
         },
         secret_masked: {
             anyOf: [
@@ -1959,8 +1958,7 @@ export const NodeRuntimeUpsertSchema = {
             title: 'Base Url'
         },
         permission_mode: {
-            type: 'string',
-            title: 'Permission Mode',
+            $ref: '#/components/schemas/PermissionMode',
             default: 'default'
         },
         secret_inputs: {
@@ -2008,6 +2006,17 @@ export const NodesPublicSchema = {
     title: 'NodesPublic'
 } as const;
 
+export const PermissionModeSchema = {
+    type: 'string',
+    enum: [
+        'default',
+        'acceptEdits',
+        'plan',
+        'dontAsk'
+    ],
+    title: 'PermissionMode'
+} as const;
+
 export const PlatformRuntimePublicSchema = {
     properties: {
         id: {
@@ -2051,8 +2060,7 @@ export const PlatformRuntimePublicSchema = {
             title: 'Base Url'
         },
         permission_mode: {
-            type: 'string',
-            title: 'Permission Mode'
+            $ref: '#/components/schemas/PermissionMode'
         },
         secret_masked: {
             anyOf: [
@@ -2120,8 +2128,7 @@ export const PlatformRuntimeUpsertSchema = {
             title: 'Base Url'
         },
         permission_mode: {
-            type: 'string',
-            title: 'Permission Mode',
+            $ref: '#/components/schemas/PermissionMode',
             default: 'default'
         },
         secret_inputs: {

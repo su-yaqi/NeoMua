@@ -25,7 +25,7 @@ def test_superuser_can_create_direct_platform_runtime(
         },
     )
     assert response.status_code == 200, response.text
-    assert response.json()["secret_masked"].endswith("alue")
+    assert response.json()["secret_masked"] == "****"
     assert "secret_ciphertext" not in response.json()
 
 
@@ -44,7 +44,7 @@ def test_bypass_permissions_is_rejected(
             "secret_inputs": {"api_key": "test-secret-value"},
         },
     )
-    assert response.status_code == 400
+    assert response.status_code == 422
 
 
 def test_cross_namespace_provider_config_is_rejected(

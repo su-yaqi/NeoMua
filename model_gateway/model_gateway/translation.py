@@ -6,6 +6,10 @@ class UnsupportedCapability(ValueError):
     pass
 
 
+class InvalidUpstreamResponse(ValueError):
+    pass
+
+
 def validate_capabilities(request: dict[str, Any], provider_kind: str) -> None:
     if provider_kind != "openai_compatible":
         return
@@ -148,19 +152,39 @@ def anthropic_to_openai(request: dict[str, Any]) -> dict[str, Any]:
 
 
 def openai_to_anthropic_response(response: dict[str, Any]) -> dict[str, Any]:
-    choice = response["choices"][0]
-    message = choice["message"]
+    try:
+        choices = response["choices"]
+        choice = choices[0]
+        message = choice["message"]
+        if not isinstance(choices, list) or not isinstance(choice, dict):
+            raise TypeError
+        if not isinstance(message, dict):
+            raise TypeError
+    except (KeyError, IndexError, TypeError) as exc:
+        raise InvalidUpstreamResponse(
+            "OpenAI-compatible response has no valid first choice"
+        ) from exc
     content: list[dict[str, Any]] = []
     if message.get("content"):
         content.append({"type": "text", "text": message["content"]})
     for call in message.get("tool_calls") or []:
-        function = call["function"]
+        try:
+            function = call["function"]
+            call_id = call["id"]
+            function_name = function["name"]
+            arguments = json.loads(function.get("arguments") or "{}")
+            if not isinstance(arguments, dict):
+                raise TypeError
+        except (KeyError, TypeError, json.JSONDecodeError) as exc:
+            raise InvalidUpstreamResponse(
+                "OpenAI-compatible tool call is malformed"
+            ) from exc
         content.append(
             {
                 "type": "tool_use",
-                "id": call["id"],
-                "name": function["name"],
-                "input": json.loads(function.get("arguments") or "{}"),
+                "id": call_id,
+                "name": function_name,
+                "input": arguments,
             }
         )
     finish = choice.get("finish_reason")

@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, timezone
+from typing import Any
 
 import jwt
 
@@ -33,9 +34,11 @@ def issue_artifact_download_token(
     )
 
 
-def verify_artifact_download_token(token: str, deployment_id: uuid.UUID) -> dict:
+def verify_artifact_download_token(
+    token: str, deployment_id: uuid.UUID
+) -> dict[str, Any]:
     try:
-        claims = jwt.decode(
+        claims: dict[str, Any] = jwt.decode(
             token,
             settings.SECRET_KEY,
             algorithms=["HS256"],

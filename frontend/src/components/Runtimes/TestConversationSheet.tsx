@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 import { type RuntimeEvent, tenantApi } from "@/api/tenantApi"
 import { Button } from "@/components/ui/button"
@@ -15,9 +15,15 @@ export default function TestConversationSheet() {
   const [prompt, setPrompt] = useState("")
   const [events, setEvents] = useState<RuntimeEvent[]>([])
   const [sending, setSending] = useState(false)
+  const streamController = useRef<AbortController | null>(null)
+
+  useEffect(() => () => streamController.current?.abort(), [])
 
   async function send() {
     if (!prompt.trim()) return
+    streamController.current?.abort()
+    const controller = new AbortController()
+    streamController.current = controller
     setSending(true)
     try {
       const activeSession =
@@ -28,16 +34,32 @@ export default function TestConversationSheet() {
         prompt.trim(),
       )
       setPrompt("")
-      await tenantApi.streamRuntimeEvents(task.id, (event) => {
-        setEvents((current) => [...current, event])
-      })
+      await tenantApi.streamRuntimeEvents(
+        task.id,
+        (event) => {
+          if (!controller.signal.aborted) {
+            setEvents((current) => [...current, event])
+          }
+        },
+        controller.signal,
+      )
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === "AbortError")) {
+        throw error
+      }
     } finally {
-      setSending(false)
+      if (streamController.current === controller) {
+        setSending(false)
+      }
     }
   }
 
   return (
-    <Sheet>
+    <Sheet
+      onOpenChange={(open) => {
+        if (!open) streamController.current?.abort()
+      }}
+    >
       <SheetTrigger asChild>
         <Button variant="outline">功能测试</Button>
       </SheetTrigger>

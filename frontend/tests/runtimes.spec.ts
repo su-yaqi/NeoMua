@@ -8,7 +8,6 @@ async function mockRuntimePage(
 ) {
   await page.addInitScript(
     ({ namespaceId }) => {
-      localStorage.setItem("access_token", "test-token")
       localStorage.setItem("selected_namespace_id", namespaceId)
     },
     { namespaceId },

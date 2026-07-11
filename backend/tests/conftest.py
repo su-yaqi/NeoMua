@@ -7,6 +7,7 @@ from sqlmodel import Session, SQLModel, delete
 from app.core.config import settings
 from app.core.db import engine, init_db
 from app.main import app
+from app.models import RefreshSession
 from app.runtime.models import (
     AgentEvent,
     AgentSession,
@@ -39,9 +40,11 @@ def db() -> Generator[Session, None, None]:
 @pytest.fixture(autouse=True)
 def isolate_runtime_data(db: Session) -> Generator[None, None, None]:
     def clean() -> None:
+        db.rollback()
         db.execute(delete(AgentEvent))
         db.execute(delete(AgentTask))
         db.execute(delete(AgentSession))
+        db.execute(delete(RefreshSession))
         db.execute(delete(ArtifactDeployment))
         db.execute(delete(RuntimeNodeArtifact))
         db.execute(delete(ArtifactRelease))

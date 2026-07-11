@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { LoadingButton } from "@/components/ui/loading-button"
-import { isLoggedIn } from "@/hooks/useAuth"
+import { hasAuthenticatedSession } from "@/hooks/useAuth"
 import useCustomToast from "@/hooks/useCustomToast"
 import { handleError } from "@/utils"
 
@@ -33,7 +33,7 @@ type FormData = z.infer<typeof formSchema>
 export const Route = createFileRoute("/recover-password")({
   component: RecoverPassword,
   beforeLoad: async () => {
-    if (isLoggedIn()) {
+    if (await hasAuthenticatedSession()) {
       throw redirect({
         to: "/",
       })

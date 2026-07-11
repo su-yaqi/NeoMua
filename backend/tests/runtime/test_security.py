@@ -13,10 +13,21 @@ from app.runtime.security import (
 def test_gateway_token_is_bound_to_runtime_and_model() -> None:
     namespace_id, runtime_id, task_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     token = issue_gateway_token(namespace_id, runtime_id, task_id, "model-a")
-    claims = verify_gateway_token(token, runtime_id=runtime_id, model_id="model-a")
+    claims = verify_gateway_token(
+        token, runtime_id=runtime_id, task_id=task_id, model_id="model-a"
+    )
     assert claims["namespace_id"] == str(namespace_id)
     with pytest.raises(GatewayScopeError):
-        verify_gateway_token(token, runtime_id=runtime_id, model_id="model-b")
+        verify_gateway_token(
+            token, runtime_id=runtime_id, task_id=task_id, model_id="model-b"
+        )
+    with pytest.raises(GatewayScopeError):
+        verify_gateway_token(
+            token,
+            runtime_id=runtime_id,
+            task_id=uuid.uuid4(),
+            model_id="model-a",
+        )
 
 
 def test_event_payload_redacts_nested_credentials() -> None:

@@ -1,17 +1,21 @@
 import hashlib
 import os
+import shutil
 import stat
 import tempfile
 import uuid
 import zipfile
+from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import select
+from sqlmodel import col, select
 
 from app.api.deps import (
     CurrentUser,
@@ -46,6 +50,23 @@ from app.runtime.models import (
 
 router = APIRouter(prefix="/runtime-artifacts", tags=["runtime-artifacts"])
 node_router = APIRouter(prefix="/node/artifacts", tags=["node-artifacts"])
+_UPLOAD_LOCK_BASE = 0x4E4D5500
+
+
+def _acquire_upload_slot(session: SessionDep) -> int:
+    for slot in range(settings.ARTIFACT_MAX_CONCURRENT_UPLOADS):
+        lock_id = _UPLOAD_LOCK_BASE + slot
+        if session.connection().execute(
+            text("SELECT pg_try_advisory_lock(:lock_id)"), {"lock_id": lock_id}
+        ).scalar_one():
+            return lock_id
+    raise HTTPException(429, "Artifact upload concurrency limit reached")
+
+
+def _release_upload_slot(session: SessionDep, lock_id: int) -> None:
+    session.connection().execute(
+        text("SELECT pg_advisory_unlock(:lock_id)"), {"lock_id": lock_id}
+    )
 
 
 class ArtifactPublic(BaseModel):
@@ -55,7 +76,7 @@ class ArtifactPublic(BaseModel):
     version: str
     content_sha256: str
     size: int
-    manifest: dict
+    manifest: dict[str, Any]
     signature: str
     signing_public_key: str
 
@@ -78,7 +99,7 @@ class DeploymentPublic(BaseModel):
     previous_artifact_id: uuid.UUID | None
     attempt: int
     status: DeploymentStatus
-    error: dict | None
+    error: dict[str, Any] | None
 
 
 class ReleasePublic(BaseModel):
@@ -191,8 +212,18 @@ async def upload_artifact(
     file: UploadFile = File(),
     namespace_id: uuid.UUID = Depends(require_namespace_admin),
 ) -> ArtifactPublic:
+    lock_id = _acquire_upload_slot(session)
+    temp_dir = Path(settings.ARTIFACT_TEMP_DIR or tempfile.gettempdir())
+    temp_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    required_free = (
+        settings.ARTIFACT_MAX_ARCHIVE_BYTES
+        + settings.ARTIFACT_TEMP_MIN_FREE_BYTES
+    )
+    if shutil.disk_usage(temp_dir).free < required_free:
+        _release_upload_slot(session, lock_id)
+        raise HTTPException(507, "Artifact temporary storage capacity is insufficient")
     descriptor, temporary_name = tempfile.mkstemp(
-        prefix="neomua-artifact-", suffix=".zip"
+        prefix="neomua-artifact-", suffix=".zip", dir=temp_dir
     )
     temporary = Path(temporary_name)
     digest = hashlib.sha256()
@@ -201,7 +232,7 @@ async def upload_artifact(
         with os.fdopen(descriptor, "wb") as target:
             while chunk := await file.read(1024 * 1024):
                 size += len(chunk)
-                if size > MAX_TOTAL_BYTES:
+                if size > settings.ARTIFACT_MAX_ARCHIVE_BYTES:
                     raise HTTPException(413, "Artifact archive exceeds size limit")
                 digest.update(chunk)
                 target.write(chunk)
@@ -240,6 +271,7 @@ async def upload_artifact(
     finally:
         temporary.unlink(missing_ok=True)
         await file.close()
+        _release_upload_slot(session, lock_id)
 
 
 @router.get("", response_model=ArtifactsPublic)
@@ -251,7 +283,7 @@ def list_artifacts(
     artifacts = session.exec(
         select(RuntimeArtifact)
         .where(RuntimeArtifact.namespace_id == namespace_id)
-        .order_by(RuntimeArtifact.created_at.desc())
+        .order_by(col(RuntimeArtifact.created_at).desc())
     ).all()
     return ArtifactsPublic(
         data=[_public(artifact) for artifact in artifacts], count=len(artifacts)
@@ -275,7 +307,7 @@ def _public_release(session: SessionDep, release: ArtifactRelease) -> ReleasePub
     deployments = session.exec(
         select(ArtifactDeployment)
         .where(ArtifactDeployment.release_id == release.id)
-        .order_by(ArtifactDeployment.node_id, ArtifactDeployment.attempt)
+        .order_by(col(ArtifactDeployment.node_id), col(ArtifactDeployment.attempt))
     ).all()
     return ReleasePublic(
         id=release.id,
@@ -310,7 +342,7 @@ def create_release(
     if len(body.node_ids) != len(set(body.node_ids)):
         raise HTTPException(400, "Duplicate release node")
     nodes = session.exec(
-        select(RuntimeNode).where(RuntimeNode.id.in_(body.node_ids))
+        select(RuntimeNode).where(col(RuntimeNode.id).in_(body.node_ids))
     ).all()
     if len(nodes) != len(body.node_ids) or any(
         node.namespace_id != namespace_id or node.revoked_at is not None
@@ -326,7 +358,24 @@ def create_release(
     )
     session.add(release)
     session.flush()
-    for node in nodes:
+    for node in sorted(nodes, key=lambda item: str(item.id)):
+        session.exec(
+            select(RuntimeNode).where(RuntimeNode.id == node.id).with_for_update()
+        ).one()
+        active = session.exec(
+            select(ArtifactDeployment).where(
+                ArtifactDeployment.node_id == node.id,
+                ArtifactDeployment.logical_target == artifact.logical_target,
+                col(ArtifactDeployment.status).in_(
+                    [DeploymentStatus.PENDING, DeploymentStatus.DISPATCHED]
+                ),
+            )
+        ).first()
+        if active is not None:
+            session.rollback()
+            raise HTTPException(
+                409, "An artifact deployment is already active for this node target"
+            )
         installed = session.exec(
             select(RuntimeNodeArtifact).where(
                 RuntimeNodeArtifact.node_id == node.id,
@@ -339,6 +388,7 @@ def create_release(
                 release_id=release.id,
                 node_id=node.id,
                 artifact_id=artifact.id,
+                logical_target=artifact.logical_target,
                 previous_artifact_id=installed.current_artifact_id
                 if installed
                 else None,
@@ -377,6 +427,22 @@ def retry_deployment(
         raise HTTPException(404, "Deployment not found")
     if deployment.status not in {DeploymentStatus.FAILED, DeploymentStatus.EXPIRED}:
         raise HTTPException(409, "Only failed or expired deployments can be retried")
+    session.exec(
+        select(RuntimeNode)
+        .where(RuntimeNode.id == deployment.node_id)
+        .with_for_update()
+    ).one()
+    active = session.exec(
+        select(ArtifactDeployment).where(
+            ArtifactDeployment.node_id == deployment.node_id,
+            ArtifactDeployment.logical_target == deployment.logical_target,
+            col(ArtifactDeployment.status).in_(
+                [DeploymentStatus.PENDING, DeploymentStatus.DISPATCHED]
+            ),
+        )
+    ).first()
+    if active is not None:
+        raise HTTPException(409, "An artifact deployment is already active")
     retried = ArtifactReleaseService(session).retry(deployment)
     return DeploymentPublic(
         id=retried.id,
@@ -408,6 +474,45 @@ def rollback_deployment(
         or deployment.previous_artifact_id is None
     ):
         raise HTTPException(409, "Deployment has no applied previous version")
+    session.exec(
+        select(RuntimeNode)
+        .where(RuntimeNode.id == deployment.node_id)
+        .with_for_update()
+    ).one()
+    current = session.exec(
+        select(RuntimeNodeArtifact).where(
+            RuntimeNodeArtifact.node_id == deployment.node_id,
+            RuntimeNodeArtifact.logical_target == deployment.logical_target,
+        )
+    ).first()
+    previous = session.get(RuntimeArtifact, deployment.previous_artifact_id)
+    if (
+        current is None
+        or current.current_artifact_id != deployment.artifact_id
+        or previous is None
+        or previous.namespace_id != namespace_id
+        or previous.logical_target != deployment.logical_target
+    ):
+        raise HTTPException(409, "Deployment is no longer the current target state")
+    previously_applied = session.exec(
+        select(ArtifactDeployment).where(
+            ArtifactDeployment.node_id == deployment.node_id,
+            ArtifactDeployment.artifact_id == previous.id,
+            ArtifactDeployment.logical_target == deployment.logical_target,
+            ArtifactDeployment.status == DeploymentStatus.APPLIED,
+        )
+    ).first()
+    active = session.exec(
+        select(ArtifactDeployment).where(
+            ArtifactDeployment.node_id == deployment.node_id,
+            ArtifactDeployment.logical_target == deployment.logical_target,
+            col(ArtifactDeployment.status).in_(
+                [DeploymentStatus.PENDING, DeploymentStatus.DISPATCHED]
+            ),
+        )
+    ).first()
+    if previously_applied is None or active is not None:
+        raise HTTPException(409, "Rollback target is not safely installable")
     release = ArtifactRelease(
         namespace_id=namespace_id,
         artifact_id=deployment.previous_artifact_id,
@@ -423,6 +528,7 @@ def rollback_deployment(
             release_id=release.id,
             node_id=deployment.node_id,
             artifact_id=deployment.previous_artifact_id,
+            logical_target=deployment.logical_target,
             previous_artifact_id=deployment.artifact_id,
         )
     )
@@ -458,7 +564,7 @@ def download_artifact(
         raise HTTPException(410, "Artifact release expired")
     source = artifact_storage().open(artifact.storage_key)
 
-    def stream():
+    def stream() -> Iterator[bytes]:
         try:
             while chunk := source.read(1024 * 1024):
                 yield chunk

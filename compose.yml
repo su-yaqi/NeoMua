@@ -21,6 +21,7 @@ services:
 
   adminer:
     image: adminer
+    profiles: ["debug"]
     restart: always
     networks:
       - traefik-public

@@ -37,11 +37,21 @@ def test_gateway_can_resolve_direct_runtime_without_exposing_secret_to_browser(
             "secret_inputs": {"api_key": "secret-value"},
         },
     ).json()
+    task = AgentTask(
+        namespace_id=namespace.id,
+        runtime_profile_id=uuid.UUID(created["id"]),
+        prompt="route probe",
+        snapshot={"model_id": "claude-test"},
+        status=TaskStatus.RUNNING,
+    )
+    db.add(task)
+    db.commit()
+    task_id = task.id
     token = issue_gateway_token(
-        namespace.id, uuid.UUID(created["id"]), uuid.uuid4(), "claude-test"
+        namespace.id, uuid.UUID(created["id"]), task_id, "claude-test"
     )
     response = client.get(
-        f"{settings.API_V1_STR}/internal/runtime/routes/{created['id']}",
+        f"{settings.API_V1_STR}/internal/runtime/routes/{created['id']}/tasks/{task_id}",
         params={"model_id": "claude-test"},
         headers={
             "X-Runtime-Token": expected_internal_token(),

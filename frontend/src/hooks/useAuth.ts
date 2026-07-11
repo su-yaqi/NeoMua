@@ -7,12 +7,25 @@ import type {
   UserPublic,
   UserRegister,
 } from "@/client"
+import { browserAxios } from "@/lib/browserApi"
 import { handleError } from "@/utils"
 import useCustomToast from "./useCustomToast"
 
-const isLoggedIn = () => {
-  return localStorage.getItem("access_token") !== null
+const hasAuthenticatedSession = async () => {
+  try {
+    await UsersService.readUserMe()
+    return true
+  } catch {
+    return false
+  }
 }
+
+const authPages = new Set([
+  "/login",
+  "/signup",
+  "/recover-password",
+  "/reset-password",
+])
 
 const useAuth = () => {
   const navigate = useNavigate()
@@ -22,7 +35,8 @@ const useAuth = () => {
   const { data: user } = useQuery<UserPublic | null, Error>({
     queryKey: ["currentUser"],
     queryFn: UsersService.readUserMe,
-    enabled: isLoggedIn(),
+    enabled: !authPages.has(window.location.pathname),
+    retry: false,
   })
 
   const signUpMutation = useMutation({
@@ -38,10 +52,9 @@ const useAuth = () => {
   })
 
   const login = async (data: AccessToken) => {
-    const response = await LoginService.loginAccessToken({
+    await LoginService.loginAccessToken({
       formData: data,
     })
-    localStorage.setItem("access_token", response.access_token)
   }
 
   const loginMutation = useMutation({
@@ -52,8 +65,9 @@ const useAuth = () => {
     onError: handleError.bind(showErrorToast),
   })
 
-  const logout = () => {
-    localStorage.removeItem("access_token")
+  const logout = async () => {
+    await browserAxios.post("/api/v1/login/logout")
+    queryClient.clear()
     navigate({ to: "/login" })
   }
 
@@ -62,9 +76,9 @@ const useAuth = () => {
     loginMutation,
     logout,
     user,
-    isLoading: isLoggedIn() && user === undefined,
+    isLoading: user === undefined,
   }
 }
 
-export { isLoggedIn }
 export default useAuth
+export { hasAuthenticatedSession }

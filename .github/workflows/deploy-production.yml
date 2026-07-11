@@ -20,6 +20,7 @@ jobs:
       DOMAIN: ${{ secrets.DOMAIN_PRODUCTION }}
       STACK_NAME: ${{ secrets.STACK_NAME_PRODUCTION }}
       SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      INTERNAL_RUNTIME_TOKEN: ${{ secrets.INTERNAL_RUNTIME_TOKEN }}
       FIRST_SUPERUSER: ${{ secrets.FIRST_SUPERUSER }}
       FIRST_SUPERUSER_PASSWORD: ${{ secrets.FIRST_SUPERUSER_PASSWORD }}
       SMTP_HOST: ${{ secrets.SMTP_HOST }}

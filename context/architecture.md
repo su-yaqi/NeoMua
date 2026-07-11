@@ -30,7 +30,7 @@ backend routes --> deps / crud --> models --> db
 
 ### 边界说明
 
-- `auth` 负责会话建立与凭证校验，不拥有独立表结构，依赖 `users` 读写用户账号。
+- `auth` 负责 Cookie/Bearer 双通道认证，拥有可轮换、可吊销的 `refresh_session`；用户账号仍归 `users`。
 - `users` 负责账号生命周期与平台级用户管理，是 `items` 与 `namespaces` 的上游模块。
 - `items` 只管理归属到 `owner_id` 的个人条目，不感知空间维度。
 - `namespaces` 负责空间实体、用户-空间关联关系和空间管理员权限校验。
@@ -43,10 +43,10 @@ backend routes --> deps / crud --> models --> db
 
 - FastAPI + SQLModel：沿用模板生态，降低脚手架维护成本。
 - OpenAPI 生成客户端：前端对标准接口使用自动生成 SDK，减少手写类型漂移。
-- `tenantApi` 独立 Axios 实例：为命名空间扩展保留自定义 Header 注入能力。
+- generated client 与 `tenantApi` 共用带 credentials、CSRF 和单飞 refresh 的 Axios 实例；`tenantApi` 继续负责 namespace Header 与 SSE。
 - `X-Namespace-Id` + `require_namespace_admin`：通过请求头或查询参数绑定当前空间上下文。
 - 供应商预置目录内置在后端服务层：以统一 `ProviderDefinition` 描述不同供应商的接入参数、鉴权方式、探活和模型发现能力。
-- 密钥仅以加密密文落库、对外只返回掩码：通过 `SECRET_KEY` 派生密钥流和签名校验，避免明文回传。
+- 密钥仅以版本化 AES-GCM v2 密文落库、对外固定显示 `****`；reader 在迁移期兼容 v1，自带独立 purpose/version AAD。
 - 单体服务 + Compose 编排：当前规模下优先简化开发、测试和部署链路。
 
 ## 部署拓扑
@@ -57,7 +57,7 @@ browser
   -> backend (FastAPI)
   -> db (PostgreSQL)
 
-Adminer 作为数据库管理工具挂在同一 Compose 拓扑中。
+Adminer 仅位于显式 `debug` Compose profile，不属于默认生产拓扑。
 Traefik 负责域名路由与 HTTPS 终止。
 prestart 容器负责迁移前准备与初始化检查。
 
@@ -71,13 +71,13 @@ node daemon -- outbound WSS --> backend
 backend <-> local volume or S3-compatible immutable artifact storage
 ```
 
-FastAPI 多 worker 不共享内存连接表：节点每次连接写入 PostgreSQL `connection_id`，旧连接在下一消息时检测代次失效。任务和发布由连接所在 worker 查询数据库后下发。
+FastAPI 多 worker 不共享内存连接表：节点每次连接写入 PostgreSQL `connection_id`。每次查询和发送前都重验代次；任务和发布先持久化短 reservation，再由当前 generation 下发。独立 maintenance loop 使用 PostgreSQL advisory lock 处理过期 reservation、租约、轮换宽限和发布。
 ```
 
 ## 非功能性约束
 | 类型 | 要求 |
 |------|------|
-| 安全 | JWT Bearer Token 鉴权；密码使用 Argon2/Bcrypt 兼容校验；重置密码接口避免邮箱枚举 |
+| 安全 | 浏览器 HttpOnly Cookie + CSRF、非浏览器 Bearer；密码使用 Argon2/Bcrypt；重置密码接口避免邮箱枚举 |
 | 可维护性 | 前后端均基于模板标准目录；接口类型由 OpenAPI 生成；文档需同步到 `context/` |
 | 部署 | 所有核心服务均以容器方式运行，依赖 `.env` 注入配置 |
 | 测试 | 后端路由与 CRUD 有 Pytest，前端关键页面有 Playwright 覆盖 |

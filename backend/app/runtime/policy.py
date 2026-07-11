@@ -1,13 +1,5 @@
 from enum import Enum
 
-from app.models import NamespaceRole
-
-
-class RuntimeAction(str, Enum):
-    READ = "read"
-    EXECUTE = "execute"
-    MANAGE = "manage"
-
 
 class TaskStatus(str, Enum):
     QUEUED = "queued"
@@ -26,15 +18,16 @@ class TaskKind(str, Enum):
     ADMIN = "admin"
 
 
+class PermissionMode(str, Enum):
+    DEFAULT = "default"
+    ACCEPT_EDITS = "acceptEdits"
+    PLAN = "plan"
+    DONT_ASK = "dontAsk"
+
+
 class InvalidTaskTransition(ValueError):
     pass
 
-
-_ACTIONS = {
-    NamespaceRole.ADMIN: set(RuntimeAction),
-    NamespaceRole.DEVELOPER: {RuntimeAction.READ, RuntimeAction.EXECUTE},
-    NamespaceRole.USER: set(),
-}
 
 _TRANSITIONS = {
     TaskStatus.QUEUED: {
@@ -56,10 +49,6 @@ _TRANSITIONS = {
     },
     TaskStatus.CANCELLING: {TaskStatus.CANCELLED, TaskStatus.FAILED},
 }
-
-
-def authorize_runtime_action(role: NamespaceRole, action: RuntimeAction) -> bool:
-    return action in _ACTIONS[role]
 
 
 def require_task_transition(current: TaskStatus, target: TaskStatus) -> None:

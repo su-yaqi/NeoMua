@@ -28,6 +28,7 @@ from app.models import (
     LlmProviderSyncModelsRequest,
     ProviderValidationStatus,
 )
+from app.runtime.endpoints import EndpointValidationError, canonical_endpoint
 
 router = APIRouter(prefix="/llm", tags=["llm"])
 
@@ -78,13 +79,18 @@ def create_provider_config(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
+    try:
+        base_url = canonical_endpoint(config_in.base_url)
+    except EndpointValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     config = LlmProviderConfig(
         namespace_id=namespace_id,
         config_name=config_in.config_name,
         provider_slug=definition.provider_slug,
         provider_display_name=definition.display_name,
         auth_type=definition.auth_type,
-        base_url=config_in.base_url,
+        base_url=base_url,
         secret_ciphertext=seal_secret_payload(secret_inputs),
         secret_masked=get_primary_secret_mask(definition, secret_inputs),
         extra_config=config_in.extra_config,
@@ -131,7 +137,20 @@ def update_provider_config(
     if config_in.config_name is not None:
         config.config_name = config_in.config_name
     if config_in.base_url is not None:
-        config.base_url = config_in.base_url
+        try:
+            base_url = canonical_endpoint(config_in.base_url)
+        except EndpointValidationError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if base_url != config.base_url:
+            if config_in.secret_inputs is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Changing base_url requires resubmitting credentials",
+                )
+            config.base_url = base_url
+            config.validation_status = ProviderValidationStatus.UNVERIFIED
+            config.validation_message = None
+            config.enabled = False
     if config_in.enabled is not None:
         config.enabled = config_in.enabled
     if config_in.extra_config is not None:

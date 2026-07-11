@@ -12,21 +12,25 @@ import { client } from "./client/client.gen"
 import { ThemeProvider } from "./components/theme-provider"
 import { Toaster } from "./components/ui/sonner"
 import "./index.css"
+import { browserAxios } from "./lib/browserApi"
 import { routeTree } from "./routeTree.gen"
 
 client.setConfig({
-  auth: () => localStorage.getItem("access_token") || "",
+  axios: browserAxios,
   baseURL: import.meta.env.VITE_API_URL,
   throwOnError: true,
+  withCredentials: true,
 })
 
 const handleApiError = (error: Error) => {
   if (
     error instanceof AxiosError &&
     error.response?.status !== undefined &&
-    [401, 403].includes(error.response.status)
+    [401, 403].includes(error.response.status) &&
+    !["/login", "/signup", "/recover-password", "/reset-password"].includes(
+      window.location.pathname,
+    )
   ) {
-    localStorage.removeItem("access_token")
     window.location.href = "/login"
   }
 }

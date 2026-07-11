@@ -7,8 +7,9 @@ import time
 from collections.abc import Awaitable, Callable
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from pydantic import ValidationError
 from websockets.asyncio.client import connect
-from websockets.exceptions import InvalidStatus
+from websockets.exceptions import ConnectionClosed, InvalidStatus, WebSocketException
 
 from node_runtime.identity import DeviceIdentity
 from node_runtime.identity import IdentityStore
@@ -34,6 +35,7 @@ def handshake_headers(
     signature = private.sign(f"neomua-ws-v1:{value}:{nonce}".encode())
     return {
         "Authorization": f"Bearer {identity.credential}",
+        "X-Node-Protocol-Version": "2",
         "X-Node-Timestamp": str(value),
         "X-Node-Nonce": nonce,
         "X-Node-Signature": base64.b64encode(signature).decode(),
@@ -214,6 +216,15 @@ class NodeConnection:
                 attempt = 0
             except PermanentConnectionError:
                 raise
-            except (OSError, TimeoutError, InvalidStatus, RuntimeError):
+            except (
+                OSError,
+                TimeoutError,
+                InvalidStatus,
+                ConnectionClosed,
+                WebSocketException,
+                ValidationError,
+                json.JSONDecodeError,
+                RuntimeError,
+            ):
                 await asyncio.sleep(reconnect_delay(attempt))
                 attempt += 1

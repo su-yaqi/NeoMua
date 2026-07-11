@@ -1,7 +1,9 @@
 import os
 import shutil
 from pathlib import Path
-from typing import BinaryIO
+from typing import cast
+
+from app.runtime.artifacts.storage import ReadableBinaryStream
 
 
 class LocalArtifactStorage:
@@ -33,8 +35,8 @@ class LocalArtifactStorage:
             destination.unlink(missing_ok=True)
             raise
 
-    def open(self, key: str) -> BinaryIO:
-        return self._path(key).open("rb")
+    def open(self, key: str) -> ReadableBinaryStream:
+        return cast(ReadableBinaryStream, self._path(key).open("rb"))
 
     def issue_download(self, key: str, expires_in_seconds: int) -> str:
         raise NotImplementedError("local downloads are issued by the control-plane API")

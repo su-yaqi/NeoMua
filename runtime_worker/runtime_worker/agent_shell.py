@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
 
 from runtime_worker.events import normalize_messages
+from runtime_worker.permissions import permission_mode_for_sdk, validate_permission_mode
 
 
 @dataclass
@@ -18,10 +19,12 @@ class RunCommand:
     env: dict[str, str] = field(default_factory=dict)
     sdk_session_id: str | None = None
     start_sequence: int = 0
+    timeout_seconds: int = 3600
 
     def __post_init__(self) -> None:
-        if self.permission_mode == "bypassPermissions":
-            raise ValueError("bypassPermissions is not allowed")
+        validate_permission_mode(self.permission_mode)
+        if self.timeout_seconds < 1:
+            raise ValueError("timeout_seconds must be positive")
 
 
 class AgentShell:
@@ -35,7 +38,7 @@ class AgentShell:
             tools=command.tools,
             allowed_tools=command.allowed_tools,
             disallowed_tools=command.disallowed_tools,
-            permission_mode=command.permission_mode,  # type: ignore[arg-type]
+            permission_mode=permission_mode_for_sdk(command.permission_mode),
             cwd=command.cwd,
             env=command.env,
             resume=command.sdk_session_id,

@@ -1,9 +1,11 @@
 import uuid
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
+import jwt
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
-from sqlmodel import select
+from sqlmodel import col, select
 
 from app.api.deps import SessionDep
 from app.core.config import settings
@@ -20,7 +22,7 @@ from app.runtime.models import (
     RuntimeType,
 )
 from app.runtime.policy import TaskStatus
-from app.runtime.repository import append_event_idempotent, apply_event_state
+from app.runtime.repository import EventSequenceConflict, append_and_apply_event
 from app.runtime.security import (
     GatewayScopeError,
     issue_gateway_token,
@@ -38,7 +40,7 @@ router = APIRouter(
 class EventInput(BaseModel):
     sequence: int
     event_type: AgentEventType
-    payload: dict
+    payload: dict[str, Any]
 
 
 class EventBatch(BaseModel):
@@ -55,43 +57,52 @@ class LeaseInput(BaseModel):
     revision: int
 
 
+@router.get("/signing-probe")
+def signing_probe() -> dict[str, str]:
+    now = datetime.now(timezone.utc)
+    return {
+        "token": jwt.encode(
+            {
+                "aud": "neomua-model-gateway-readiness",
+                "iat": now,
+                "exp": now + timedelta(seconds=30),
+            },
+            settings.SECRET_KEY,
+            algorithm="HS256",
+        )
+    }
+
+
 @router.post("/events")
 def append_events(body: EventBatch, session: SessionDep) -> dict[str, int]:
-    task = session.get(AgentTask, body.task_id)
-    if task is None:
-        raise HTTPException(404, "Task not found")
     for item in body.events:
         try:
-            append_event_idempotent(
-                session, task, item.sequence, item.event_type, item.payload
+            append_and_apply_event(
+                session, body.task_id, item.sequence, item.event_type, item.payload
             )
-            apply_event_state(task, item.event_type, item.payload)
-            if (
-                item.event_type == AgentEventType.RESULT
-                and task.session_id
-                and item.payload.get("session_id")
-            ):
-                agent_session = session.get(AgentSession, task.session_id)
-                if agent_session:
-                    agent_session.sdk_session_id = str(item.payload["session_id"])
-                    session.add(agent_session)
-        except ValueError as exc:
+        except LookupError as exc:
+            session.rollback()
+            raise HTTPException(404, "Task not found") from exc
+        except EventSequenceConflict as exc:
+            session.commit()
             raise HTTPException(409, str(exc)) from exc
-        session.add(task)
-        session.commit()
+        except ValueError as exc:
+            session.rollback()
+            raise HTTPException(409, str(exc)) from exc
+    session.commit()
     return {"accepted": len(body.events)}
 
 
 @router.post("/tasks/claim")
-def claim_platform_task(body: ClaimInput, session: SessionDep) -> dict:
+def claim_platform_task(body: ClaimInput, session: SessionDep) -> dict[str, Any]:
     task = session.exec(
         select(AgentTask)
-        .join(RuntimeProfile, AgentTask.runtime_profile_id == RuntimeProfile.id)
+        .join(RuntimeProfile, col(AgentTask.runtime_profile_id) == RuntimeProfile.id)
         .where(
             AgentTask.status == TaskStatus.QUEUED,
             RuntimeProfile.runtime_type == RuntimeType.PLATFORM,
         )
-        .order_by(AgentTask.created_at)
+        .order_by(col(AgentTask.created_at))
         .with_for_update(skip_locked=True)
     ).first()
     if task is None:
@@ -99,18 +110,6 @@ def claim_platform_task(body: ClaimInput, session: SessionDep) -> dict:
     runtime = session.get(RuntimeProfile, task.runtime_profile_id)
     if runtime is None:
         raise HTTPException(409, "Runtime is unavailable")
-    task.status = TaskStatus.DISPATCHED
-    task.claimed_by = body.worker_id
-    task.lease_expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
-    session.add(task)
-    session.commit()
-    append_event_idempotent(
-        session,
-        task,
-        1,
-        AgentEventType.STATUS,
-        {"state": TaskStatus.DISPATCHED.value, "executor": body.worker_id},
-    )
     env: dict[str, str]
     if runtime.route_mode == RuntimeRouteMode.DIRECT_ANTHROPIC:
         secret = session.exec(
@@ -133,9 +132,23 @@ def claim_platform_task(body: ClaimInput, session: SessionDep) -> dict:
             task.namespace_id, runtime.id, task.id, runtime.model_id
         )
         env = {
-            "ANTHROPIC_BASE_URL": settings.MODEL_GATEWAY_URL,
+            "ANTHROPIC_BASE_URL": (
+                f"{settings.MODEL_GATEWAY_URL.rstrip('/')}/tasks/{task.id}"
+            ),
             "ANTHROPIC_API_KEY": gateway_token,
         }
+    task.status = TaskStatus.DISPATCHED
+    task.claimed_by = body.worker_id
+    task.lease_expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+    session.add(task)
+    append_and_apply_event(
+        session,
+        task.id,
+        1,
+        AgentEventType.STATUS,
+        {"state": TaskStatus.DISPATCHED.value, "executor": body.worker_id},
+    )
+    session.commit()
     agent_session = (
         session.get(AgentSession, task.session_id) if task.session_id else None
     )
@@ -144,15 +157,18 @@ def claim_platform_task(body: ClaimInput, session: SessionDep) -> dict:
         "revision": task.revision,
         "command": {
             "prompt": task.prompt,
-            "model": runtime.model_id,
-            "permission_mode": runtime.permission_mode,
-            "tools": runtime.config.get("tools", []),
-            "allowed_tools": runtime.config.get("allowed_tools", []),
-            "disallowed_tools": runtime.config.get("disallowed_tools", []),
-            "cwd": runtime.config.get("cwd"),
+            "model": task.snapshot.get("model_id", runtime.model_id),
+            "permission_mode": task.snapshot.get(
+                "permission_mode", runtime.permission_mode
+            ),
+            "tools": task.snapshot.get("tools", []),
+            "allowed_tools": task.snapshot.get("allowed_tools", []),
+            "disallowed_tools": task.snapshot.get("disallowed_tools", []),
+            "cwd": task.snapshot.get("working_directory"),
             "env": env,
             "sdk_session_id": agent_session.sdk_session_id if agent_session else None,
             "start_sequence": 1,
+            "timeout_seconds": task.snapshot.get("timeout_seconds", 3600),
         },
     }
 
@@ -183,24 +199,42 @@ def renew_platform_task_lease(
     return {"status": task.status.value}
 
 
-@router.get("/routes/{runtime_id}")
+@router.get("/routes/{runtime_id}/tasks/{task_id}")
 def resolve_route(
     runtime_id: uuid.UUID,
+    task_id: uuid.UUID,
     model_id: str,
     session: SessionDep,
     authorization: str | None = Header(default=None),
-) -> dict:
+) -> dict[str, Any]:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(401, "Gateway route token required")
     try:
         claims = verify_gateway_token(
-            authorization[7:], runtime_id=runtime_id, model_id=model_id
+            authorization[7:],
+            runtime_id=runtime_id,
+            task_id=task_id,
+            model_id=model_id,
         )
     except GatewayScopeError as exc:
         raise HTTPException(403, str(exc))
     runtime = session.get(RuntimeProfile, runtime_id)
     if runtime is None or str(runtime.namespace_id) != claims["namespace_id"]:
         raise HTTPException(404, "Runtime route not found")
+    task = session.get(AgentTask, task_id)
+    if (
+        task is None
+        or task.namespace_id != runtime.namespace_id
+        or task.runtime_profile_id != runtime.id
+        or task.snapshot.get("model_id") != model_id
+        or task.status
+        not in {
+            TaskStatus.DISPATCHED,
+            TaskStatus.RUNNING,
+            TaskStatus.CANCELLING,
+        }
+    ):
+        raise HTTPException(403, "Task route is not active or is out of scope")
     if runtime.route_mode == RuntimeRouteMode.DIRECT_ANTHROPIC:
         secret = session.exec(
             select(RuntimeSecret).where(RuntimeSecret.runtime_profile_id == runtime.id)

@@ -79,18 +79,37 @@ def issue_gateway_token(
     )
 
 
-def verify_gateway_token(token: str, *, runtime_id: uuid.UUID, model_id: str) -> dict:
+def verify_gateway_token(
+    token: str,
+    *,
+    runtime_id: uuid.UUID,
+    task_id: uuid.UUID,
+    model_id: str,
+) -> dict[str, Any]:
     try:
-        claims = jwt.decode(
+        claims: dict[str, Any] = jwt.decode(
             token,
             settings.SECRET_KEY,
             algorithms=["HS256"],
             audience="neomua-model-gateway",
+            leeway=settings.GATEWAY_JWT_LEEWAY_SECONDS,
+            options={
+                "require": [
+                    "exp",
+                    "iat",
+                    "aud",
+                    "namespace_id",
+                    "runtime_id",
+                    "task_id",
+                    "model_id",
+                ]
+            },
         )
     except jwt.PyJWTError as exc:
         raise GatewayScopeError("invalid gateway token") from exc
     if (
         claims.get("runtime_id") != str(runtime_id)
+        or claims.get("task_id") != str(task_id)
         or claims.get("model_id") != model_id
     ):
         raise GatewayScopeError("gateway token scope mismatch")

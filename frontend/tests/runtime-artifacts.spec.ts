@@ -5,7 +5,6 @@ const namespaceId = "00000000-0000-0000-0000-000000000010"
 async function mockReleasePage(page: Page, role: "admin" | "developer") {
   await page.addInitScript(
     ({ namespaceId }) => {
-      localStorage.setItem("access_token", "test-token")
       localStorage.setItem("selected_namespace_id", namespaceId)
     },
     { namespaceId },

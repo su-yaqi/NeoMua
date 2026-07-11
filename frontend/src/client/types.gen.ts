@@ -1036,10 +1036,7 @@ export type NodeRuntimePublic = {
      * Base Url
      */
     base_url: string | null;
-    /**
-     * Permission Mode
-     */
-    permission_mode: string;
+    permission_mode: PermissionMode;
     /**
      * Secret Masked
      */
@@ -1063,10 +1060,7 @@ export type NodeRuntimeUpsert = {
      * Base Url
      */
     base_url?: string | null;
-    /**
-     * Permission Mode
-     */
-    permission_mode?: string;
+    permission_mode?: PermissionMode;
     /**
      * Secret Inputs
      */
@@ -1088,6 +1082,11 @@ export type NodesPublic = {
      */
     count: number;
 };
+
+/**
+ * PermissionMode
+ */
+export type PermissionMode = 'default' | 'acceptEdits' | 'plan' | 'dontAsk';
 
 /**
  * PlatformRuntimePublic
@@ -1114,10 +1113,7 @@ export type PlatformRuntimePublic = {
      * Base Url
      */
     base_url: string | null;
-    /**
-     * Permission Mode
-     */
-    permission_mode: string;
+    permission_mode: PermissionMode;
     /**
      * Secret Masked
      */
@@ -1145,10 +1141,7 @@ export type PlatformRuntimeUpsert = {
      * Base Url
      */
     base_url?: string | null;
-    /**
-     * Permission Mode
-     */
-    permission_mode?: string;
+    permission_mode?: PermissionMode;
     /**
      * Secret Inputs
      */
@@ -1814,12 +1807,71 @@ export type LoginLoginAccessTokenResponses = {
 
 export type LoginLoginAccessTokenResponse = LoginLoginAccessTokenResponses[keyof LoginLoginAccessTokenResponses];
 
+export type LoginRefreshAccessTokenData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/login/refresh';
+};
+
+export type LoginRefreshAccessTokenErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type LoginRefreshAccessTokenError = LoginRefreshAccessTokenErrors[keyof LoginRefreshAccessTokenErrors];
+
+export type LoginRefreshAccessTokenResponses = {
+    /**
+     * Successful Response
+     */
+    200: Token;
+};
+
+export type LoginRefreshAccessTokenResponse = LoginRefreshAccessTokenResponses[keyof LoginRefreshAccessTokenResponses];
+
+export type LoginLogoutData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/login/logout';
+};
+
+export type LoginLogoutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type LoginLogoutError = LoginLogoutErrors[keyof LoginLogoutErrors];
+
+export type LoginLogoutResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type LoginLogoutResponse = LoginLogoutResponses[keyof LoginLogoutResponses];
+
 export type LoginTestTokenData = {
     body?: never;
     path?: never;
     query?: never;
     url: '/api/v1/login/test-token';
 };
+
+export type LoginTestTokenErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type LoginTestTokenError = LoginTestTokenErrors[keyof LoginTestTokenErrors];
 
 export type LoginTestTokenResponses = {
     /**
@@ -1981,6 +2033,15 @@ export type UsersDeleteUserMeData = {
     url: '/api/v1/users/me';
 };
 
+export type UsersDeleteUserMeErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UsersDeleteUserMeError = UsersDeleteUserMeErrors[keyof UsersDeleteUserMeErrors];
+
 export type UsersDeleteUserMeResponses = {
     /**
      * Successful Response
@@ -1996,6 +2057,15 @@ export type UsersReadUserMeData = {
     query?: never;
     url: '/api/v1/users/me';
 };
+
+export type UsersReadUserMeErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UsersReadUserMeError = UsersReadUserMeErrors[keyof UsersReadUserMeErrors];
 
 export type UsersReadUserMeResponses = {
     /**
@@ -2374,6 +2444,15 @@ export type NamespacesReadMyNamespacesData = {
     query?: never;
     url: '/api/v1/namespaces/mine';
 };
+
+export type NamespacesReadMyNamespacesErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type NamespacesReadMyNamespacesError = NamespacesReadMyNamespacesErrors[keyof NamespacesReadMyNamespacesErrors];
 
 export type NamespacesReadMyNamespacesResponses = {
     /**
@@ -3366,6 +3445,41 @@ export type RuntimesCancelTaskResponses = {
 
 export type RuntimesCancelTaskResponse = RuntimesCancelTaskResponses[keyof RuntimesCancelTaskResponses];
 
+export type RuntimeInternalSigningProbeData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Runtime-Token
+         */
+        'X-Runtime-Token'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/internal/runtime/signing-probe';
+};
+
+export type RuntimeInternalSigningProbeErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeInternalSigningProbeError = RuntimeInternalSigningProbeErrors[keyof RuntimeInternalSigningProbeErrors];
+
+export type RuntimeInternalSigningProbeResponses = {
+    /**
+     * Response Runtime-Internal-Signing Probe
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: string;
+    };
+};
+
+export type RuntimeInternalSigningProbeResponse = RuntimeInternalSigningProbeResponses[keyof RuntimeInternalSigningProbeResponses];
+
 export type RuntimeInternalAppendEventsData = {
     body: EventBatch;
     headers?: {
@@ -3493,6 +3607,10 @@ export type RuntimeInternalResolveRouteData = {
          * Runtime Id
          */
         runtime_id: string;
+        /**
+         * Task Id
+         */
+        task_id: string;
     };
     query: {
         /**
@@ -3500,7 +3618,7 @@ export type RuntimeInternalResolveRouteData = {
          */
         model_id: string;
     };
-    url: '/api/v1/internal/runtime/routes/{runtime_id}';
+    url: '/api/v1/internal/runtime/routes/{runtime_id}/tasks/{task_id}';
 };
 
 export type RuntimeInternalResolveRouteErrors = {

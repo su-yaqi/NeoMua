@@ -35,5 +35,5 @@ api_router.include_router(node_enrollment.node_router)
 api_router.include_router(node_socket.router)
 
 
-if settings.ENVIRONMENT == "local":
+if settings.ENVIRONMENT == "local" and settings.ENABLE_PRIVATE_TEST_API:
     api_router.include_router(private.router)

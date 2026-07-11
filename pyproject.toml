@@ -9,3 +9,13 @@ dev = [
 github-actions = [
     "smokeshow >=0.5.0",
 ]
+
+[tool.mypy]
+strict = true
+exclude = ["(^|/)alembic/"]
+
+[tool.ty.terminal]
+error-on-warning = true
+
+[tool.ty.src]
+exclude = ["backend/app/alembic/**"]

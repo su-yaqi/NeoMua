@@ -1,11 +1,13 @@
 import asyncio
 import json
 import uuid
+from collections.abc import AsyncIterator
+from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from sqlmodel import select
+from sqlmodel import col, select
 
 from app.api.deps import (
     CurrentUser,
@@ -14,7 +16,6 @@ from app.api.deps import (
     require_namespace_runtime_user,
 )
 from app.llm_provider_service import (
-    mask_secret_value,
     open_secret_payload,
     seal_secret_payload,
 )
@@ -23,6 +24,7 @@ from app.runtime.compatibility import (
     AnthropicCompatibilityError,
     check_anthropic_compatibility,
 )
+from app.runtime.endpoints import EndpointValidationError, canonical_endpoint
 from app.runtime.gateway import UnsupportedGatewayProvider, gateway_provider_kind
 from app.runtime.models import (
     AgentEvent,
@@ -34,8 +36,8 @@ from app.runtime.models import (
     RuntimeSecret,
     RuntimeType,
 )
-from app.runtime.policy import TaskStatus, require_task_transition
-from app.runtime.repository import append_event_idempotent
+from app.runtime.policy import PermissionMode, TaskStatus, require_task_transition
+from app.runtime.repository import append_and_apply_event
 
 router = APIRouter(prefix="/runtimes", tags=["runtimes"])
 
@@ -45,7 +47,7 @@ class PlatformRuntimeUpsert(BaseModel):
     model_id: str = Field(min_length=1, max_length=255)
     provider_config_id: uuid.UUID | None = None
     base_url: str | None = None
-    permission_mode: str = "default"
+    permission_mode: PermissionMode = PermissionMode.DEFAULT
     secret_inputs: dict[str, str] | None = None
 
 
@@ -56,7 +58,7 @@ class PlatformRuntimePublic(BaseModel):
     model_id: str
     provider_config_id: uuid.UUID | None
     base_url: str | None
-    permission_mode: str
+    permission_mode: PermissionMode
     secret_masked: str | None
     compatibility_verified: bool
 
@@ -80,7 +82,7 @@ class TaskPublic(BaseModel):
 class EventPublic(BaseModel):
     sequence: int
     event_type: AgentEventType
-    payload: dict
+    payload: dict[str, Any]
 
 
 def _public(
@@ -93,7 +95,7 @@ def _public(
         model_id=runtime.model_id,
         provider_config_id=runtime.provider_config_id,
         base_url=runtime.base_url,
-        permission_mode=runtime.permission_mode,
+        permission_mode=PermissionMode(runtime.permission_mode),
         secret_masked=secret.secret_masked if secret else None,
         compatibility_verified=bool(runtime.config.get("compatibility_verified")),
     )
@@ -106,12 +108,37 @@ def upsert_platform_runtime(
     _: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_admin),
 ) -> PlatformRuntimePublic:
-    if body.permission_mode == "bypassPermissions":
-        raise HTTPException(400, "bypassPermissions is not allowed")
+    runtime = session.exec(
+        select(RuntimeProfile).where(
+            RuntimeProfile.namespace_id == namespace_id,
+            RuntimeProfile.runtime_type == RuntimeType.PLATFORM,
+        )
+    ).first()
+    existing_secret = (
+        session.exec(
+            select(RuntimeSecret).where(RuntimeSecret.runtime_profile_id == runtime.id)
+        ).first()
+        if runtime
+        else None
+    )
+    canonical_base_url = None
+    if body.base_url:
+        try:
+            canonical_base_url = canonical_endpoint(body.base_url)
+        except EndpointValidationError as exc:
+            raise HTTPException(422, str(exc)) from exc
+    endpoint_changed = bool(runtime and canonical_base_url != runtime.base_url)
     if body.route_mode == RuntimeRouteMode.DIRECT_ANTHROPIC and (
-        not body.base_url or not body.secret_inputs
+        not canonical_base_url
+        or (
+            not body.secret_inputs
+            and (existing_secret is None or endpoint_changed)
+        )
     ):
-        raise HTTPException(400, "direct_anthropic requires base_url and credentials")
+        raise HTTPException(
+            400,
+            "direct_anthropic requires credentials when the endpoint is new or changed",
+        )
     if body.route_mode == RuntimeRouteMode.PLATFORM_GATEWAY:
         provider = session.get(LlmProviderConfig, body.provider_config_id)
         if (
@@ -128,17 +155,11 @@ def upsert_platform_runtime(
             select(LlmProviderModel).where(
                 LlmProviderModel.provider_config_id == provider.id,
                 LlmProviderModel.model_id == body.model_id,
-                LlmProviderModel.is_enabled.is_(True),
+                col(LlmProviderModel.is_enabled).is_(True),
             )
         ).first()
         if model is None:
             raise HTTPException(400, "Enabled model not found")
-    runtime = session.exec(
-        select(RuntimeProfile).where(
-            RuntimeProfile.namespace_id == namespace_id,
-            RuntimeProfile.runtime_type == RuntimeType.PLATFORM,
-        )
-    ).first()
     if runtime is None:
         runtime = RuntimeProfile(
             namespace_id=namespace_id,
@@ -146,20 +167,25 @@ def upsert_platform_runtime(
             route_mode=body.route_mode,
             model_id=body.model_id,
         )
+    previous_model = runtime.model_id
     runtime.route_mode = body.route_mode
     runtime.model_id = body.model_id
     runtime.provider_config_id = body.provider_config_id
-    runtime.base_url = body.base_url
-    runtime.permission_mode = body.permission_mode
+    runtime.base_url = canonical_base_url
+    runtime.permission_mode = body.permission_mode.value
     runtime.config = {
         **runtime.config,
-        "compatibility_verified": body.route_mode == RuntimeRouteMode.PLATFORM_GATEWAY,
+        "compatibility_verified": body.route_mode == RuntimeRouteMode.PLATFORM_GATEWAY
+        or (
+            bool(runtime.config.get("compatibility_verified"))
+            and not endpoint_changed
+            and previous_model == body.model_id
+            and not body.secret_inputs
+        ),
     }
     session.add(runtime)
     session.flush()
-    secret = session.exec(
-        select(RuntimeSecret).where(RuntimeSecret.runtime_profile_id == runtime.id)
-    ).first()
+    secret = existing_secret
     if body.secret_inputs:
         if secret is None:
             secret = RuntimeSecret(
@@ -168,9 +194,7 @@ def upsert_platform_runtime(
                 secret_ciphertext="",
             )
         secret.secret_ciphertext = seal_secret_payload(body.secret_inputs) or ""
-        secret.secret_masked = mask_secret_value(
-            next(iter(body.secret_inputs.values()))
-        )
+        secret.secret_masked = "****"
         session.add(secret)
     session.commit()
     session.refresh(runtime)
@@ -279,12 +303,37 @@ def create_session_message(
     current_user: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
 ) -> TaskPublic:
-    agent_session = session.get(AgentSession, session_id)
+    agent_session = session.exec(
+        select(AgentSession)
+        .where(AgentSession.id == session_id)
+        .with_for_update()
+    ).first()
     if agent_session is None or agent_session.namespace_id != namespace_id:
         raise HTTPException(404, "Session not found")
     runtime = session.get(RuntimeProfile, agent_session.runtime_profile_id)
     if runtime is None:
         raise HTTPException(409, "Runtime is unavailable")
+    active_task = session.exec(
+        select(AgentTask).where(
+            AgentTask.session_id == agent_session.id,
+            col(AgentTask.status).in_(
+                [
+                    TaskStatus.QUEUED,
+                    TaskStatus.DISPATCHED,
+                    TaskStatus.RUNNING,
+                    TaskStatus.CANCELLING,
+                ]
+            ),
+        )
+    ).first()
+    if active_task is not None:
+        raise HTTPException(
+            409,
+            detail={
+                "code": "session_task_in_progress",
+                "task_id": str(active_task.id),
+            },
+        )
     task = AgentTask(
         namespace_id=namespace_id,
         session_id=agent_session.id,
@@ -294,16 +343,25 @@ def create_session_message(
             "route_mode": runtime.route_mode.value,
             "model_id": runtime.model_id,
             "permission_mode": runtime.permission_mode,
-            "config": runtime.config,
+            "tools": runtime.config.get("tools", []),
+            "allowed_tools": runtime.config.get("allowed_tools", []),
+            "disallowed_tools": runtime.config.get("disallowed_tools", []),
+            "working_directory": runtime.config.get("cwd"),
+            "timeout_seconds": runtime.config.get("timeout_seconds", 3600),
+            "provider_config_id": str(runtime.provider_config_id)
+            if runtime.provider_config_id
+            else None,
+            "base_url": runtime.base_url,
         },
         created_by=current_user.id,
     )
     session.add(task)
+    session.flush()
+    append_and_apply_event(
+        session, task.id, 0, AgentEventType.USER_MESSAGE, {"text": body.prompt}
+    )
     session.commit()
     session.refresh(task)
-    append_event_idempotent(
-        session, task, 0, AgentEventType.USER_MESSAGE, {"text": body.prompt}
-    )
     return TaskPublic(id=task.id, session_id=task.session_id, status=task.status.value)
 
 
@@ -342,7 +400,7 @@ def read_task_events(
             AgentEvent.task_id == task_id,
             AgentEvent.sequence > after_sequence,
         )
-        .order_by(AgentEvent.sequence)
+        .order_by(col(AgentEvent.sequence))
     ).all()
     return [
         EventPublic(sequence=e.sequence, event_type=e.event_type, payload=e.payload)
@@ -361,9 +419,14 @@ async def stream_task_events(
     namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
 ) -> StreamingResponse:
     _namespace_task(session, task_id, namespace_id)
-    cursor = (
-        max(after_sequence, int(last_event_id)) if last_event_id else after_sequence
-    )
+    try:
+        cursor = (
+            max(after_sequence, int(last_event_id))
+            if last_event_id
+            else after_sequence
+        )
+    except ValueError as exc:
+        raise HTTPException(400, "Last-Event-ID must be an integer") from exc
     terminal = {
         TaskStatus.SUCCEEDED,
         TaskStatus.FAILED,
@@ -372,7 +435,7 @@ async def stream_task_events(
         TaskStatus.REJECTED,
     }
 
-    async def generate():
+    async def generate() -> AsyncIterator[str]:
         nonlocal cursor
         while not await request.is_disconnected():
             session.expire_all()
@@ -382,7 +445,7 @@ async def stream_task_events(
                     AgentEvent.task_id == task_id,
                     AgentEvent.sequence > cursor,
                 )
-                .order_by(AgentEvent.sequence)
+                .order_by(col(AgentEvent.sequence))
             ).all()
             for event in events:
                 cursor = event.sequence
@@ -396,7 +459,11 @@ async def stream_task_events(
                 )
                 yield f"id: {event.sequence}\nevent: {event.event_type.value}\ndata: {data}\n\n"
             current = session.get(AgentTask, task_id)
-            if current is None or current.status in terminal:
+            if current is None:
+                break
+            if current.status in terminal:
+                if events:
+                    continue
                 break
             if not events:
                 yield ": keepalive\n\n"
@@ -412,7 +479,22 @@ def cancel_task(
     _: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
 ) -> TaskPublic:
-    task = _namespace_task(session, task_id, namespace_id)
+    task = session.exec(
+        select(AgentTask)
+        .where(AgentTask.id == task_id, AgentTask.namespace_id == namespace_id)
+        .with_for_update()
+    ).first()
+    if task is None:
+        raise HTTPException(404, "Task not found")
+    if task.status in {
+        TaskStatus.SUCCEEDED,
+        TaskStatus.FAILED,
+        TaskStatus.CANCELLED,
+        TaskStatus.INTERRUPTED,
+        TaskStatus.REJECTED,
+    }:
+        session.rollback()
+        return TaskPublic(id=task.id, session_id=task.session_id, status=task.status.value)
     target = (
         TaskStatus.CANCELLING
         if task.status == TaskStatus.RUNNING

@@ -25,7 +25,7 @@ NeoMua
 ## 核心模块
 | 模块 | 描述 |
 |------|------|
-| auth | 登录、注册、Token 校验、找回密码与重置密码 |
+| auth | HttpOnly Cookie/Bearer 双通道、refresh rotation、CSRF、注册与密码恢复 |
 | users | 个人资料维护、密码修改、自助注销、平台级用户管理 |
 | items | 用户个人条目的增删改查 |
 | namespaces | 空间列表、空间 CRUD、空间成员关系与空间上下文选择 |

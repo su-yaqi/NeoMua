@@ -1,10 +1,12 @@
 import uuid
 from datetime import datetime, timezone
 from pathlib import PurePosixPath, PureWindowsPath
+from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
-from sqlmodel import select
+from sqlalchemy.exc import IntegrityError
+from sqlmodel import col, select
 
 from app import crud
 from app.api.deps import CurrentUser, SessionDep, require_namespace_runtime_user
@@ -20,7 +22,7 @@ from app.runtime.models import (
     RuntimeType,
 )
 from app.runtime.policy import TaskKind, TaskStatus, require_task_transition
-from app.runtime.repository import append_event_idempotent, retry_task
+from app.runtime.repository import append_and_apply_event, retry_task
 
 router = APIRouter(prefix="/runtime-tasks", tags=["runtime-tasks"])
 
@@ -40,8 +42,8 @@ class TaskPublic(BaseModel):
     task_kind: TaskKind
     status: TaskStatus
     prompt: str
-    snapshot: dict
-    final_result: dict | None
+    snapshot: dict[str, Any]
+    final_result: dict[str, Any] | None
     retry_of_task_id: uuid.UUID | None
     created_at: datetime
     updated_at: datetime
@@ -213,11 +215,26 @@ def create_task(
         created_by=current_user.id,
     )
     session.add(task)
-    session.commit()
-    session.refresh(task)
-    append_event_idempotent(
-        session, task, 0, AgentEventType.USER_MESSAGE, {"text": body.prompt}
-    )
+    try:
+        session.flush()
+        append_and_apply_event(
+            session, task.id, 0, AgentEventType.USER_MESSAGE, {"text": body.prompt}
+        )
+        session.commit()
+        session.refresh(task)
+    except IntegrityError:
+        session.rollback()
+        existing = session.exec(
+            select(AgentTask).where(
+                AgentTask.namespace_id == namespace_id,
+                AgentTask.idempotency_key == idempotency_key,
+            )
+        ).first()
+        if existing is None:
+            raise
+        if existing.snapshot.get("request") != request_identity:
+            raise HTTPException(409, "Idempotency-Key was used for a different task")
+        return _public(existing)
     return _public(task)
 
 
@@ -230,7 +247,7 @@ def list_tasks(
     tasks = session.exec(
         select(AgentTask)
         .where(AgentTask.namespace_id == namespace_id)
-        .order_by(AgentTask.created_at.desc())
+        .order_by(col(AgentTask.created_at).desc())
     ).all()
     return TasksPublic(data=[_public(task) for task in tasks], count=len(tasks))
 
@@ -261,7 +278,22 @@ def cancel_task(
     _: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
 ) -> TaskPublic:
-    task = _get_task(session, task_id, namespace_id)
+    task = session.exec(
+        select(AgentTask)
+        .where(AgentTask.id == task_id, AgentTask.namespace_id == namespace_id)
+        .with_for_update()
+    ).first()
+    if task is None:
+        raise HTTPException(404, "Task not found")
+    if task.status in {
+        TaskStatus.SUCCEEDED,
+        TaskStatus.FAILED,
+        TaskStatus.CANCELLED,
+        TaskStatus.INTERRUPTED,
+        TaskStatus.REJECTED,
+    }:
+        session.rollback()
+        return _public(task)
     target = (
         TaskStatus.CANCELLING
         if task.status == TaskStatus.RUNNING
@@ -301,6 +333,22 @@ def retry_failed_task(
         return _public(existing)
     try:
         retried = retry_task(session, original.id, idempotency_key=idempotency_key)
+        session.commit()
+        session.refresh(retried)
+    except IntegrityError:
+        session.rollback()
+        existing = session.exec(
+            select(AgentTask).where(
+                AgentTask.namespace_id == namespace_id,
+                AgentTask.idempotency_key == idempotency_key,
+            )
+        ).first()
+        if existing is None:
+            raise
+        if existing.retry_of_task_id != original.id:
+            raise HTTPException(409, "Idempotency-Key was used for a different retry")
+        return _public(existing)
     except ValueError as exc:
+        session.rollback()
         raise HTTPException(409, str(exc)) from exc
     return _public(retried)

@@ -97,7 +97,7 @@ def test_namespace_admin_can_create_provider_config_with_masked_secret(
     assert response.status_code == 200
     body = response.json()
     assert body["provider_slug"] == "deepseek"
-    assert body["secret_masked"].endswith("9876")
+    assert body["secret_masked"] == "****"
     assert "namespace-secret" not in body["secret_masked"]
     assert body["validation_status"] == "unverified"
 

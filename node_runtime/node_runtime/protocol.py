@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 class Envelope(BaseModel):
     type: str
-    protocol_version: Literal["1"] = "1"
+    protocol_version: Literal["2"] = "2"
     message_id: uuid.UUID
     correlation_id: uuid.UUID | None = None
     node_id: uuid.UUID

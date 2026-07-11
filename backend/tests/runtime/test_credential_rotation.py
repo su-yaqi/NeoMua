@@ -7,10 +7,11 @@ from sqlmodel import Session
 
 from app.runtime.enrollment import (
     issue_node_credential,
+    recover_node_credential_rotation,
     retire_replaced_credential,
     rotate_node_credential,
 )
-from app.runtime.models import RuntimeNode
+from app.runtime.models import NodeCredential, RuntimeNode
 from tests.api.routes.test_namespaces import create_namespace
 
 
@@ -60,3 +61,41 @@ def test_one_day_offline_does_not_remove_node_pairing(db: Session) -> None:
     db.refresh(node)
     assert node.revoked_at is None
     assert node.public_key == "key"
+
+
+def test_unacknowledged_rotation_recovers_after_restart(db: Session) -> None:
+    namespace = create_namespace(db)
+    node = RuntimeNode(
+        namespace_id=namespace.id,
+        name="node",
+        hostname="host",
+        os_name="linux",
+        architecture="arm64",
+        agent_version="1",
+        public_key="key",
+        key_fingerprint="d" * 64,
+    )
+    db.add(node)
+    db.flush()
+    old, _ = issue_node_credential(db, node, ttl=timedelta(days=60))
+    abandoned, _ = rotate_node_credential(db, node, old)
+    old_id = old.id
+    abandoned_id = abandoned.id
+    db.commit()
+    db.expire_all()
+
+    persisted_node = db.get(RuntimeNode, node.id)
+    persisted_old = db.get(NodeCredential, old_id)
+    assert persisted_node is not None
+    assert persisted_old is not None
+    replacement, token = recover_node_credential_rotation(
+        db, persisted_node, persisted_old
+    )
+    db.commit()
+
+    assert token
+    assert replacement.id != abandoned_id
+    assert persisted_old.replaced_by_id == replacement.id
+    abandoned_after_recovery = db.get(NodeCredential, abandoned_id)
+    assert abandoned_after_recovery is not None
+    assert abandoned_after_recovery.revoked_at is not None

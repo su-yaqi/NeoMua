@@ -8,6 +8,7 @@ from app.runtime.models import (
     RuntimeRouteMode,
     RuntimeType,
 )
+from app.runtime.policy import TaskStatus
 from app.runtime.repository import append_event_idempotent
 from tests.api.routes.test_namespaces import create_namespace
 from tests.utils.user import create_random_user
@@ -33,6 +34,7 @@ def runtime_task_factory(db: Session):
             runtime_profile_id=runtime.id,
             prompt="test",
             created_by=user.id,
+            status=TaskStatus.DISPATCHED,
         )
         db.add(task)
         db.commit()

@@ -2,7 +2,7 @@
 
 import { buildClientParams, type Client, type ClientMeta, formDataBodySerializer, type Options as Options2, type RequestResult, type TDataShape, urlSearchParamsBodySerializer } from './client';
 import { client } from './client.gen';
-import type { AdminUserCreate, AdminUserUpdate, BodyLoginLoginAccessToken, BodyRuntimeArtifactsUploadArtifact, ClaimInput, EventBatch, ItemCreate, ItemsCreateItemErrors, ItemsCreateItemResponses, ItemsDeleteItemErrors, ItemsDeleteItemResponses, ItemsReadItemErrors, ItemsReadItemResponses, ItemsReadItemsErrors, ItemsReadItemsResponses, ItemsUpdateItemErrors, ItemsUpdateItemResponses, ItemUpdate, LeaseInput, LlmCreateProviderConfigErrors, LlmCreateProviderConfigResponses, LlmProviderConfigCreate, LlmProviderConfigUpdate, LlmProviderSyncModelsRequest, LlmReadProviderCatalogErrors, LlmReadProviderCatalogResponses, LlmReadProviderConfigsErrors, LlmReadProviderConfigsResponses, LlmSyncProviderModelsErrors, LlmSyncProviderModelsResponses, LlmUpdateProviderConfigErrors, LlmUpdateProviderConfigResponses, LlmValidateProviderConfigErrors, LlmValidateProviderConfigResponses, LoginLoginAccessTokenErrors, LoginLoginAccessTokenResponses, LoginRecoverPasswordErrors, LoginRecoverPasswordHtmlContentErrors, LoginRecoverPasswordHtmlContentResponses, LoginRecoverPasswordResponses, LoginResetPasswordErrors, LoginResetPasswordResponses, LoginTestTokenResponses, MessageInput, NamespaceCreate, NamespacesCreateNamespaceUserErrors, NamespacesCreateNamespaceUserResponses, NamespacesDeleteNamespaceUserErrors, NamespacesDeleteNamespaceUserResponses, NamespacesReadMyNamespacesResponses, NamespacesReadNamespaceUsersErrors, NamespacesReadNamespaceUsersResponses, NamespacesUpdateNamespaceUserErrors, NamespacesUpdateNamespaceUserResponses, NamespaceUpdate, NamespaceUserCreate, NamespaceUserUpdate, NewPassword, NodeArtifactsDownloadArtifactErrors, NodeArtifactsDownloadArtifactResponses, NodeEnrollInput, NodeEnrollmentEnrollNodeErrors, NodeEnrollmentEnrollNodeResponses, NodeRuntimeUpsert, PlatformCreateNamespaceErrors, PlatformCreateNamespaceResponses, PlatformCreatePlatformUserErrors, PlatformCreatePlatformUserResponses, PlatformDeleteNamespaceErrors, PlatformDeleteNamespaceResponses, PlatformDeletePlatformUserErrors, PlatformDeletePlatformUserResponses, PlatformReadNamespacesErrors, PlatformReadNamespacesResponses, PlatformReadPlatformUsersErrors, PlatformReadPlatformUsersResponses, PlatformRuntimeUpsert, PlatformUpdateNamespaceErrors, PlatformUpdateNamespaceResponses, PlatformUpdatePlatformUserErrors, PlatformUpdatePlatformUserResponses, PrivateCreateUserErrors, PrivateCreateUserResponses, PrivateUserCreate, ReleaseCreate, RuntimeArtifactsCreateReleaseErrors, RuntimeArtifactsCreateReleaseResponses, RuntimeArtifactsListArtifactsErrors, RuntimeArtifactsListArtifactsResponses, RuntimeArtifactsReadArtifactErrors, RuntimeArtifactsReadArtifactResponses, RuntimeArtifactsReadReleaseErrors, RuntimeArtifactsReadReleaseResponses, RuntimeArtifactsRetryDeploymentErrors, RuntimeArtifactsRetryDeploymentResponses, RuntimeArtifactsRollbackDeploymentErrors, RuntimeArtifactsRollbackDeploymentResponses, RuntimeArtifactsUploadArtifactErrors, RuntimeArtifactsUploadArtifactResponses, RuntimeInternalAppendEventsErrors, RuntimeInternalAppendEventsResponses, RuntimeInternalClaimPlatformTaskErrors, RuntimeInternalClaimPlatformTaskResponses, RuntimeInternalRenewPlatformTaskLeaseErrors, RuntimeInternalRenewPlatformTaskLeaseResponses, RuntimeInternalResolveRouteErrors, RuntimeInternalResolveRouteResponses, RuntimeNodesConfigureNodeRuntimeErrors, RuntimeNodesConfigureNodeRuntimeResponses, RuntimeNodesCreateTokenErrors, RuntimeNodesCreateTokenResponses, RuntimeNodesListNodesErrors, RuntimeNodesListNodesResponses, RuntimeNodesListTokensErrors, RuntimeNodesListTokensResponses, RuntimeNodesReadNodeErrors, RuntimeNodesReadNodeResponses, RuntimeNodesRevokeNodeErrors, RuntimeNodesRevokeNodeResponses, RuntimeNodesRevokeTokenErrors, RuntimeNodesRevokeTokenResponses, RuntimesCancelTaskErrors, RuntimesCancelTaskResponses, RuntimesCreatePlatformSessionErrors, RuntimesCreatePlatformSessionResponses, RuntimesCreateSessionMessageErrors, RuntimesCreateSessionMessageResponses, RuntimesReadPlatformRuntimeErrors, RuntimesReadPlatformRuntimeResponses, RuntimesReadTaskErrors, RuntimesReadTaskEventsErrors, RuntimesReadTaskEventsResponses, RuntimesReadTaskResponses, RuntimesStreamTaskEventsErrors, RuntimesStreamTaskEventsResponses, RuntimesUpsertPlatformRuntimeErrors, RuntimesUpsertPlatformRuntimeResponses, RuntimesValidatePlatformRuntimeErrors, RuntimesValidatePlatformRuntimeResponses, RuntimeTasksCancelTaskErrors, RuntimeTasksCancelTaskResponses, RuntimeTasksCreateTaskErrors, RuntimeTasksCreateTaskResponses, RuntimeTasksListTasksErrors, RuntimeTasksListTasksResponses, RuntimeTasksReadTaskErrors, RuntimeTasksReadTaskResponses, RuntimeTasksRetryFailedTaskErrors, RuntimeTasksRetryFailedTaskResponses, TaskCreate, UpdatePassword, UserCreate, UserRegister, UsersCreateUserErrors, UsersCreateUserResponses, UsersDeleteUserErrors, UsersDeleteUserMeResponses, UsersDeleteUserResponses, UsersReadUserByIdErrors, UsersReadUserByIdResponses, UsersReadUserMeResponses, UsersReadUsersErrors, UsersReadUsersResponses, UsersRegisterUserErrors, UsersRegisterUserResponses, UsersUpdatePasswordMeErrors, UsersUpdatePasswordMeResponses, UsersUpdateUserErrors, UsersUpdateUserMeErrors, UsersUpdateUserMeResponses, UsersUpdateUserResponses, UserUpdate, UserUpdateMe, UtilsHealthCheckResponses, UtilsTestEmailErrors, UtilsTestEmailResponses } from './types.gen';
+import type { AdminUserCreate, AdminUserUpdate, BodyLoginLoginAccessToken, BodyRuntimeArtifactsUploadArtifact, ClaimInput, EventBatch, ItemCreate, ItemsCreateItemErrors, ItemsCreateItemResponses, ItemsDeleteItemErrors, ItemsDeleteItemResponses, ItemsReadItemErrors, ItemsReadItemResponses, ItemsReadItemsErrors, ItemsReadItemsResponses, ItemsUpdateItemErrors, ItemsUpdateItemResponses, ItemUpdate, LeaseInput, LlmCreateProviderConfigErrors, LlmCreateProviderConfigResponses, LlmProviderConfigCreate, LlmProviderConfigUpdate, LlmProviderSyncModelsRequest, LlmReadProviderCatalogErrors, LlmReadProviderCatalogResponses, LlmReadProviderConfigsErrors, LlmReadProviderConfigsResponses, LlmSyncProviderModelsErrors, LlmSyncProviderModelsResponses, LlmUpdateProviderConfigErrors, LlmUpdateProviderConfigResponses, LlmValidateProviderConfigErrors, LlmValidateProviderConfigResponses, LoginLoginAccessTokenErrors, LoginLoginAccessTokenResponses, LoginLogoutErrors, LoginLogoutResponses, LoginRecoverPasswordErrors, LoginRecoverPasswordHtmlContentErrors, LoginRecoverPasswordHtmlContentResponses, LoginRecoverPasswordResponses, LoginRefreshAccessTokenErrors, LoginRefreshAccessTokenResponses, LoginResetPasswordErrors, LoginResetPasswordResponses, LoginTestTokenErrors, LoginTestTokenResponses, MessageInput, NamespaceCreate, NamespacesCreateNamespaceUserErrors, NamespacesCreateNamespaceUserResponses, NamespacesDeleteNamespaceUserErrors, NamespacesDeleteNamespaceUserResponses, NamespacesReadMyNamespacesErrors, NamespacesReadMyNamespacesResponses, NamespacesReadNamespaceUsersErrors, NamespacesReadNamespaceUsersResponses, NamespacesUpdateNamespaceUserErrors, NamespacesUpdateNamespaceUserResponses, NamespaceUpdate, NamespaceUserCreate, NamespaceUserUpdate, NewPassword, NodeArtifactsDownloadArtifactErrors, NodeArtifactsDownloadArtifactResponses, NodeEnrollInput, NodeEnrollmentEnrollNodeErrors, NodeEnrollmentEnrollNodeResponses, NodeRuntimeUpsert, PlatformCreateNamespaceErrors, PlatformCreateNamespaceResponses, PlatformCreatePlatformUserErrors, PlatformCreatePlatformUserResponses, PlatformDeleteNamespaceErrors, PlatformDeleteNamespaceResponses, PlatformDeletePlatformUserErrors, PlatformDeletePlatformUserResponses, PlatformReadNamespacesErrors, PlatformReadNamespacesResponses, PlatformReadPlatformUsersErrors, PlatformReadPlatformUsersResponses, PlatformRuntimeUpsert, PlatformUpdateNamespaceErrors, PlatformUpdateNamespaceResponses, PlatformUpdatePlatformUserErrors, PlatformUpdatePlatformUserResponses, PrivateCreateUserErrors, PrivateCreateUserResponses, PrivateUserCreate, ReleaseCreate, RuntimeArtifactsCreateReleaseErrors, RuntimeArtifactsCreateReleaseResponses, RuntimeArtifactsListArtifactsErrors, RuntimeArtifactsListArtifactsResponses, RuntimeArtifactsReadArtifactErrors, RuntimeArtifactsReadArtifactResponses, RuntimeArtifactsReadReleaseErrors, RuntimeArtifactsReadReleaseResponses, RuntimeArtifactsRetryDeploymentErrors, RuntimeArtifactsRetryDeploymentResponses, RuntimeArtifactsRollbackDeploymentErrors, RuntimeArtifactsRollbackDeploymentResponses, RuntimeArtifactsUploadArtifactErrors, RuntimeArtifactsUploadArtifactResponses, RuntimeInternalAppendEventsErrors, RuntimeInternalAppendEventsResponses, RuntimeInternalClaimPlatformTaskErrors, RuntimeInternalClaimPlatformTaskResponses, RuntimeInternalRenewPlatformTaskLeaseErrors, RuntimeInternalRenewPlatformTaskLeaseResponses, RuntimeInternalResolveRouteErrors, RuntimeInternalResolveRouteResponses, RuntimeInternalSigningProbeErrors, RuntimeInternalSigningProbeResponses, RuntimeNodesConfigureNodeRuntimeErrors, RuntimeNodesConfigureNodeRuntimeResponses, RuntimeNodesCreateTokenErrors, RuntimeNodesCreateTokenResponses, RuntimeNodesListNodesErrors, RuntimeNodesListNodesResponses, RuntimeNodesListTokensErrors, RuntimeNodesListTokensResponses, RuntimeNodesReadNodeErrors, RuntimeNodesReadNodeResponses, RuntimeNodesRevokeNodeErrors, RuntimeNodesRevokeNodeResponses, RuntimeNodesRevokeTokenErrors, RuntimeNodesRevokeTokenResponses, RuntimesCancelTaskErrors, RuntimesCancelTaskResponses, RuntimesCreatePlatformSessionErrors, RuntimesCreatePlatformSessionResponses, RuntimesCreateSessionMessageErrors, RuntimesCreateSessionMessageResponses, RuntimesReadPlatformRuntimeErrors, RuntimesReadPlatformRuntimeResponses, RuntimesReadTaskErrors, RuntimesReadTaskEventsErrors, RuntimesReadTaskEventsResponses, RuntimesReadTaskResponses, RuntimesStreamTaskEventsErrors, RuntimesStreamTaskEventsResponses, RuntimesUpsertPlatformRuntimeErrors, RuntimesUpsertPlatformRuntimeResponses, RuntimesValidatePlatformRuntimeErrors, RuntimesValidatePlatformRuntimeResponses, RuntimeTasksCancelTaskErrors, RuntimeTasksCancelTaskResponses, RuntimeTasksCreateTaskErrors, RuntimeTasksCreateTaskResponses, RuntimeTasksListTasksErrors, RuntimeTasksListTasksResponses, RuntimeTasksReadTaskErrors, RuntimeTasksReadTaskResponses, RuntimeTasksRetryFailedTaskErrors, RuntimeTasksRetryFailedTaskResponses, TaskCreate, UpdatePassword, UserCreate, UserRegister, UsersCreateUserErrors, UsersCreateUserResponses, UsersDeleteUserErrors, UsersDeleteUserMeErrors, UsersDeleteUserMeResponses, UsersDeleteUserResponses, UsersReadUserByIdErrors, UsersReadUserByIdResponses, UsersReadUserMeErrors, UsersReadUserMeResponses, UsersReadUsersErrors, UsersReadUsersResponses, UsersRegisterUserErrors, UsersRegisterUserResponses, UsersUpdatePasswordMeErrors, UsersUpdatePasswordMeResponses, UsersUpdateUserErrors, UsersUpdateUserMeErrors, UsersUpdateUserMeResponses, UsersUpdateUserResponses, UserUpdate, UserUpdateMe, UtilsHealthCheckResponses, UtilsTestEmailErrors, UtilsTestEmailResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -156,11 +156,25 @@ export const loginLoginAccessToken = <ThrowOnError extends boolean = false>(para
 };
 
 /**
+ * Refresh Access Token
+ */
+export const loginRefreshAccessToken = <ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>): RequestResult<LoginRefreshAccessTokenResponses, LoginRefreshAccessTokenErrors, ThrowOnError> => (options?.client ?? client).post<LoginRefreshAccessTokenResponses, LoginRefreshAccessTokenErrors, ThrowOnError>({
+    responseType: 'json',
+    url: '/api/v1/login/refresh',
+    ...options
+});
+
+/**
+ * Logout
+ */
+export const loginLogout = <ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>): RequestResult<LoginLogoutResponses, LoginLogoutErrors, ThrowOnError> => (options?.client ?? client).post<LoginLogoutResponses, LoginLogoutErrors, ThrowOnError>({ url: '/api/v1/login/logout', ...options });
+
+/**
  * Test Token
  *
  * Test access token
  */
-export const loginTestToken = <ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>): RequestResult<LoginTestTokenResponses, unknown, ThrowOnError> => (options?.client ?? client).post<LoginTestTokenResponses, unknown, ThrowOnError>({
+export const loginTestToken = <ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>): RequestResult<LoginTestTokenResponses, LoginTestTokenErrors, ThrowOnError> => (options?.client ?? client).post<LoginTestTokenResponses, LoginTestTokenErrors, ThrowOnError>({
     responseType: 'json',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/login/test-token',
@@ -271,7 +285,7 @@ export const usersCreateUser = <ThrowOnError extends boolean = false>(parameters
  *
  * Delete own user.
  */
-export const usersDeleteUserMe = <ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>): RequestResult<UsersDeleteUserMeResponses, unknown, ThrowOnError> => (options?.client ?? client).delete<UsersDeleteUserMeResponses, unknown, ThrowOnError>({
+export const usersDeleteUserMe = <ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>): RequestResult<UsersDeleteUserMeResponses, UsersDeleteUserMeErrors, ThrowOnError> => (options?.client ?? client).delete<UsersDeleteUserMeResponses, UsersDeleteUserMeErrors, ThrowOnError>({
     responseType: 'json',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/users/me',
@@ -283,7 +297,7 @@ export const usersDeleteUserMe = <ThrowOnError extends boolean = false>(options?
  *
  * Get current user.
  */
-export const usersReadUserMe = <ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>): RequestResult<UsersReadUserMeResponses, unknown, ThrowOnError> => (options?.client ?? client).get<UsersReadUserMeResponses, unknown, ThrowOnError>({
+export const usersReadUserMe = <ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>): RequestResult<UsersReadUserMeResponses, UsersReadUserMeErrors, ThrowOnError> => (options?.client ?? client).get<UsersReadUserMeResponses, UsersReadUserMeErrors, ThrowOnError>({
     responseType: 'json',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/users/me',
@@ -550,7 +564,7 @@ export const itemsUpdateItem = <ThrowOnError extends boolean = false>(parameters
 /**
  * Read My Namespaces
  */
-export const namespacesReadMyNamespaces = <ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>): RequestResult<NamespacesReadMyNamespacesResponses, unknown, ThrowOnError> => (options?.client ?? client).get<NamespacesReadMyNamespacesResponses, unknown, ThrowOnError>({
+export const namespacesReadMyNamespaces = <ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>): RequestResult<NamespacesReadMyNamespacesResponses, NamespacesReadMyNamespacesErrors, ThrowOnError> => (options?.client ?? client).get<NamespacesReadMyNamespacesResponses, NamespacesReadMyNamespacesErrors, ThrowOnError>({
     responseType: 'json',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/namespaces/mine',
@@ -1147,6 +1161,21 @@ export const runtimesCancelTask = <ThrowOnError extends boolean = false>(paramet
 };
 
 /**
+ * Signing Probe
+ */
+export const runtimeInternalSigningProbe = <ThrowOnError extends boolean = false>(parameters?: {
+    'X-Runtime-Token'?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<RuntimeInternalSigningProbeResponses, RuntimeInternalSigningProbeErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [{ in: 'headers', key: 'X-Runtime-Token' }] }]);
+    return (options?.client ?? client).get<RuntimeInternalSigningProbeResponses, RuntimeInternalSigningProbeErrors, ThrowOnError>({
+        responseType: 'json',
+        url: '/api/v1/internal/runtime/signing-probe',
+        ...options,
+        ...params
+    });
+};
+
+/**
  * Append Events
  */
 export const runtimeInternalAppendEvents = <ThrowOnError extends boolean = false>(parameters: {
@@ -1221,17 +1250,19 @@ export const runtimeInternalResolveRoute = <ThrowOnError extends boolean = false
     authorization?: string | null;
     'X-Runtime-Token'?: string | null;
     runtime_id: string;
+    task_id: string;
     model_id: string;
 }, options?: Options<never, ThrowOnError>): RequestResult<RuntimeInternalResolveRouteResponses, RuntimeInternalResolveRouteErrors, ThrowOnError> => {
     const params = buildClientParams([parameters], [{ args: [
                 { in: 'headers', key: 'authorization' },
                 { in: 'headers', key: 'X-Runtime-Token' },
                 { in: 'path', key: 'runtime_id' },
+                { in: 'path', key: 'task_id' },
                 { in: 'query', key: 'model_id' }
             ] }]);
     return (options?.client ?? client).get<RuntimeInternalResolveRouteResponses, RuntimeInternalResolveRouteErrors, ThrowOnError>({
         responseType: 'json',
-        url: '/api/v1/internal/runtime/routes/{runtime_id}',
+        url: '/api/v1/internal/runtime/routes/{runtime_id}/tasks/{task_id}',
         ...options,
         ...params
     });

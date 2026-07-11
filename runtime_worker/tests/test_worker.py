@@ -38,6 +38,19 @@ class CancellableShell:
         return True
 
 
+class HangingShell:
+    def __init__(self) -> None:
+        self.interrupted = False
+
+    async def run_session(self, command, *, task_id=None):
+        await asyncio.Event().wait()
+        yield  # pragma: no cover
+
+    async def interrupt(self, task_id):
+        self.interrupted = True
+        return True
+
+
 @pytest.mark.anyio
 async def test_worker_claims_executes_and_posts_events() -> None:
     requests: list[httpx.Request] = []
@@ -121,3 +134,47 @@ async def test_worker_interrupts_and_posts_cancelled_terminal_event() -> None:
         if request.url.path.endswith("/events")
     ]
     assert event_payloads[-1]["events"][0]["payload"]["state"] == "cancelled"
+
+
+@pytest.mark.anyio
+async def test_worker_timeout_interrupts_and_posts_structured_error() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path.endswith("/tasks/claim"):
+            return httpx.Response(
+                200,
+                json={
+                    "task_id": "00000000-0000-0000-0000-000000000001",
+                    "revision": 1,
+                    "command": {
+                        "prompt": "hello",
+                        "model": "claude",
+                        "permission_mode": "default",
+                        "timeout_seconds": 1,
+                    },
+                },
+            )
+        return httpx.Response(200, json={"accepted": 1})
+
+    shell = HangingShell()
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url="http://control"
+    ) as client:
+        worker = RuntimeWorker(
+            client,
+            "token",
+            "worker-1",
+            shell=shell,
+            lease_interval=60,
+            interrupt_grace=0.01,
+        )
+        assert await worker.run_once()
+    assert shell.interrupted
+    payload = next(
+        json.loads(request.content)
+        for request in requests
+        if request.url.path.endswith("/events")
+    )
+    assert payload["events"][0]["payload"]["code"] == "task_timeout"
