@@ -116,10 +116,10 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("agent_draft")
-    op.drop_table("harness_profile")
     op.drop_index("ix_harness_profile_namespace_id", table_name="harness_profile")
-    op.drop_table("agent_definition")
+    op.drop_table("harness_profile")
     op.drop_index("ix_agent_definition_namespace_id", table_name="agent_definition")
+    op.drop_table("agent_definition")
     agent_status = postgresql.ENUM(
         "active", "archived", name="agentstatus", create_type=False
     )
