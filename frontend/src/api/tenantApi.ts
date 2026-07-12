@@ -553,3 +553,217 @@ export const tenantApi = {
     return data
   },
 }
+
+export interface AgentDefinition {
+  id: string
+  namespace_id: string
+  slug: string
+  name: string
+  description: string | null
+  status: "active" | "archived"
+  created_at: string
+  updated_at: string
+}
+
+export interface AgentListItem extends AgentDefinition {
+  draft_revision: number
+  validation_status: "unvalidated" | "validated" | "stale" | "error"
+  harness_type: string | null
+  model_id: string | null
+}
+
+export interface AgentDraftPublic {
+  agent_id: string
+  revision: number
+  harness_profile_id: string | null
+  provider_config_id: string | null
+  model_id: string | null
+  system_prompt: string
+  config: Record<string, unknown>
+  validated_revision: number | null
+  validation_result: Record<string, unknown> | null
+  validation_status: "unvalidated" | "validated" | "stale" | "error"
+  updated_at: string
+}
+
+export interface HarnessProfilePublic {
+  id: string
+  namespace_id: string
+  name: string
+  harness_type: string
+  config_schema_version: string
+  cli_version_constraint: string
+  sdk_version_constraint: string
+  config: Record<string, unknown>
+  archived: boolean
+  referenced_by_agents: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface HarnessCatalogField {
+  name: string
+  type: string
+  allowed?: string[]
+  max?: number
+  allowlist?: string[]
+}
+
+export interface HarnessCatalogItem {
+  type: string
+  config_schema_version: string
+  supported: boolean
+  description: string
+  fields: HarnessCatalogField[]
+}
+
+export interface EnvironmentCatalog {
+  allowlist: string[]
+  reserved: string[]
+  denylist: string[]
+}
+
+export interface Diagnostic {
+  code: string
+  field: string
+  message: string
+}
+
+export interface TargetCompatibility {
+  runtime_profile_id: string
+  runtime_type: string
+  cli_version: string | null
+  sdk_version: string | null
+  compatible: boolean | null
+  reason: string | null
+}
+
+export interface ValidationResult {
+  validated_revision: number
+  status: string
+  errors: Diagnostic[]
+  warnings: Diagnostic[]
+  target_compatibility: TargetCompatibility[]
+}
+
+export const agentsApi = {
+  list: async () => {
+    const { data } = await api.get<{ data: AgentListItem[]; count: number }>(
+      "/api/v1/agents"
+    )
+    return data
+  },
+  create: async (body: { slug: string; name: string; description?: string }) => {
+    const { data } = await api.post<AgentDefinition>("/api/v1/agents", body)
+    return data
+  },
+  get: async (agentId: string) => {
+    const { data } = await api.get<AgentDefinition>(`/api/v1/agents/${agentId}`)
+    return data
+  },
+  update: async (
+    agentId: string,
+    body: { name?: string; description?: string; status?: "active" | "archived" }
+  ) => {
+    const { data } = await api.patch<AgentDefinition>(
+      `/api/v1/agents/${agentId}`,
+      body
+    )
+    return data
+  },
+  delete: async (agentId: string) => {
+    await api.delete(`/api/v1/agents/${agentId}`)
+  },
+  getDraft: async (agentId: string) => {
+    const { data } = await api.get<AgentDraftPublic>(
+      `/api/v1/agents/${agentId}/draft`
+    )
+    return data
+  },
+  saveDraft: async (
+    agentId: string,
+    body: {
+      expected_revision: number
+      harness_profile_id?: string | null
+      provider_config_id?: string | null
+      model_id?: string | null
+      system_prompt?: string
+      config?: Record<string, unknown>
+    }
+  ) => {
+    const { data } = await api.put<AgentDraftPublic>(
+      `/api/v1/agents/${agentId}/draft`,
+      body
+    )
+    return data
+  },
+  validate: async (agentId: string) => {
+    const { data } = await api.post<ValidationResult>(
+      `/api/v1/agents/${agentId}/draft/validate`
+    )
+    return data
+  },
+}
+
+export const harnessProfilesApi = {
+  list: async () => {
+    const { data } = await api.get<{ data: HarnessProfilePublic[]; count: number }>(
+      "/api/v1/harness-profiles"
+    )
+    return data
+  },
+  create: async (body: {
+    name: string
+    harness_type?: string
+    config_schema_version?: string
+    cli_version_constraint?: string
+    sdk_version_constraint?: string
+    config?: Record<string, unknown>
+  }) => {
+    const { data } = await api.post<HarnessProfilePublic>(
+      "/api/v1/harness-profiles",
+      body
+    )
+    return data
+  },
+  get: async (profileId: string) => {
+    const { data } = await api.get<HarnessProfilePublic>(
+      `/api/v1/harness-profiles/${profileId}`
+    )
+    return data
+  },
+  update: async (
+    profileId: string,
+    body: {
+      name?: string
+      cli_version_constraint?: string
+      sdk_version_constraint?: string
+      config?: Record<string, unknown>
+      archived?: boolean
+    }
+  ) => {
+    const { data } = await api.patch<HarnessProfilePublic>(
+      `/api/v1/harness-profiles/${profileId}`,
+      body
+    )
+    return data
+  },
+  delete: async (profileId: string) => {
+    await api.delete(`/api/v1/harness-profiles/${profileId}`)
+  },
+}
+
+export const harnessCatalogApi = {
+  harnesses: async () => {
+    const { data } = await api.get<{ harnesses: HarnessCatalogItem[] }>(
+      "/api/v1/harnesses/catalog"
+    )
+    return data.harnesses
+  },
+  environment: async () => {
+    const { data } = await api.get<EnvironmentCatalog>(
+      "/api/v1/harnesses/environment-catalog"
+    )
+    return data
+  },
+}
