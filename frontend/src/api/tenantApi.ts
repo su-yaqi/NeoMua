@@ -639,7 +639,7 @@ export interface TargetCompatibility {
 }
 
 export interface ValidationResult {
-  validated_revision: number
+  validated_revision: number | null
   status: string
   errors: Diagnostic[]
   warnings: Diagnostic[]
