@@ -35,7 +35,7 @@ export default function CreateAgentDialog() {
       setName("")
       setDescription("")
       queryClient.invalidateQueries({ queryKey: ["agents"] })
-      navigate({ to: "/system/agents/$agentId" as any, params: { agentId: agent.id } as any })
+      navigate({ to: "/system/agents/$agentId", params: { agentId: agent.id } })
     },
     onError: handleError,
   })

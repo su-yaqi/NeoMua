@@ -58,8 +58,8 @@ export default function AgentList({ canManage }: { canManage: boolean }) {
                 <TableRow key={agent.id}>
                   <TableCell className="font-medium">
                     <Link
-                      to={"/system/agents/$agentId" as any}
-                      params={{ agentId: agent.id } as any}
+                      to="/system/agents/$agentId"
+                      params={{ agentId: agent.id }}
                       className="text-blue-600 hover:underline"
                     >
                       {agent.name}
