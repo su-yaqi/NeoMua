@@ -1,21 +1,14 @@
-import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useEffect, useState } from "react"
 import {
-  harnessProfilesApi,
-  harnessCatalogApi,
-  type HarnessProfilePublic,
   type EnvironmentCatalog,
+  type HarnessProfilePublic,
+  harnessCatalogApi,
+  harnessProfilesApi,
 } from "@/api/tenantApi"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import {
-  Sheet,
-  SheetContent,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet"
 import {
   Select,
   SelectContent,
@@ -23,6 +16,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  Sheet,
+  SheetContent,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet"
 import useCustomToast from "@/hooks/useCustomToast"
 import { handleError } from "@/utils"
 
@@ -57,16 +57,16 @@ export default function HarnessProfileSheet({
       setCliConstraint(profile.cli_version_constraint)
       setSdkConstraint(profile.sdk_version_constraint)
       setPermissionMode(
-        (profile.config as Record<string, unknown>).permission_mode as string ??
-          "default"
+        ((profile.config as Record<string, unknown>)
+          .permission_mode as string) ?? "default",
       )
       setTimeoutSeconds(
-        (profile.config as Record<string, unknown>).timeout_seconds as number ??
-          3600
+        ((profile.config as Record<string, unknown>)
+          .timeout_seconds as number) ?? 3600,
       )
       setAllowedEnv(
-        ((profile.config as Record<string, unknown>).allowed_env_names as string[]) ??
-          []
+        ((profile.config as Record<string, unknown>)
+          .allowed_env_names as string[]) ?? [],
       )
     } else {
       setName("")
@@ -207,15 +207,17 @@ export default function HarnessProfileSheet({
             </Select>
             <div className="flex flex-wrap gap-1">
               {allowedEnv.map((e) => (
-                <span
+                <button
+                  type="button"
                   key={e}
                   className="rounded bg-gray-100 px-2 py-0.5 text-xs"
+                  disabled={!canManage}
                   onClick={() =>
-                    canManage && setAllowedEnv(allowedEnv.filter((x) => x !== e))
+                    setAllowedEnv(allowedEnv.filter((x) => x !== e))
                   }
                 >
                   {e} ✕
-                </span>
+                </button>
               ))}
             </div>
           </div>
@@ -226,7 +228,9 @@ export default function HarnessProfileSheet({
               onClick={() =>
                 profile ? updateMutation.mutate() : createMutation.mutate()
               }
-              disabled={!name || createMutation.isPending || updateMutation.isPending}
+              disabled={
+                !name || createMutation.isPending || updateMutation.isPending
+              }
             >
               {profile ? "保存" : "创建"}
             </Button>

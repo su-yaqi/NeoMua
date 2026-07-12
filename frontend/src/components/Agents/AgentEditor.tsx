@@ -1,21 +1,15 @@
-import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useEffect, useState } from "react"
 import {
   agentsApi,
   harnessProfilesApi,
   type ValidationResult,
 } from "@/api/tenantApi"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Badge } from "@/components/ui/badge"
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Select,
   SelectContent,
@@ -23,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import useCustomToast from "@/hooks/useCustomToast"
 import { handleError } from "@/utils"
 
@@ -93,7 +88,7 @@ export default function AgentEditor({
         showSuccessToast("校验通过")
       } else {
         showErrorToast(
-          `校验失败：${result.errors.length} 个错误，${result.warnings.length} 个警告`
+          `校验失败：${result.errors.length} 个错误，${result.warnings.length} 个警告`,
         )
       }
       refetchDraft()
@@ -113,12 +108,16 @@ export default function AgentEditor({
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">{agent.name}</h1>
-          <p className="text-sm text-muted-foreground font-mono">{agent.slug}</p>
+          <p className="text-sm text-muted-foreground font-mono">
+            {agent.slug}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <Badge>revision {draft.revision}</Badge>
           <Badge>{draft.validation_status}</Badge>
-          {agent.status === "archived" && <Badge variant="destructive">已归档</Badge>}
+          {agent.status === "archived" && (
+            <Badge variant="destructive">已归档</Badge>
+          )}
         </div>
       </div>
 

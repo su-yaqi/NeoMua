@@ -1,4 +1,12 @@
-import { Bot, Briefcase, Building2, Cpu, Home, Sparkles, Users } from "lucide-react"
+import {
+  Bot,
+  Briefcase,
+  Building2,
+  Cpu,
+  Home,
+  Sparkles,
+  Users,
+} from "lucide-react"
 
 import { SidebarAppearance } from "@/components/Common/Appearance"
 import { Logo } from "@/components/Common/Logo"

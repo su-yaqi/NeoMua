@@ -20,10 +20,10 @@ function AgentsPage() {
       </Card>
     )
   const role = user?.namespace_roles?.find(
-    (item) => item.namespace_id === namespaceId
+    (item) => item.namespace_id === namespaceId,
   )?.role
   const visible = Boolean(
-    user?.is_superuser || role === "admin" || role === "developer"
+    user?.is_superuser || role === "admin" || role === "developer",
   )
   if (user && !visible) return null
   const canManage = Boolean(user?.is_superuser || role === "admin")

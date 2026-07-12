@@ -1,12 +1,8 @@
-import { Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { agentsApi, type AgentListItem } from "@/api/tenantApi"
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+import { Link } from "@tanstack/react-router"
+import { type AgentListItem, agentsApi } from "@/api/tenantApi"
+import { Badge } from "@/components/ui/badge"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Table,
   TableBody,
@@ -15,7 +11,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
 import CreateAgentDialog from "./CreateAgentDialog"
 
 const statusColor: Record<string, string> = {
@@ -65,12 +60,16 @@ export default function AgentList({ canManage }: { canManage: boolean }) {
                       {agent.name}
                     </Link>
                   </TableCell>
-                  <TableCell className="font-mono text-sm">{agent.slug}</TableCell>
+                  <TableCell className="font-mono text-sm">
+                    {agent.slug}
+                  </TableCell>
                   <TableCell>{agent.harness_type ?? "—"}</TableCell>
                   <TableCell>{agent.model_id ?? "—"}</TableCell>
                   <TableCell>r{agent.draft_revision}</TableCell>
                   <TableCell>
-                    <Badge className={statusColor[agent.validation_status] ?? ""}>
+                    <Badge
+                      className={statusColor[agent.validation_status] ?? ""}
+                    >
                       {agent.validation_status}
                     </Badge>
                   </TableCell>
@@ -79,7 +78,10 @@ export default function AgentList({ canManage }: { canManage: boolean }) {
               ))}
               {data?.data.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground">
+                  <TableCell
+                    colSpan={7}
+                    className="text-center text-muted-foreground"
+                  >
                     暂无 Agent
                   </TableCell>
                 </TableRow>

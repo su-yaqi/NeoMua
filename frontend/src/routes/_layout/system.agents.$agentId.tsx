@@ -21,7 +21,7 @@ function AgentEditorPage() {
       </Card>
     )
   const role = user?.namespace_roles?.find(
-    (item) => item.namespace_id === namespaceId
+    (item) => item.namespace_id === namespaceId,
   )?.role
   const canManage = Boolean(user?.is_superuser || role === "admin")
   return <AgentEditor agentId={agentId} canManage={canManage} />

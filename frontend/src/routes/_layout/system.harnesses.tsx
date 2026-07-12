@@ -1,12 +1,11 @@
+import { useQuery } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
+import { useState } from "react"
+import { type HarnessProfilePublic, harnessProfilesApi } from "@/api/tenantApi"
 import HarnessProfileSheet from "@/components/Agents/HarnessProfileSheet"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Table,
   TableBody,
@@ -15,11 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
 import useAuth from "@/hooks/useAuth"
-import { useQuery } from "@tanstack/react-query"
-import { harnessProfilesApi, type HarnessProfilePublic } from "@/api/tenantApi"
-import { useState } from "react"
 
 export const Route = createFileRoute("/_layout/system/harnesses")({
   component: HarnessesPage,
@@ -45,10 +40,10 @@ function HarnessesPage() {
       </Card>
     )
   const role = user?.namespace_roles?.find(
-    (item) => item.namespace_id === namespaceId
+    (item) => item.namespace_id === namespaceId,
   )?.role
   const visible = Boolean(
-    user?.is_superuser || role === "admin" || role === "developer"
+    user?.is_superuser || role === "admin" || role === "developer",
   )
   if (user && !visible) return null
   const canManage = Boolean(user?.is_superuser || role === "admin")

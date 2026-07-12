@@ -649,11 +649,15 @@ export interface ValidationResult {
 export const agentsApi = {
   list: async () => {
     const { data } = await api.get<{ data: AgentListItem[]; count: number }>(
-      "/api/v1/agents"
+      "/api/v1/agents",
     )
     return data
   },
-  create: async (body: { slug: string; name: string; description?: string }) => {
+  create: async (body: {
+    slug: string
+    name: string
+    description?: string
+  }) => {
     const { data } = await api.post<AgentDefinition>("/api/v1/agents", body)
     return data
   },
@@ -663,11 +667,15 @@ export const agentsApi = {
   },
   update: async (
     agentId: string,
-    body: { name?: string; description?: string; status?: "active" | "archived" }
+    body: {
+      name?: string
+      description?: string
+      status?: "active" | "archived"
+    },
   ) => {
     const { data } = await api.patch<AgentDefinition>(
       `/api/v1/agents/${agentId}`,
-      body
+      body,
     )
     return data
   },
@@ -676,7 +684,7 @@ export const agentsApi = {
   },
   getDraft: async (agentId: string) => {
     const { data } = await api.get<AgentDraftPublic>(
-      `/api/v1/agents/${agentId}/draft`
+      `/api/v1/agents/${agentId}/draft`,
     )
     return data
   },
@@ -689,17 +697,17 @@ export const agentsApi = {
       model_id?: string | null
       system_prompt?: string
       config?: Record<string, unknown>
-    }
+    },
   ) => {
     const { data } = await api.put<AgentDraftPublic>(
       `/api/v1/agents/${agentId}/draft`,
-      body
+      body,
     )
     return data
   },
   validate: async (agentId: string) => {
     const { data } = await api.post<ValidationResult>(
-      `/api/v1/agents/${agentId}/draft/validate`
+      `/api/v1/agents/${agentId}/draft/validate`,
     )
     return data
   },
@@ -707,9 +715,10 @@ export const agentsApi = {
 
 export const harnessProfilesApi = {
   list: async () => {
-    const { data } = await api.get<{ data: HarnessProfilePublic[]; count: number }>(
-      "/api/v1/harness-profiles"
-    )
+    const { data } = await api.get<{
+      data: HarnessProfilePublic[]
+      count: number
+    }>("/api/v1/harness-profiles")
     return data
   },
   create: async (body: {
@@ -722,13 +731,13 @@ export const harnessProfilesApi = {
   }) => {
     const { data } = await api.post<HarnessProfilePublic>(
       "/api/v1/harness-profiles",
-      body
+      body,
     )
     return data
   },
   get: async (profileId: string) => {
     const { data } = await api.get<HarnessProfilePublic>(
-      `/api/v1/harness-profiles/${profileId}`
+      `/api/v1/harness-profiles/${profileId}`,
     )
     return data
   },
@@ -740,11 +749,11 @@ export const harnessProfilesApi = {
       sdk_version_constraint?: string
       config?: Record<string, unknown>
       archived?: boolean
-    }
+    },
   ) => {
     const { data } = await api.patch<HarnessProfilePublic>(
       `/api/v1/harness-profiles/${profileId}`,
-      body
+      body,
     )
     return data
   },
@@ -756,13 +765,13 @@ export const harnessProfilesApi = {
 export const harnessCatalogApi = {
   harnesses: async () => {
     const { data } = await api.get<{ harnesses: HarnessCatalogItem[] }>(
-      "/api/v1/harnesses/catalog"
+      "/api/v1/harnesses/catalog",
     )
     return data.harnesses
   },
   environment: async () => {
     const { data } = await api.get<EnvironmentCatalog>(
-      "/api/v1/harnesses/environment-catalog"
+      "/api/v1/harnesses/environment-catalog",
     )
     return data
   },
