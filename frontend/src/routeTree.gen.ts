@@ -21,6 +21,7 @@ import { Route as LayoutAdminRouteImport } from './routes/_layout/admin'
 import { Route as LayoutSystemRuntimesRouteImport } from './routes/_layout/system.runtimes'
 import { Route as LayoutSystemNamespacesRouteImport } from './routes/_layout/system.namespaces'
 import { Route as LayoutSystemLlmProvidersRouteImport } from './routes/_layout/system.llm-providers'
+import { Route as LayoutSystemAgentsRouteImport } from './routes/_layout/system.agents'
 import { Route as LayoutSystemRuntimesArtifactsRouteImport } from './routes/_layout/system.runtimes_.artifacts'
 import { Route as LayoutSystemRuntimesTasksTaskIdRouteImport } from './routes/_layout/system.runtimes_.tasks.$taskId'
 import { Route as LayoutSystemRuntimesReleasesReleaseIdRouteImport } from './routes/_layout/system.runtimes_.releases.$releaseId'
@@ -87,6 +88,11 @@ const LayoutSystemLlmProvidersRoute =
     path: '/system/llm-providers',
     getParentRoute: () => LayoutRoute,
   } as any)
+const LayoutSystemAgentsRoute = LayoutSystemAgentsRouteImport.update({
+  id: '/system/agents',
+  path: '/system/agents',
+  getParentRoute: () => LayoutRoute,
+} as any)
 const LayoutSystemRuntimesArtifactsRoute =
   LayoutSystemRuntimesArtifactsRouteImport.update({
     id: '/system/runtimes_/artifacts',
@@ -127,6 +133,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof LayoutAdminRoute
   '/items': typeof LayoutItemsRoute
   '/settings': typeof LayoutSettingsRoute
+  '/system/agents': typeof LayoutSystemAgentsRoute
   '/system/llm-providers': typeof LayoutSystemLlmProvidersRoute
   '/system/namespaces': typeof LayoutSystemNamespacesRouteWithChildren
   '/system/runtimes': typeof LayoutSystemRuntimesRoute
@@ -145,6 +152,7 @@ export interface FileRoutesByTo {
   '/items': typeof LayoutItemsRoute
   '/settings': typeof LayoutSettingsRoute
   '/': typeof LayoutIndexRoute
+  '/system/agents': typeof LayoutSystemAgentsRoute
   '/system/llm-providers': typeof LayoutSystemLlmProvidersRoute
   '/system/namespaces': typeof LayoutSystemNamespacesRouteWithChildren
   '/system/runtimes': typeof LayoutSystemRuntimesRoute
@@ -165,6 +173,7 @@ export interface FileRoutesById {
   '/_layout/items': typeof LayoutItemsRoute
   '/_layout/settings': typeof LayoutSettingsRoute
   '/_layout/': typeof LayoutIndexRoute
+  '/_layout/system/agents': typeof LayoutSystemAgentsRoute
   '/_layout/system/llm-providers': typeof LayoutSystemLlmProvidersRoute
   '/_layout/system/namespaces': typeof LayoutSystemNamespacesRouteWithChildren
   '/_layout/system/runtimes': typeof LayoutSystemRuntimesRoute
@@ -185,6 +194,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/items'
     | '/settings'
+    | '/system/agents'
     | '/system/llm-providers'
     | '/system/namespaces'
     | '/system/runtimes'
@@ -203,6 +213,7 @@ export interface FileRouteTypes {
     | '/items'
     | '/settings'
     | '/'
+    | '/system/agents'
     | '/system/llm-providers'
     | '/system/namespaces'
     | '/system/runtimes'
@@ -222,6 +233,7 @@ export interface FileRouteTypes {
     | '/_layout/items'
     | '/_layout/settings'
     | '/_layout/'
+    | '/_layout/system/agents'
     | '/_layout/system/llm-providers'
     | '/_layout/system/namespaces'
     | '/_layout/system/runtimes'
@@ -326,6 +338,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutSystemLlmProvidersRouteImport
       parentRoute: typeof LayoutRoute
     }
+    '/_layout/system/agents': {
+      id: '/_layout/system/agents'
+      path: '/system/agents'
+      fullPath: '/system/agents'
+      preLoaderRoute: typeof LayoutSystemAgentsRouteImport
+      parentRoute: typeof LayoutRoute
+    }
     '/_layout/system/runtimes_/artifacts': {
       id: '/_layout/system/runtimes_/artifacts'
       path: '/system/runtimes/artifacts'
@@ -384,6 +403,7 @@ interface LayoutRouteChildren {
   LayoutItemsRoute: typeof LayoutItemsRoute
   LayoutSettingsRoute: typeof LayoutSettingsRoute
   LayoutIndexRoute: typeof LayoutIndexRoute
+  LayoutSystemAgentsRoute: typeof LayoutSystemAgentsRoute
   LayoutSystemLlmProvidersRoute: typeof LayoutSystemLlmProvidersRoute
   LayoutSystemNamespacesRoute: typeof LayoutSystemNamespacesRouteWithChildren
   LayoutSystemRuntimesRoute: typeof LayoutSystemRuntimesRoute
@@ -398,6 +418,7 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutItemsRoute: LayoutItemsRoute,
   LayoutSettingsRoute: LayoutSettingsRoute,
   LayoutIndexRoute: LayoutIndexRoute,
+  LayoutSystemAgentsRoute: LayoutSystemAgentsRoute,
   LayoutSystemLlmProvidersRoute: LayoutSystemLlmProvidersRoute,
   LayoutSystemNamespacesRoute: LayoutSystemNamespacesRouteWithChildren,
   LayoutSystemRuntimesRoute: LayoutSystemRuntimesRoute,

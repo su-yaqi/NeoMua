@@ -1,4 +1,4 @@
-import { Briefcase, Building2, Cpu, Home, Sparkles, Users } from "lucide-react"
+import { Bot, Briefcase, Building2, Cpu, Home, Sparkles, Users } from "lucide-react"
 
 import { SidebarAppearance } from "@/components/Common/Appearance"
 import { Logo } from "@/components/Common/Logo"
@@ -36,6 +36,14 @@ export function AppSidebar() {
     if (canManageSelectedNamespace && selectedNamespaceId) {
       if (canUseRuntimes) {
         items.push({ icon: Cpu, title: "运行时管理", path: "/system/runtimes" })
+        items.push({
+          icon: Bot,
+          title: "Agent 管理",
+          children: [
+            { title: "Agent", path: "/system/agents" },
+            { title: "Harness 配置", path: "/system/harnesses" },
+          ],
+        })
       }
       items.push({
         icon: Users,
