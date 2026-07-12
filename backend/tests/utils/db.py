@@ -1,5 +1,10 @@
 from sqlmodel import Session, delete
 
+from app.agent_management.models import (
+    AgentDraft,
+    AgentDefinition,
+    HarnessProfile,
+)
 from app.core.config import settings
 from app.models import Item, LlmProviderConfig, LlmProviderModel, User
 from app.runtime.models import (
@@ -20,6 +25,9 @@ from app.runtime.models import (
 
 
 def cleanup_test_data(session: Session) -> None:
+    session.execute(delete(AgentDraft))
+    session.execute(delete(AgentDefinition))
+    session.execute(delete(HarnessProfile))
     session.execute(delete(AgentEvent))
     session.execute(delete(AgentTask))
     session.execute(delete(AgentSession))

@@ -7,6 +7,11 @@ from sqlmodel import Session, SQLModel, delete
 from app.core.config import settings
 from app.core.db import engine, init_db
 from app.main import app
+from app.agent_management.models import (
+    AgentDraft,
+    AgentDefinition,
+    HarnessProfile,
+)
 from app.models import RefreshSession
 from app.runtime.models import (
     AgentEvent,
@@ -41,6 +46,9 @@ def db() -> Generator[Session, None, None]:
 def isolate_runtime_data(db: Session) -> Generator[None, None, None]:
     def clean() -> None:
         db.rollback()
+        db.execute(delete(AgentDraft))
+        db.execute(delete(AgentDefinition))
+        db.execute(delete(HarnessProfile))
         db.execute(delete(AgentEvent))
         db.execute(delete(AgentTask))
         db.execute(delete(AgentSession))

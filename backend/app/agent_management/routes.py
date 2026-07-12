@@ -439,9 +439,12 @@ def update_profile(
     try:
         session.commit()
         session.refresh(profile)
-    except Exception as exc:
+    except Exception as exc:  # unique constraint etc.
         session.rollback()
-        raise HTTPException(409, "Profile name already exists in this namespace") from exc
+        msg = str(exc).lower()
+        if "uq_harness_profile_namespace_name" in msg or "name" in msg:
+            raise HTTPException(409, "Profile name already exists in this namespace") from exc
+        raise
     return _profile_public(session, profile)
 
 
