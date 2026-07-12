@@ -15,6 +15,7 @@ from app.api.routes import (
     users,
     utils,
 )
+from app.agent_management.routes import router as agent_management_router
 from app.core.config import settings
 
 api_router = APIRouter()
@@ -33,6 +34,8 @@ api_router.include_router(runtime_artifacts.node_router)
 api_router.include_router(node_enrollment.admin_router)
 api_router.include_router(node_enrollment.node_router)
 api_router.include_router(node_socket.router)
+
+api_router.include_router(agent_management_router)
 
 
 if settings.ENVIRONMENT == "local" and settings.ENABLE_PRIVATE_TEST_API:
