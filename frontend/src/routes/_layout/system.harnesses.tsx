@@ -27,9 +27,14 @@ export const Route = createFileRoute("/_layout/system/harnesses")({
 
 function HarnessesPage() {
   const { user } = useAuth()
-  const namespaceId = localStorage.getItem("selected_namespace_id")
   const [editing, setEditing] = useState<HarnessProfilePublic | null>(null)
   const [creating, setCreating] = useState(false)
+  const namespaceId = localStorage.getItem("selected_namespace_id")
+  const { data, isLoading } = useQuery({
+    queryKey: ["harness-profiles"],
+    queryFn: harnessProfilesApi.list,
+    enabled: !!namespaceId,
+  })
   if (!namespaceId)
     return (
       <Card>
@@ -47,11 +52,6 @@ function HarnessesPage() {
   )
   if (user && !visible) return null
   const canManage = Boolean(user?.is_superuser || role === "admin")
-
-  const { data, isLoading } = useQuery({
-    queryKey: ["harness-profiles"],
-    queryFn: harnessProfilesApi.list,
-  })
 
   return (
     <div className="space-y-6">
