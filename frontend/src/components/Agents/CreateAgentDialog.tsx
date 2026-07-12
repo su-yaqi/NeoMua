@@ -23,7 +23,7 @@ export default function CreateAgentDialog() {
   const [description, setDescription] = useState("")
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { showSuccessToast } = useCustomToast()
+  const { showSuccessToast, showErrorToast } = useCustomToast()
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -37,7 +37,7 @@ export default function CreateAgentDialog() {
       queryClient.invalidateQueries({ queryKey: ["agents"] })
       navigate({ to: "/system/agents/$agentId", params: { agentId: agent.id } })
     },
-    onError: handleError,
+    onError: handleError.bind(showErrorToast),
   })
 
   return (

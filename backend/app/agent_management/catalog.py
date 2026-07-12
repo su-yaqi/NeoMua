@@ -9,6 +9,8 @@ AgentDraft configs. The denylist always takes precedence over the allowlist.
 import re
 from enum import Enum
 
+from packaging.version import InvalidVersion, Version
+
 from pydantic import BaseModel
 
 # v0.5: only claude_code is an executable harness type. Unknown types may be
@@ -258,6 +260,57 @@ def validate_version_constraint(expr: str) -> list[Diagnostic]:
             )
         ]
     return []
+
+
+# Parses a single constraint clause like ">=1.0.0", "==1.5.0", "1.0.0" (bare ==).
+_CLAUSE_PATTERN = re.compile(r"^\s*(>=|<=|==|!=|>|<|=)?\s*(\S+)\s*$")
+
+
+def evaluate_version_constraint(reported_version: str, constraint: str) -> bool:
+    """Return True if `reported_version` satisfies ALL clauses in `constraint`.
+
+    `constraint` is a comma-separated list of comparisons, e.g. ">=1.0.0,<2.0.0".
+    A bare version with no operator is treated as `==` (exact match).
+
+    An empty constraint is treated as satisfied (no restriction). If the
+    `reported_version` or any clause version is not parseable, the function
+    returns False (cannot prove compatibility).
+    """
+    if not constraint or not constraint.strip():
+        return True
+    try:
+        reported = Version(reported_version)
+    except InvalidVersion:
+        return False
+
+    for raw_clause in constraint.split(","):
+        clause = raw_clause.strip()
+        if not clause:
+            continue
+        match = _CLAUSE_PATTERN.match(clause)
+        if match is None:
+            return False
+        op = match.group(1) or "=="
+        # Normalize a lone "=" to "==".
+        if op == "=":
+            op = "=="
+        try:
+            target = Version(match.group(2))
+        except InvalidVersion:
+            return False
+        if op == ">=" and not (reported >= target):
+            return False
+        if op == "<=" and not (reported <= target):
+            return False
+        if op == ">" and not (reported > target):
+            return False
+        if op == "<" and not (reported < target):
+            return False
+        if op == "==" and not (reported == target):
+            return False
+        if op == "!=" and not (reported != target):
+            return False
+    return True
 
 
 HARNESS_CATALOG: list[dict] = [

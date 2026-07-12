@@ -34,6 +34,7 @@ from app.agent_management.schemas import (
 )
 from app.agent_management.service import (
     DraftConflict,
+    _UNSET,
     create_agent,
     draft_validation_status,
     is_profile_referenced,
@@ -288,16 +289,31 @@ def save_draft_endpoint(
         diags = validate_config(body.config)
         if diags:
             raise HTTPException(422, {"errors": [d.model_dump() for d in diags]})
+    # Use model_fields_set to distinguish "field omitted" (_UNSET -> unchanged)
+    # from "field explicitly null" (None -> clear the field). The frontend sends
+    # the full intended state on every save, sending null to clear optional
+    # fields like harness_profile_id.
+    provided = body.model_fields_set
     try:
         draft = save_draft(
             session,
             agent,
             expected_revision=body.expected_revision,
-            harness_profile_id=body.harness_profile_id,
-            provider_config_id=body.provider_config_id,
-            model_id=body.model_id,
-            system_prompt=body.system_prompt,
-            config=body.config,
+            harness_profile_id=(
+                body.harness_profile_id
+                if "harness_profile_id" in provided
+                else _UNSET
+            ),
+            provider_config_id=(
+                body.provider_config_id
+                if "provider_config_id" in provided
+                else _UNSET
+            ),
+            model_id=body.model_id if "model_id" in provided else _UNSET,
+            system_prompt=(
+                body.system_prompt if "system_prompt" in provided else _UNSET
+            ),
+            config=body.config if "config" in provided else _UNSET,
         )
         session.commit()
         session.refresh(draft)

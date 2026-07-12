@@ -7,6 +7,7 @@ from app.agent_management.catalog import (
     MAX_TIMEOUT_SECONDS,
     Diagnostic,
     environment_catalog,
+    evaluate_version_constraint,
     validate_config,
     validate_env_names,
     validate_harness_type,
@@ -111,6 +112,40 @@ def test_validate_version_constraint_rejects_empty():
 def test_validate_version_constraint_rejects_garbage():
     diags = validate_version_constraint("rm -rf /")
     assert any(d.code == "invalid_version_constraint" for d in diags)
+
+
+def test_evaluate_version_constraint_geq_ok():
+    assert evaluate_version_constraint("1.0.0", ">=1.0.0") is True
+
+
+def test_evaluate_version_constraint_geq_violated():
+    assert evaluate_version_constraint("1.0.0", ">=2.0.0") is False
+
+
+def test_evaluate_version_constraint_range_ok():
+    assert evaluate_version_constraint("1.5.0", ">=1.0.0,<2.0.0") is True
+
+
+def test_evaluate_version_constraint_range_violated():
+    assert evaluate_version_constraint("2.5.0", ">=1.0.0,<2.0.0") is False
+
+
+def test_evaluate_version_constraint_eq_ok():
+    assert evaluate_version_constraint("1.0.0", "==1.0.0") is True
+
+
+def test_evaluate_version_constraint_bare_version_is_eq():
+    # A bare version with no operator is treated as ==.
+    assert evaluate_version_constraint("1.0.0", "1.0.0") is True
+
+
+def test_evaluate_version_constraint_neq_violated():
+    assert evaluate_version_constraint("1.0.0", "!=1.0.0") is False
+
+
+def test_evaluate_version_constraint_empty_constraint_passes():
+    # An empty constraint imposes no restriction.
+    assert evaluate_version_constraint("1.0.0", "") is True
 
 
 def test_diagnostic_model_fields():

@@ -16,6 +16,7 @@ from sqlmodel import Session, col, select
 from app.agent_management.catalog import (
     Diagnostic,
     environment_catalog,
+    evaluate_version_constraint,
     validate_config,
     validate_harness_type,
     validate_version_constraint,
@@ -67,6 +68,12 @@ _SECRET_HINT_PATTERNS = (
     "-----BEGIN",
 )
 
+# Sentinel for "field not supplied" in save_draft. Distinct from None, which
+# means "explicitly clear the field to null". Callers that want to leave a
+# field unchanged pass _UNSET (the default); callers that want to clear it
+# pass None explicitly.
+_UNSET = object()
+
 
 def create_agent(
     session: Session,
@@ -108,16 +115,21 @@ def save_draft(
     agent: AgentDefinition,
     *,
     expected_revision: int,
-    harness_profile_id: uuid.UUID | None = None,
-    provider_config_id: uuid.UUID | None = None,
-    model_id: str | None = None,
-    system_prompt: str | None = None,
-    config: dict | None = None,
+    harness_profile_id: uuid.UUID | None | object = _UNSET,
+    provider_config_id: uuid.UUID | None | object = _UNSET,
+    model_id: str | None | object = _UNSET,
+    system_prompt: str | None | object = _UNSET,
+    config: dict | None | object = _UNSET,
 ) -> AgentDraft:
     """CAS-save a draft. Locks the row; bumps revision on success.
 
     Any field change invalidates validated_revision (set to None) because the
     old validation no longer applies to the new content.
+
+    Each optional field defaults to _UNSET ("not supplied, leave unchanged").
+    Passing ``None`` explicitly clears the field back to null, which is how the
+    frontend clears optional fields (it sends the full intended state on every
+    save). Callers must use ``_UNSET`` to omit a field.
     """
     draft = session.exec(
         select(AgentDraft).where(AgentDraft.agent_id == agent.id).with_for_update()
@@ -128,19 +140,19 @@ def save_draft(
         raise DraftConflict(draft.revision)
 
     changed = False
-    if harness_profile_id is not None and harness_profile_id != draft.harness_profile_id:
+    if harness_profile_id is not _UNSET and harness_profile_id != draft.harness_profile_id:
         draft.harness_profile_id = harness_profile_id
         changed = True
-    if provider_config_id is not None and provider_config_id != draft.provider_config_id:
+    if provider_config_id is not _UNSET and provider_config_id != draft.provider_config_id:
         draft.provider_config_id = provider_config_id
         changed = True
-    if model_id is not None and model_id != draft.model_id:
+    if model_id is not _UNSET and model_id != draft.model_id:
         draft.model_id = model_id
         changed = True
-    if system_prompt is not None and system_prompt != draft.system_prompt:
+    if system_prompt is not _UNSET and system_prompt != draft.system_prompt:
         draft.system_prompt = system_prompt
         changed = True
-    if config is not None and config != draft.config:
+    if config is not _UNSET and config != draft.config:
         draft.config = config
         changed = True
 
@@ -298,11 +310,42 @@ def _build_target_compatibility(
         compatible: bool | None
         reason: str | None
         if cli_version is None and sdk_version is None:
+            # No versions reported at all -> compatibility unknown.
             compatible = None
             reason = "unknown"
         else:
-            compatible = True
-            reason = None
+            # Versions were reported: evaluate them against the profile's
+            # version constraints. CLI is checked if reported; SDK is checked
+            # only if reported (a reported SDK with an absent constraint is a
+            # pass). If a constraint exists for a version that was NOT
+            # reported, that check is "unknown" -> treat as not compatible.
+            checks_ok = True
+            # CLI check: a reported CLI version must satisfy the CLI constraint.
+            if cli_version is not None:
+                if not evaluate_version_constraint(
+                    cli_version, profile.cli_version_constraint
+                ):
+                    checks_ok = False
+            else:
+                # CLI version not reported but SDK is. If the profile has a CLI
+                # constraint, we cannot evaluate it -> unknown -> not ok.
+                if profile.cli_version_constraint:
+                    checks_ok = False
+            # SDK check: a reported SDK version must satisfy the SDK constraint.
+            if sdk_version is not None:
+                if not evaluate_version_constraint(
+                    sdk_version, profile.sdk_version_constraint
+                ):
+                    checks_ok = False
+            else:
+                if profile.sdk_version_constraint:
+                    checks_ok = False
+            if checks_ok:
+                compatible = True
+                reason = None
+            else:
+                compatible = False
+                reason = "version_constraint_violated"
         results.append(
             TargetCompatibility(
                 runtime_profile_id=rt.id,
@@ -381,7 +424,7 @@ def validate_draft(
             break
 
     target_compat = _build_target_compatibility(session, namespace_id, profile)
-    # 'unknown' targets block publish.
+    # 'unknown' or 'incompatible' targets block publish.
     for tc in target_compat:
         if tc.compatible is None:
             errors.append(
@@ -390,6 +433,16 @@ def validate_draft(
                     field="target_compatibility",
                     message=f"runtime {tc.runtime_profile_id} has not reported "
                     "CLI/SDK versions; compatibility is unknown",
+                )
+            )
+        elif tc.compatible is False:
+            errors.append(
+                Diagnostic(
+                    code="target_version_incompatible",
+                    field="target_compatibility",
+                    message=f"runtime {tc.runtime_profile_id} reported CLI/SDK "
+                    "versions that violate the harness profile's version "
+                    "constraints",
                 )
             )
 
