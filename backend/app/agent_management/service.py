@@ -53,7 +53,7 @@ class TargetCompatibility(BaseModel):
 
 
 class ValidationResult(BaseModel):
-    validated_revision: int
+    validated_revision: int | None
     status: str
     errors: list[Diagnostic]
     warnings: list[Diagnostic]
@@ -147,8 +147,9 @@ def save_draft(
     if changed:
         draft.revision += 1
         # Invalidate any prior validation — it was for older content.
+        # Keep validation_result so draft_validation_status can report
+        # "stale" (was validated, now edited) rather than "unvalidated".
         draft.validated_revision = None
-        draft.validation_result = None
         draft.updated_at = datetime.now(timezone.utc)
     session.add(draft)
     session.flush()
@@ -405,7 +406,7 @@ def validate_draft(
     session.flush()
 
     return ValidationResult(
-        validated_revision=draft.revision if not errors else draft.revision,
+        validated_revision=draft.validated_revision,
         status=status,
         errors=errors,
         warnings=warnings,
