@@ -150,3 +150,37 @@
 | Operator CLI | `/cli/login|refresh|logout`、`/capabilities`；其余命令复用以上正式接口 |
 
 发布、激活、Plugin Version、retry/rollback 和任务创建使用 `Idempotency-Key`。MCP/Release Worker 领取与回传继续位于受独立服务凭证保护的 `/internal/runtime/*`；节点结果经已鉴权 WSS 转发。读接口不返回 secret value。
+
+### project management（v0.6）
+
+| 资源 | 主要接口 |
+|---|---|
+| 项目/成员 | `GET/POST /projects`、`GET/PATCH /projects/{id}`、`GET/PUT /projects/{id}/members` |
+| 仓库 | `/projects/{id}/repositories`、`POST /projects/{id}/repositories/{repo_id}/validate` |
+| Spec 位置/绑定 | `/projects/{id}/spec-locations`、`PUT .../{location_id}/binding`、`POST .../{location_id}/diff` |
+| Spec 标准 | `/spec-standards`、`/spec-standards/{id}/versions`、`PATCH /spec-standard-versions/{id}` |
+
+配置 mutation 仅 namespace Admin/Developer 可用。仓库验证只接受 Runtime 已上报的 workspace ref 与 commit，不在控制面匿名 clone 或猜测结果。
+
+### conversation management（v0.6）
+
+| 资源 | 主要接口 |
+|---|---|
+| 可用目录 | `/conversation-catalog/runtimes|models|agents` |
+| 会话 | `GET/POST /conversations`、`GET/PATCH /conversations/{id}`、`POST /conversations/{id}/derive` |
+| 消息/圆桌 | `GET/POST /conversations/{id}/messages`、`GET/POST /conversations/{id}/delegations` |
+| 附件 | `GET/POST /conversations/{id}/attachments`（严格扫描 UTF-8 文本、Markdown、JSON） |
+| 项目上下文 | `POST /conversations/{id}/context-snapshots` |
+
+创建、派生、消息与委派使用 `Idempotency-Key`。Chat 路径固定 provider/model 且不下发 Tool；Agent 路径只使用创建时固定、目标 Runtime 已激活的 Release。
+
+### workflow management（v0.6）
+
+| 资源 | 主要接口 |
+|---|---|
+| 模板 | `/workflow-templates`、`/{id}/versions/{version_id}`、`/{id}/enablement`、`/{id}/preflight` |
+| 项目任务 | `GET/POST /projects/{id}/workflow-instances`、`GET /workflow-instances/{id}`、`POST /workflow-instances/{id}/cancel` |
+| 节点 | `GET .../nodes/{key}`、`POST .../submit|confirm|skip|retry|messages` |
+| 恢复/审计 | `GET /workflow-instances/{id}/events`、`POST .../external-state-resolution` |
+
+节点 mutation 携带 `expected_revision`，冲突返回 409。外部状态证明接口还要求 `Idempotency-Key`，只有 namespace 管理角色可确认是否允许安全重试。

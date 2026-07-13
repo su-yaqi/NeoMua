@@ -22,6 +22,12 @@
 ├── /items
 ├── /admin
 ├── /settings
+├── /workspace
+│   └── /conversations/:conversationId
+├── /projects
+│   └── /:projectId
+├── /apps/:workflowSlug
+│   └── /tasks/:instanceId
 ├── /system/namespaces
 ├── /system/llm-providers
 ├── /system/agents
@@ -32,6 +38,8 @@
 ├── /system/mcp-servers/:mcpServerId
 ├── /system/plugins/:pluginId
 ├── /system/agent-activations/:activationId
+├── /system/workflows
+├── /system/spec-standards
 └── /system/runtimes
     ├── /nodes/:nodeId
     ├── /tasks/:taskId
@@ -51,6 +59,10 @@
 | Skills / Tools / MCP Servers / Plugins | `/system/*` | admin 管理，developer 读取脱敏状态 |
 | 用户管理 | /admin | 超级管理员 |
 | User Settings | /settings | 登录用户 |
+| AI 工作台 | /workspace | 所有 namespace 成员；固定 Chat 模型或 active Agent Release |
+| 项目 | /projects | 项目成员读取；Admin/Developer 配置 |
+| Workflow 应用 | /apps/:workflowSlug | 项目成员，按 namespace 启用版本创建项目任务 |
+| Workflow / Spec 管理 | /system/workflows、/system/spec-standards | 成员读；Admin/Developer 发布配置 |
 
 ## 公共组件
 | 组件名 | 用途 |
@@ -75,3 +87,6 @@
 - Agent 能力页只允许绑定精确 Skill/Plugin Version 和已发现的 MCP Tool；Release 页必须选择明确目标并通过服务端 precheck 后才能创建 Activation。
 - Activation 详情逐目标展示 attempt、digest 和错误；失败目标由 Admin 显式 Retry，已应用目标通过确认对话框创建可审计 Rollback，不自动替用户决策。
 - Skill/Plugin/MCP 详情父路由显式渲染子路由出口，列表页不会遮蔽详情页。
+- 工作台创建后固定模型、Runtime 和 Agent；会话页显示圆桌参与者、点名/全体目标、完整消息与项目快照刷新。
+- 项目详情按成员、仓库、Spec 与任务分区；Spec 位置可绑定精确不可变标准版本。归档必须二次确认，归档后表单只读。
+- Workflow 独立应用显示精确模板版本并复用任务节点区；过程提交、结果接受/拒绝、跳过和重试均显示服务端冲突/阻断，不在前端覆盖。

@@ -24,7 +24,8 @@ context/
 │   ├── v0.2.md
 │   ├── v0.3.md
 │   ├── v0.4.md
-│   └── v0.5.md
+│   ├── v0.5.md
+│   └── v0.6.md
 └── modules/
     ├── auth/
     │   ├── api.md
@@ -44,14 +45,17 @@ context/
         └── ui.md
     ├── llm_configs/
     ├── runtime_management/
-    └── agent_management/
+    ├── agent_management/
+    ├── project_management/
+    ├── conversation_management/
+    └── workflow_management/
 ```
 
 ## 文件职责
 
 - 根目录文件维护全局事实，反映当前主干代码已实现状态。
 - `modules/` 目录维护各业务模块的接口、流程和页面细节。
-- `prds/` 与 `changelogs/` 记录 v0.1-v0.5 历史快照；当前实现包含空间治理、LLM 配置、运行时以及受管 Agent 能力、Release/Activation 和 Operator CLI 完整链路。
+- `prds/` 与 `changelogs/` 记录 v0.1-v0.6 历史快照；当前实现还包含项目上下文、AI 工作台和代码化 Workflow 项目任务。
 
 ## 使用约定
 

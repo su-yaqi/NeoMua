@@ -12,6 +12,7 @@ NeoMua
 - 支持账号认证、个人设置、平台用户管理和基础业务条目管理。
 - 支持按空间组织用户，并为后续多租户业务扩展预留统一入口。
 - 支持按空间声明、验证、发布并激活不可变 Agent 能力组合，任务只消费目标当前已激活 Release。
+- 支持项目上下文、固定模型/Agent 会话，以及由代码发布的可恢复 Workflow 项目任务。
 
 ## 技术栈
 | 层次 | 技术选型 |
@@ -33,6 +34,9 @@ NeoMua
 | llm_configs | 按空间维护多供应商大模型接入配置、连接校验与模型清单同步 |
 | runtime_management | 空间级平台/节点运行时、Agent 任务、完整事件审计与签名内容分发 |
 | agent_management | Agent/Harness 草稿、Skill/Tool/MCP/Plugin、统一解析、Release/Activation、审批与 Operator CLI |
+| project_management | 项目成员、多 Git 仓库、Spec 位置与不可变标准版本绑定 |
+| conversation_management | 固定模型 Chat、单/多 Agent 圆桌、项目上下文快照与委派审计 |
+| workflow_management | Workflow Package 注册、模板启用、有限 DAG、节点修订、确认与恢复 |
 
 ## 当前实现状态
 
@@ -45,6 +49,7 @@ NeoMua
 - Agent/Skill/MCP/CLI/工作区内容以不可变 ZIP、双签名清单和短期下载令牌分发，节点独立校验并原子应用。
 - v0.5 已实现声明式 Skill 与 Plugin、不可变 MCP Revision、目标凭证/校验/Tool 快照、canonical ResolvedAgentSpec、签名 Agent Release、逐目标 Activation/Retry/Rollback 和 frozen Task snapshot。
 - `neomua` Operator CLI 使用轮换 refresh session 与系统 Keychain，复用正式 API，支持 dry-run、幂等 mutation、结构化退出码和节点本地 MCP secret 管理。
+- v0.6 已实现 AI 工作台、项目配置、Spec 标准、内置 Workflow Package 与项目任务状态机；不确定的 Runtime、Git 或外部副作用会阻断并暴露诊断。
 
 ## 版本状态
 | 版本 | 状态 | 说明 |
@@ -54,3 +59,4 @@ NeoMua
 | v0.3 | 已完成 | 空间级多供应商大模型接入配置、连接校验与模型同步能力 |
 | v0.4 | 已完成 | Agent Runtime、节点守护进程、可靠任务执行与签名内容分发 |
 | v0.5 | 已完成 | 受管 Agent 能力、统一运行时装配、Release/Activation、Tool 审批与 Operator CLI |
+| v0.6 | 已完成 | 项目上下文、Chat/多 Agent 工作台、代码化 Workflow 应用与协作任务执行 |

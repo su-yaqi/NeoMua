@@ -28,7 +28,11 @@ from app.api.routes import (
     users,
     utils,
 )
+from app.conversation_management.routes import router as conversation_router
 from app.core.config import settings
+from app.project_management.routes import router as project_router
+from app.workflow_management.routes import internal_router as workflow_internal_router
+from app.workflow_management.routes import router as workflow_router
 
 api_router = APIRouter()
 api_router.include_router(agent_tasks.router)
@@ -54,6 +58,10 @@ api_router.include_router(mcp_internal_router)
 api_router.include_router(agent_release_router)
 api_router.include_router(agent_release_internal_router)
 api_router.include_router(operator_cli_router)
+api_router.include_router(project_router)
+api_router.include_router(conversation_router)
+api_router.include_router(workflow_router)
+api_router.include_router(workflow_internal_router)
 
 
 if settings.ENVIRONMENT == "local" and settings.ENABLE_PRIVATE_TEST_API:

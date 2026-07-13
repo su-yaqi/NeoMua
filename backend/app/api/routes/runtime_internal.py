@@ -14,6 +14,13 @@ from app.agent_management.capability_models import (
     McpTargetStatus,
 )
 from app.api.deps import SessionDep
+from app.conversation_management.models import (
+    Conversation,
+    ConversationMessage,
+    ConversationMode,
+    MessageAuthorType,
+    MessageStatus,
+)
 from app.core.config import settings
 from app.llm_provider_service import open_secret_payload
 from app.models import LlmProviderConfig
@@ -314,19 +321,40 @@ def resolve_route(
     if runtime is None or str(runtime.namespace_id) != claims["namespace_id"]:
         raise HTTPException(404, "Runtime route not found")
     task = session.get(AgentTask, task_id)
-    if (
-        task is None
-        or task.namespace_id != runtime.namespace_id
-        or task.runtime_profile_id != runtime.id
-        or task.snapshot.get("model_id") != model_id
-        or task.status
-        not in {
-            TaskStatus.DISPATCHED,
-            TaskStatus.RUNNING,
-            TaskStatus.CANCELLING,
-        }
-    ):
-        raise HTTPException(403, "Task route is not active or is out of scope")
+    chat_provider_id: uuid.UUID | None = None
+    if task is not None:
+        if (
+            task.namespace_id != runtime.namespace_id
+            or task.runtime_profile_id != runtime.id
+            or task.snapshot.get("model_id") != model_id
+            or task.status
+            not in {
+                TaskStatus.DISPATCHED,
+                TaskStatus.RUNNING,
+                TaskStatus.CANCELLING,
+            }
+        ):
+            raise HTTPException(403, "Task route is not active or is out of scope")
+    else:
+        # Chat deliberately uses the same scoped gateway without creating an
+        # agent_task: the running model message is the auditable execution record.
+        message = session.get(ConversationMessage, task_id)
+        conversation = (
+            session.get(Conversation, message.conversation_id) if message else None
+        )
+        if (
+            message is None
+            or conversation is None
+            or conversation.namespace_id != runtime.namespace_id
+            or conversation.runtime_id != runtime.id
+            or conversation.mode != ConversationMode.CHAT
+            or conversation.model_id != model_id
+            or message.author_type != MessageAuthorType.MODEL
+            or message.status != MessageStatus.RUNNING
+            or conversation.provider_config_id is None
+        ):
+            raise HTTPException(403, "Chat route is not active or is out of scope")
+        chat_provider_id = conversation.provider_config_id
     if runtime.route_mode == RuntimeRouteMode.DIRECT_ANTHROPIC:
         secret = session.exec(
             select(RuntimeSecret).where(RuntimeSecret.runtime_profile_id == runtime.id)
@@ -339,7 +367,9 @@ def resolve_route(
             "model_id": runtime.model_id,
             "secret_inputs": open_secret_payload(secret.secret_ciphertext),
         }
-    provider = session.get(LlmProviderConfig, runtime.provider_config_id)
+    provider = session.get(
+        LlmProviderConfig, chat_provider_id or runtime.provider_config_id
+    )
     if provider is None or not provider.enabled:
         raise HTTPException(409, "Provider config is unavailable")
     try:

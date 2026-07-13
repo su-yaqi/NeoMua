@@ -210,6 +210,112 @@ export const AgentCreateSchema = {
     title: 'AgentCreate'
 } as const;
 
+export const AgentDelegationSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        conversation_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Conversation Id'
+        },
+        source_message_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Source Message Id'
+        },
+        source_agent_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Source Agent Id'
+        },
+        target_agent_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Target Agent Id'
+        },
+        input_payload: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Input Payload'
+        },
+        result_payload: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Result Payload'
+        },
+        task_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Task Id'
+        },
+        status: {
+            $ref: '#/components/schemas/DelegationStatus',
+            default: 'queued'
+        },
+        idempotency_key: {
+            type: 'string',
+            maxLength: 255,
+            title: 'Idempotency Key'
+        },
+        error: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Error'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        },
+        completed_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Completed At'
+        }
+    },
+    type: 'object',
+    required: [
+        'conversation_id',
+        'source_message_id',
+        'source_agent_id',
+        'target_agent_id',
+        'idempotency_key'
+    ],
+    title: 'AgentDelegation'
+} as const;
+
 export const AgentDraftPublicSchema = {
     properties: {
         agent_id: {
@@ -867,6 +973,21 @@ export const Body_agent_capabilities_upload_skill_versionSchema = {
     title: 'Body_agent-capabilities-upload_skill_version'
 } as const;
 
+export const Body_conversations_upload_attachmentSchema = {
+    properties: {
+        file: {
+            type: 'string',
+            format: 'binary',
+            title: 'File'
+        }
+    },
+    type: 'object',
+    required: [
+        'file'
+    ],
+    title: 'Body_conversations-upload_attachment'
+} as const;
+
 export const Body_login_login_access_tokenSchema = {
     properties: {
         grant_type: {
@@ -1051,6 +1172,431 @@ export const CliRefreshSchema = {
         'refresh_token'
     ],
     title: 'CliRefresh'
+} as const;
+
+export const ConfirmationDecisionSchema = {
+    type: 'string',
+    enum: [
+        'submit',
+        'accept',
+        'reject',
+        'skip'
+    ],
+    title: 'ConfirmationDecision'
+} as const;
+
+export const ContentReferenceInputSchema = {
+    properties: {
+        repository_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Repository Id'
+        },
+        path: {
+            type: 'string',
+            maxLength: 1024,
+            minLength: 1,
+            title: 'Path'
+        },
+        blob_digest: {
+            type: 'string',
+            maxLength: 64,
+            minLength: 40,
+            title: 'Blob Digest'
+        },
+        summary: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Summary'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'repository_id',
+        'path',
+        'blob_digest'
+    ],
+    title: 'ContentReferenceInput'
+} as const;
+
+export const ContextRefreshSchema = {
+    properties: {
+        content_refs: {
+            items: {
+                $ref: '#/components/schemas/ContentReferenceInput'
+            },
+            type: 'array',
+            title: 'Content Refs',
+            default: []
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    title: 'ContextRefresh'
+} as const;
+
+export const ConversationAgentInputSchema = {
+    properties: {
+        runtime_agent_release_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Runtime Agent Release Id'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'runtime_agent_release_id'
+    ],
+    title: 'ConversationAgentInput'
+} as const;
+
+export const ConversationContextSnapshotSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        conversation_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Conversation Id'
+        },
+        project_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Project Id'
+        },
+        revision: {
+            type: 'integer',
+            title: 'Revision'
+        },
+        repository_refs: {
+            items: {
+                additionalProperties: true,
+                type: 'object'
+            },
+            type: 'array',
+            title: 'Repository Refs'
+        },
+        spec_refs: {
+            items: {
+                additionalProperties: true,
+                type: 'object'
+            },
+            type: 'array',
+            title: 'Spec Refs'
+        },
+        content_refs: {
+            items: {
+                additionalProperties: true,
+                type: 'object'
+            },
+            type: 'array',
+            title: 'Content Refs'
+        },
+        content_digest: {
+            type: 'string',
+            maxLength: 64,
+            title: 'Content Digest'
+        },
+        created_by: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Created By'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        }
+    },
+    type: 'object',
+    required: [
+        'conversation_id',
+        'project_id',
+        'revision',
+        'content_digest'
+    ],
+    title: 'ConversationContextSnapshot'
+} as const;
+
+export const ConversationCreateSchema = {
+    properties: {
+        title: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Title'
+        },
+        mode: {
+            $ref: '#/components/schemas/ConversationMode'
+        },
+        runtime_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Runtime Id'
+        },
+        project_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Project Id'
+        },
+        visibility: {
+            $ref: '#/components/schemas/ConversationVisibility',
+            default: 'private'
+        },
+        provider_config_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Provider Config Id'
+        },
+        model_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 255
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Model Id'
+        },
+        main_agent: {
+            anyOf: [
+                {
+                    $ref: '#/components/schemas/ConversationAgentInput'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        collaborators: {
+            items: {
+                $ref: '#/components/schemas/ConversationAgentInput'
+            },
+            type: 'array',
+            title: 'Collaborators',
+            default: []
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'title',
+        'mode',
+        'runtime_id'
+    ],
+    title: 'ConversationCreate'
+} as const;
+
+export const ConversationDeriveSchema = {
+    properties: {
+        title: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 255,
+                    minLength: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Title'
+        },
+        runtime_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Runtime Id'
+        },
+        provider_config_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Provider Config Id'
+        },
+        model_id: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Model Id'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'runtime_id',
+        'provider_config_id',
+        'model_id'
+    ],
+    title: 'ConversationDerive'
+} as const;
+
+export const ConversationMessageCreateSchema = {
+    properties: {
+        content: {
+            type: 'string',
+            minLength: 1,
+            title: 'Content'
+        },
+        target_type: {
+            $ref: '#/components/schemas/MessageTargetType'
+        },
+        target_agent_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Target Agent Id'
+        },
+        attachment_ids: {
+            items: {
+                type: 'string',
+                format: 'uuid'
+            },
+            type: 'array',
+            title: 'Attachment Ids',
+            default: []
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'content',
+        'target_type'
+    ],
+    title: 'ConversationMessageCreate'
+} as const;
+
+export const ConversationModeSchema = {
+    type: 'string',
+    enum: [
+        'chat',
+        'agent'
+    ],
+    title: 'ConversationMode'
+} as const;
+
+export const ConversationUpdateSchema = {
+    properties: {
+        title: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 255,
+                    minLength: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Title'
+        },
+        archived: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Archived'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    title: 'ConversationUpdate'
+} as const;
+
+export const ConversationVisibilitySchema = {
+    type: 'string',
+    enum: [
+        'private',
+        'project'
+    ],
+    title: 'ConversationVisibility'
+} as const;
+
+export const DelegationCreateSchema = {
+    properties: {
+        source_message_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Source Message Id'
+        },
+        source_conversation_agent_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Source Conversation Agent Id'
+        },
+        target_conversation_agent_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Target Conversation Agent Id'
+        },
+        content: {
+            type: 'string',
+            minLength: 1,
+            title: 'Content'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'source_message_id',
+        'source_conversation_agent_id',
+        'target_conversation_agent_id',
+        'content'
+    ],
+    title: 'DelegationCreate'
+} as const;
+
+export const DelegationStatusSchema = {
+    type: 'string',
+    enum: [
+        'queued',
+        'running',
+        'completed',
+        'failed'
+    ],
+    title: 'DelegationStatus'
 } as const;
 
 export const DeploymentPublicSchema = {
@@ -1245,6 +1791,32 @@ export const DraftSaveSchema = {
         'expected_revision'
     ],
     title: 'DraftSave'
+} as const;
+
+export const EnablementUpdateSchema = {
+    properties: {
+        template_version_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Template Version Id'
+        },
+        enabled: {
+            type: 'boolean',
+            title: 'Enabled'
+        },
+        is_default: {
+            type: 'boolean',
+            title: 'Is Default',
+            default: false
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'template_version_id',
+        'enabled'
+    ],
+    title: 'EnablementUpdate'
 } as const;
 
 export const EnrollmentTokenCreatedSchema = {
@@ -1444,6 +2016,52 @@ export const EventPublicSchema = {
         'payload'
     ],
     title: 'EventPublic'
+} as const;
+
+export const ExternalStateResolutionSchema = {
+    properties: {
+        expected_revision: {
+            type: 'integer',
+            minimum: 0,
+            title: 'Expected Revision'
+        },
+        execution_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Execution Id'
+        },
+        conclusion: {
+            type: 'string',
+            pattern: '^(not_started|compensated|completed|unknown)$',
+            title: 'Conclusion'
+        },
+        allow_retry: {
+            type: 'boolean',
+            title: 'Allow Retry',
+            default: false
+        },
+        evidence: {
+            additionalProperties: true,
+            type: 'object',
+            minProperties: 1,
+            title: 'Evidence'
+        },
+        rationale: {
+            type: 'string',
+            minLength: 1,
+            title: 'Rationale'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'expected_revision',
+        'execution_id',
+        'conclusion',
+        'evidence',
+        'rationale'
+    ],
+    title: 'ExternalStateResolution'
 } as const;
 
 export const HTTPValidationErrorSchema = {
@@ -2776,6 +3394,18 @@ export const MessageInputSchema = {
     title: 'MessageInput'
 } as const;
 
+export const MessageTargetTypeSchema = {
+    type: 'string',
+    enum: [
+        'main',
+        'agent',
+        'all',
+        'model',
+        'system'
+    ],
+    title: 'MessageTargetType'
+} as const;
+
 export const NamespaceCreateSchema = {
     properties: {
         name: {
@@ -3038,6 +3668,59 @@ export const NamespaceUserUpdateSchema = {
     title: 'NamespaceUserUpdate'
 } as const;
 
+export const NamespaceWorkflowEnablementSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        namespace_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Namespace Id'
+        },
+        template_version_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Template Version Id'
+        },
+        enabled: {
+            type: 'boolean',
+            title: 'Enabled',
+            default: true
+        },
+        is_default: {
+            type: 'boolean',
+            title: 'Is Default',
+            default: false
+        },
+        updated_by: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Updated By'
+        },
+        updated_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Updated At'
+        }
+    },
+    type: 'object',
+    required: [
+        'namespace_id',
+        'template_version_id'
+    ],
+    title: 'NamespaceWorkflowEnablement'
+} as const;
+
 export const NamespacesPublicSchema = {
     properties: {
         data: {
@@ -3079,6 +3762,37 @@ export const NewPasswordSchema = {
         'new_password'
     ],
     title: 'NewPassword'
+} as const;
+
+export const NodeConfirmationSchema = {
+    properties: {
+        expected_revision: {
+            type: 'integer',
+            minimum: 1,
+            title: 'Expected Revision'
+        },
+        decision: {
+            $ref: '#/components/schemas/ConfirmationDecision'
+        },
+        reason: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Reason'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'expected_revision',
+        'decision'
+    ],
+    title: 'NodeConfirmation'
 } as const;
 
 export const NodeEnrollInputSchema = {
@@ -3184,6 +3898,56 @@ export const NodeEnrollResultSchema = {
     title: 'NodeEnrollResult'
 } as const;
 
+export const NodeMessageSchema = {
+    properties: {
+        expected_revision: {
+            type: 'integer',
+            minimum: 0,
+            title: 'Expected Revision'
+        },
+        content: {
+            type: 'string',
+            minLength: 1,
+            title: 'Content'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'expected_revision',
+        'content'
+    ],
+    title: 'NodeMessage'
+} as const;
+
+export const NodeMutationSchema = {
+    properties: {
+        expected_revision: {
+            type: 'integer',
+            minimum: 0,
+            title: 'Expected Revision'
+        },
+        output: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Output'
+        },
+        reason: {
+            type: 'string',
+            minLength: 1,
+            title: 'Reason'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'expected_revision',
+        'output',
+        'reason'
+    ],
+    title: 'NodeMutation'
+} as const;
+
 export const NodePublicSchema = {
     properties: {
         id: {
@@ -3284,6 +4048,22 @@ export const NodePublicSchema = {
         'runtime_profile_id'
     ],
     title: 'NodePublic'
+} as const;
+
+export const NodeRetrySchema = {
+    properties: {
+        expected_revision: {
+            type: 'integer',
+            minimum: 0,
+            title: 'Expected Revision'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'expected_revision'
+    ],
+    title: 'NodeRetry'
 } as const;
 
 export const NodeRuntimePublicSchema = {
@@ -3416,6 +4196,28 @@ export const NodeRuntimeUpsertSchema = {
         'model_id'
     ],
     title: 'NodeRuntimeUpsert'
+} as const;
+
+export const NodeSkipSchema = {
+    properties: {
+        expected_revision: {
+            type: 'integer',
+            minimum: 0,
+            title: 'Expected Revision'
+        },
+        reason: {
+            type: 'string',
+            minLength: 1,
+            title: 'Reason'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'expected_revision',
+        'reason'
+    ],
+    title: 'NodeSkip'
 } as const;
 
 export const NodesPublicSchema = {
@@ -3691,6 +4493,367 @@ export const PrivateUserCreateSchema = {
     title: 'PrivateUserCreate'
 } as const;
 
+export const ProjectCreateSchema = {
+    properties: {
+        slug: {
+            type: 'string',
+            maxLength: 128,
+            minLength: 1,
+            pattern: '^[a-z0-9][a-z0-9-]*$',
+            title: 'Slug'
+        },
+        name: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Name'
+        },
+        description: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Description'
+        },
+        default_runtime_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Default Runtime Id'
+        },
+        member_ids: {
+            items: {
+                type: 'string',
+                format: 'uuid'
+            },
+            type: 'array',
+            title: 'Member Ids',
+            default: []
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'slug',
+        'name'
+    ],
+    title: 'ProjectCreate'
+} as const;
+
+export const ProjectMembersUpdateSchema = {
+    properties: {
+        user_ids: {
+            items: {
+                type: 'string',
+                format: 'uuid'
+            },
+            type: 'array',
+            title: 'User Ids'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'user_ids'
+    ],
+    title: 'ProjectMembersUpdate'
+} as const;
+
+export const ProjectRepositorySchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        project_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Project Id'
+        },
+        remote_url: {
+            type: 'string',
+            maxLength: 2048,
+            title: 'Remote Url'
+        },
+        purpose: {
+            type: 'string',
+            title: 'Purpose'
+        },
+        default_branch: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 255
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Default Branch'
+        },
+        credential_ref: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 512
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Credential Ref'
+        },
+        runtime_workspace_refs: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Runtime Workspace Refs'
+        },
+        status: {
+            $ref: '#/components/schemas/RepositoryStatus',
+            default: 'unvalidated'
+        },
+        validation_error: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Validation Error'
+        },
+        validated_commit: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 64
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Validated Commit'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        },
+        updated_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Updated At'
+        }
+    },
+    type: 'object',
+    required: [
+        'project_id',
+        'remote_url',
+        'purpose'
+    ],
+    title: 'ProjectRepository'
+} as const;
+
+export const ProjectSpecBindingSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        project_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Project Id'
+        },
+        spec_location_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Spec Location Id'
+        },
+        standard_version_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Standard Version Id'
+        },
+        status: {
+            $ref: '#/components/schemas/SpecBindingStatus',
+            default: 'pending'
+        },
+        validated_commit: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 64
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Validated Commit'
+        },
+        diff_preview: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Diff Preview'
+        },
+        updated_by: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Updated By'
+        },
+        updated_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Updated At'
+        }
+    },
+    type: 'object',
+    required: [
+        'project_id',
+        'spec_location_id',
+        'standard_version_id'
+    ],
+    title: 'ProjectSpecBinding'
+} as const;
+
+export const ProjectSpecLocationSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        project_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Project Id'
+        },
+        repository_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Repository Id'
+        },
+        path: {
+            type: 'string',
+            maxLength: 1024,
+            title: 'Path'
+        },
+        location_type: {
+            $ref: '#/components/schemas/SpecLocationType'
+        },
+        description: {
+            type: 'string',
+            title: 'Description'
+        },
+        status: {
+            $ref: '#/components/schemas/SpecLocationStatus',
+            default: 'pending_initialization'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        },
+        updated_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Updated At'
+        }
+    },
+    type: 'object',
+    required: [
+        'project_id',
+        'repository_id',
+        'path',
+        'location_type',
+        'description'
+    ],
+    title: 'ProjectSpecLocation'
+} as const;
+
+export const ProjectUpdateSchema = {
+    properties: {
+        name: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 255,
+                    minLength: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Name'
+        },
+        description: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Description'
+        },
+        default_runtime_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Default Runtime Id'
+        },
+        archive: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Archive'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    title: 'ProjectUpdate'
+} as const;
+
 export const ProviderAuthTypeSchema = {
     type: 'string',
     enum: [
@@ -3733,6 +4896,36 @@ export const ProviderValidationStatusSchema = {
         'unsupported'
     ],
     title: 'ProviderValidationStatus'
+} as const;
+
+export const RegistrySyncSchema = {
+    properties: {
+        manifest: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Manifest'
+        },
+        package_digest: {
+            type: 'string',
+            maxLength: 64,
+            minLength: 64,
+            pattern: '^[0-9a-f]{64}$',
+            title: 'Package Digest'
+        },
+        build_metadata: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Build Metadata',
+            default: {}
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'manifest',
+        'package_digest'
+    ],
+    title: 'RegistrySync'
 } as const;
 
 export const ReleasePublicSchema = {
@@ -3781,6 +4974,136 @@ export const ReleasePublicSchema = {
         'deployments'
     ],
     title: 'ReleasePublic'
+} as const;
+
+export const RepositoryCreateSchema = {
+    properties: {
+        remote_url: {
+            type: 'string',
+            maxLength: 2048,
+            minLength: 1,
+            title: 'Remote Url'
+        },
+        purpose: {
+            type: 'string',
+            minLength: 1,
+            title: 'Purpose'
+        },
+        default_branch: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 255
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Default Branch'
+        },
+        credential_ref: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 512
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Credential Ref'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'remote_url',
+        'purpose'
+    ],
+    title: 'RepositoryCreate'
+} as const;
+
+export const RepositoryStatusSchema = {
+    type: 'string',
+    enum: [
+        'unvalidated',
+        'available',
+        'unavailable'
+    ],
+    title: 'RepositoryStatus'
+} as const;
+
+export const RepositoryUpdateSchema = {
+    properties: {
+        remote_url: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 2048,
+                    minLength: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Remote Url'
+        },
+        purpose: {
+            anyOf: [
+                {
+                    type: 'string',
+                    minLength: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Purpose'
+        },
+        default_branch: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 255
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Default Branch'
+        },
+        credential_ref: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 512
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Credential Ref'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    title: 'RepositoryUpdate'
+} as const;
+
+export const RepositoryValidationRequestSchema = {
+    properties: {
+        runtime_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Runtime Id'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'runtime_id'
+    ],
+    title: 'RepositoryValidationRequest'
 } as const;
 
 export const RuntimeRouteModeSchema = {
@@ -3850,6 +5173,381 @@ export const SkillInvokeInputSchema = {
     },
     type: 'object',
     title: 'SkillInvokeInput'
+} as const;
+
+export const SpecBindingStatusSchema = {
+    type: 'string',
+    enum: [
+        'pending',
+        'valid',
+        'conflict'
+    ],
+    title: 'SpecBindingStatus'
+} as const;
+
+export const SpecBindingUpdateSchema = {
+    properties: {
+        standard_version_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Standard Version Id'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'standard_version_id'
+    ],
+    title: 'SpecBindingUpdate'
+} as const;
+
+export const SpecLocationCreateSchema = {
+    properties: {
+        repository_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Repository Id'
+        },
+        path: {
+            type: 'string',
+            maxLength: 1024,
+            minLength: 1,
+            title: 'Path'
+        },
+        location_type: {
+            $ref: '#/components/schemas/SpecLocationType'
+        },
+        description: {
+            type: 'string',
+            minLength: 1,
+            title: 'Description'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'repository_id',
+        'path',
+        'location_type',
+        'description'
+    ],
+    title: 'SpecLocationCreate'
+} as const;
+
+export const SpecLocationStatusSchema = {
+    type: 'string',
+    enum: [
+        'pending_initialization',
+        'valid',
+        'unavailable'
+    ],
+    title: 'SpecLocationStatus'
+} as const;
+
+export const SpecLocationTypeSchema = {
+    type: 'string',
+    enum: [
+        'directory',
+        'file'
+    ],
+    title: 'SpecLocationType'
+} as const;
+
+export const SpecLocationUpdateSchema = {
+    properties: {
+        path: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 1024,
+                    minLength: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Path'
+        },
+        location_type: {
+            anyOf: [
+                {
+                    $ref: '#/components/schemas/SpecLocationType'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        description: {
+            anyOf: [
+                {
+                    type: 'string',
+                    minLength: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Description'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    title: 'SpecLocationUpdate'
+} as const;
+
+export const SpecScopeTypeSchema = {
+    type: 'string',
+    enum: [
+        'platform',
+        'namespace'
+    ],
+    title: 'SpecScopeType'
+} as const;
+
+export const SpecStandardSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        scope_type: {
+            $ref: '#/components/schemas/SpecScopeType'
+        },
+        namespace_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Namespace Id'
+        },
+        slug: {
+            type: 'string',
+            maxLength: 128,
+            title: 'Slug'
+        },
+        name: {
+            type: 'string',
+            maxLength: 255,
+            title: 'Name'
+        },
+        description: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Description'
+        },
+        created_by: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Created By'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        }
+    },
+    type: 'object',
+    required: [
+        'scope_type',
+        'slug',
+        'name'
+    ],
+    title: 'SpecStandard'
+} as const;
+
+export const SpecStandardCreateSchema = {
+    properties: {
+        scope_type: {
+            $ref: '#/components/schemas/SpecScopeType'
+        },
+        slug: {
+            type: 'string',
+            maxLength: 128,
+            minLength: 1,
+            pattern: '^[a-z0-9][a-z0-9-]*$',
+            title: 'Slug'
+        },
+        name: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Name'
+        },
+        description: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Description'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'scope_type',
+        'slug',
+        'name'
+    ],
+    title: 'SpecStandardCreate'
+} as const;
+
+export const SpecStandardVersionSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        standard_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Standard Id'
+        },
+        version: {
+            type: 'string',
+            maxLength: 64,
+            title: 'Version'
+        },
+        manifest: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Manifest'
+        },
+        content_digest: {
+            type: 'string',
+            maxLength: 64,
+            title: 'Content Digest'
+        },
+        storage_ref: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 1024
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Storage Ref'
+        },
+        status: {
+            $ref: '#/components/schemas/SpecVersionStatus',
+            default: 'active'
+        },
+        created_by: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Created By'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        }
+    },
+    type: 'object',
+    required: [
+        'standard_id',
+        'version',
+        'content_digest'
+    ],
+    title: 'SpecStandardVersion'
+} as const;
+
+export const SpecStandardVersionCreateSchema = {
+    properties: {
+        version: {
+            type: 'string',
+            maxLength: 64,
+            minLength: 1,
+            title: 'Version'
+        },
+        manifest: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Manifest'
+        },
+        content_digest: {
+            type: 'string',
+            maxLength: 64,
+            minLength: 64,
+            pattern: '^[0-9a-f]{64}$',
+            title: 'Content Digest'
+        },
+        storage_ref: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 1024
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Storage Ref'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'version',
+        'manifest',
+        'content_digest'
+    ],
+    title: 'SpecStandardVersionCreate'
+} as const;
+
+export const SpecVersionDeprecateSchema = {
+    properties: {
+        deprecated: {
+            type: 'boolean',
+            title: 'Deprecated',
+            default: true
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    title: 'SpecVersionDeprecate'
+} as const;
+
+export const SpecVersionStatusSchema = {
+    type: 'string',
+    enum: [
+        'active',
+        'deprecated'
+    ],
+    title: 'SpecVersionStatus'
 } as const;
 
 export const TargetCompatibilitySchema = {
@@ -4415,6 +6113,81 @@ export const ValidationErrorSchema = {
         'type'
     ],
     title: 'ValidationError'
+} as const;
+
+export const WorkflowInstanceCreateSchema = {
+    properties: {
+        title: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Title'
+        },
+        template_version_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Template Version Id'
+        },
+        input: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Input'
+        },
+        runtime_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Runtime Id'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'title',
+        'template_version_id',
+        'input'
+    ],
+    title: 'WorkflowInstanceCreate'
+} as const;
+
+export const WorkflowPreflightSchema = {
+    properties: {
+        project_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Project Id'
+        },
+        template_version_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Template Version Id'
+        },
+        runtime_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Runtime Id'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'project_id',
+        'template_version_id'
+    ],
+    title: 'WorkflowPreflight'
 } as const;
 
 export const app__agent_management__release_routes__ReleaseCreateSchema = {

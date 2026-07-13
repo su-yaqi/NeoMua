@@ -2,7 +2,7 @@
 
 import { buildClientParams, type Client, type ClientMeta, formDataBodySerializer, type Options as Options2, type RequestResult, type TDataShape, urlSearchParamsBodySerializer } from './client';
 import { client } from './client.gen';
-import type { ActivationCreate, AdminUserCreate, AdminUserUpdate, AgentCapabilitiesCreateMcpRevisionErrors, AgentCapabilitiesCreateMcpRevisionResponses, AgentCapabilitiesCreateMcpServerErrors, AgentCapabilitiesCreateMcpServerResponses, AgentCapabilitiesCreateMcpTargetErrors, AgentCapabilitiesCreateMcpTargetResponses, AgentCapabilitiesCreatePluginErrors, AgentCapabilitiesCreatePluginResponses, AgentCapabilitiesCreatePluginVersionErrors, AgentCapabilitiesCreatePluginVersionResponses, AgentCapabilitiesCreateSkillErrors, AgentCapabilitiesCreateSkillResponses, AgentCapabilitiesDeleteMcpServerErrors, AgentCapabilitiesDeleteMcpServerResponses, AgentCapabilitiesDeleteSkillErrors, AgentCapabilitiesDeleteSkillResponses, AgentCapabilitiesDeprecatePluginVersionErrors, AgentCapabilitiesDeprecatePluginVersionResponses, AgentCapabilitiesDeprecateSkillVersionErrors, AgentCapabilitiesDeprecateSkillVersionResponses, AgentCapabilitiesGetAgentCapabilitiesErrors, AgentCapabilitiesGetAgentCapabilitiesResponses, AgentCapabilitiesGetMcpRevisionErrors, AgentCapabilitiesGetMcpRevisionResponses, AgentCapabilitiesGetMcpRuntimeErrors, AgentCapabilitiesGetMcpRuntimeResponses, AgentCapabilitiesGetMcpServerErrors, AgentCapabilitiesGetMcpServerResponses, AgentCapabilitiesGetPluginDraftErrors, AgentCapabilitiesGetPluginDraftResponses, AgentCapabilitiesGetPluginErrors, AgentCapabilitiesGetPluginResponses, AgentCapabilitiesGetPluginVersionErrors, AgentCapabilitiesGetPluginVersionResponses, AgentCapabilitiesGetSkillErrors, AgentCapabilitiesGetSkillResponses, AgentCapabilitiesGetSkillVersionErrors, AgentCapabilitiesGetSkillVersionResponses, AgentCapabilitiesListMcpRevisionsErrors, AgentCapabilitiesListMcpRevisionsResponses, AgentCapabilitiesListMcpServersErrors, AgentCapabilitiesListMcpServersResponses, AgentCapabilitiesListMcpValidationsErrors, AgentCapabilitiesListMcpValidationsResponses, AgentCapabilitiesListPluginsErrors, AgentCapabilitiesListPluginsResponses, AgentCapabilitiesListPluginVersionsErrors, AgentCapabilitiesListPluginVersionsResponses, AgentCapabilitiesListSkillsErrors, AgentCapabilitiesListSkillsResponses, AgentCapabilitiesListSkillVersionsErrors, AgentCapabilitiesListSkillVersionsResponses, AgentCapabilitiesPutMcpSecretErrors, AgentCapabilitiesPutMcpSecretResponses, AgentCapabilitiesRestartMcpRuntimeErrors, AgentCapabilitiesRestartMcpRuntimeResponses, AgentCapabilitiesSavePluginDraftErrors, AgentCapabilitiesSavePluginDraftResponses, AgentCapabilitiesSetAgentMcpErrors, AgentCapabilitiesSetAgentMcpResponses, AgentCapabilitiesSetAgentPluginsErrors, AgentCapabilitiesSetAgentPluginsResponses, AgentCapabilitiesSetAgentSkillsErrors, AgentCapabilitiesSetAgentSkillsResponses, AgentCapabilitiesSetAgentToolsErrors, AgentCapabilitiesSetAgentToolsResponses, AgentCapabilitiesSetNamespaceToolPolicyErrors, AgentCapabilitiesSetNamespaceToolPolicyResponses, AgentCapabilitiesToolCatalogErrors, AgentCapabilitiesToolCatalogResponses, AgentCapabilitiesUpdateMcpServerErrors, AgentCapabilitiesUpdateMcpServerResponses, AgentCapabilitiesUpdatePluginErrors, AgentCapabilitiesUpdatePluginResponses, AgentCapabilitiesUpdateSkillErrors, AgentCapabilitiesUpdateSkillResponses, AgentCapabilitiesUploadSkillVersionErrors, AgentCapabilitiesUploadSkillVersionResponses, AgentCapabilitiesValidateMcpTargetErrors, AgentCapabilitiesValidateMcpTargetResponses, AgentCapabilitiesValidatePluginDraftErrors, AgentCapabilitiesValidatePluginDraftResponses, AgentCopy, AgentCreate, AgentManagementCopyAgentEndpointErrors, AgentManagementCopyAgentEndpointResponses, AgentManagementCreateAgentEndpointErrors, AgentManagementCreateAgentEndpointResponses, AgentManagementCreateProfileErrors, AgentManagementCreateProfileResponses, AgentManagementDeleteAgentErrors, AgentManagementDeleteAgentResponses, AgentManagementDeleteProfileErrors, AgentManagementDeleteProfileResponses, AgentManagementEnvCatalogErrors, AgentManagementEnvCatalogResponses, AgentManagementHarnessCatalogErrors, AgentManagementHarnessCatalogResponses, AgentManagementListAgentsErrors, AgentManagementListAgentsResponses, AgentManagementListProfilesErrors, AgentManagementListProfilesResponses, AgentManagementReadAgentErrors, AgentManagementReadAgentResponses, AgentManagementReadDraftErrors, AgentManagementReadDraftResponses, AgentManagementReadProfileErrors, AgentManagementReadProfileResponses, AgentManagementSaveDraftEndpointErrors, AgentManagementSaveDraftEndpointResponses, AgentManagementUpdateAgentErrors, AgentManagementUpdateAgentResponses, AgentManagementUpdateProfileErrors, AgentManagementUpdateProfileResponses, AgentManagementValidateDraftEndpointErrors, AgentManagementValidateDraftEndpointResponses, AgentMcpBindings, AgentPluginBindings, AgentReleasesActivateReleaseErrors, AgentReleasesActivateReleaseResponses, AgentReleasesApproveToolErrors, AgentReleasesApproveToolResponses, AgentReleasesCreateAgentReleaseErrors, AgentReleasesCreateAgentReleaseResponses, AgentReleasesDenyToolErrors, AgentReleasesDenyToolResponses, AgentReleasesGetActivationErrors, AgentReleasesGetActivationResponses, AgentReleasesGetAgentReleaseErrors, AgentReleasesGetAgentReleaseResponses, AgentReleasesGetResolvedSpecErrors, AgentReleasesGetResolvedSpecResponses, AgentReleasesListAgentReleasesErrors, AgentReleasesListAgentReleasesResponses, AgentReleasesListTaskApprovalsErrors, AgentReleasesListTaskApprovalsResponses, AgentReleasesPrecheckActivationErrors, AgentReleasesPrecheckActivationResponses, AgentReleasesRetryDeploymentErrors, AgentReleasesRetryDeploymentResponses, AgentReleasesRollbackDeploymentErrors, AgentReleasesRollbackDeploymentResponses, AgentReleasesRuntimeAgentErrors, AgentReleasesRuntimeAgentResponses, AgentReleasesRuntimeAgentsErrors, AgentReleasesRuntimeAgentsResponses, AgentSkillBindings, AgentToolBindings, AgentUpdate, AppAgentManagementReleaseRoutesReleaseCreate, AppApiRoutesRuntimeArtifactsReleaseCreate, ApprovalDecision, ApprovalRequestCreate, BodyAgentCapabilitiesUploadSkillVersion, BodyLoginLoginAccessToken, BodyRuntimeArtifactsUploadArtifact, CapabilityReport, ClaimInput, CliLogin, CliLogout, CliRefresh, DeploymentResult, DraftSave, EventBatch, HarnessProfileCreate, HarnessProfileUpdate, IdentityCreate, IdentityUpdate, InternalAgentReleasesClaimAgentDeploymentErrors, InternalAgentReleasesClaimAgentDeploymentResponses, InternalAgentReleasesInternalToolApprovalStatusErrors, InternalAgentReleasesInternalToolApprovalStatusResponses, InternalAgentReleasesReportAgentDeploymentErrors, InternalAgentReleasesReportAgentDeploymentResponses, InternalAgentReleasesRequestToolApprovalErrors, InternalAgentReleasesRequestToolApprovalResponses, InternalMcpClaimPlatformMcpValidationErrors, InternalMcpClaimPlatformMcpValidationResponses, InternalMcpReportPlatformMcpValidationErrors, InternalMcpReportPlatformMcpValidationResponses, ItemCreate, ItemsCreateItemErrors, ItemsCreateItemResponses, ItemsDeleteItemErrors, ItemsDeleteItemResponses, ItemsReadItemErrors, ItemsReadItemResponses, ItemsReadItemsErrors, ItemsReadItemsResponses, ItemsUpdateItemErrors, ItemsUpdateItemResponses, ItemUpdate, LeaseInput, LlmCreateProviderConfigErrors, LlmCreateProviderConfigResponses, LlmProviderConfigCreate, LlmProviderConfigUpdate, LlmProviderSyncModelsRequest, LlmReadProviderCatalogErrors, LlmReadProviderCatalogResponses, LlmReadProviderConfigsErrors, LlmReadProviderConfigsResponses, LlmSyncProviderModelsErrors, LlmSyncProviderModelsResponses, LlmUpdateProviderConfigErrors, LlmUpdateProviderConfigResponses, LlmValidateProviderConfigErrors, LlmValidateProviderConfigResponses, LoginLoginAccessTokenErrors, LoginLoginAccessTokenResponses, LoginLogoutErrors, LoginLogoutResponses, LoginRecoverPasswordErrors, LoginRecoverPasswordHtmlContentErrors, LoginRecoverPasswordHtmlContentResponses, LoginRecoverPasswordResponses, LoginRefreshAccessTokenErrors, LoginRefreshAccessTokenResponses, LoginResetPasswordErrors, LoginResetPasswordResponses, LoginTestTokenErrors, LoginTestTokenResponses, McpRevisionCreate, McpSecretWrite, McpTargetCreate, McpValidationResult, MessageInput, NamespaceCreate, NamespacesCreateNamespaceUserErrors, NamespacesCreateNamespaceUserResponses, NamespacesDeleteNamespaceUserErrors, NamespacesDeleteNamespaceUserResponses, NamespacesReadMyNamespacesErrors, NamespacesReadMyNamespacesResponses, NamespacesReadNamespaceUsersErrors, NamespacesReadNamespaceUsersResponses, NamespacesUpdateNamespaceUserErrors, NamespacesUpdateNamespaceUserResponses, NamespaceUpdate, NamespaceUserCreate, NamespaceUserUpdate, NewPassword, NodeArtifactsDownloadArtifactErrors, NodeArtifactsDownloadArtifactResponses, NodeEnrollInput, NodeEnrollmentEnrollNodeErrors, NodeEnrollmentEnrollNodeResponses, NodeMcpNodeMcpValidationResultErrors, NodeMcpNodeMcpValidationResultResponses, NodeRuntimeUpsert, OperatorCliCapabilitiesErrors, OperatorCliCapabilitiesResponses, OperatorCliCliLoginErrors, OperatorCliCliLoginResponses, OperatorCliCliLogoutErrors, OperatorCliCliLogoutResponses, OperatorCliCliRefreshErrors, OperatorCliCliRefreshResponses, PlatformCreateNamespaceErrors, PlatformCreateNamespaceResponses, PlatformCreatePlatformUserErrors, PlatformCreatePlatformUserResponses, PlatformDeleteNamespaceErrors, PlatformDeleteNamespaceResponses, PlatformDeletePlatformUserErrors, PlatformDeletePlatformUserResponses, PlatformReadNamespacesErrors, PlatformReadNamespacesResponses, PlatformReadPlatformUsersErrors, PlatformReadPlatformUsersResponses, PlatformRuntimeUpsert, PlatformUpdateNamespaceErrors, PlatformUpdateNamespaceResponses, PlatformUpdatePlatformUserErrors, PlatformUpdatePlatformUserResponses, PluginDraftSave, PluginVersionCreate, PrivateCreateUserErrors, PrivateCreateUserResponses, PrivateUserCreate, RuntimeArtifactsCreateReleaseErrors, RuntimeArtifactsCreateReleaseResponses, RuntimeArtifactsListArtifactsErrors, RuntimeArtifactsListArtifactsResponses, RuntimeArtifactsReadArtifactErrors, RuntimeArtifactsReadArtifactResponses, RuntimeArtifactsReadReleaseErrors, RuntimeArtifactsReadReleaseResponses, RuntimeArtifactsRetryDeploymentErrors, RuntimeArtifactsRetryDeploymentResponses, RuntimeArtifactsRollbackDeploymentErrors, RuntimeArtifactsRollbackDeploymentResponses, RuntimeArtifactsUploadArtifactErrors, RuntimeArtifactsUploadArtifactResponses, RuntimeInternalAppendEventsErrors, RuntimeInternalAppendEventsResponses, RuntimeInternalClaimPlatformTaskErrors, RuntimeInternalClaimPlatformTaskResponses, RuntimeInternalRenewPlatformTaskLeaseErrors, RuntimeInternalRenewPlatformTaskLeaseResponses, RuntimeInternalReportPlatformCapabilitiesErrors, RuntimeInternalReportPlatformCapabilitiesResponses, RuntimeInternalResolveRouteErrors, RuntimeInternalResolveRouteResponses, RuntimeInternalSigningProbeErrors, RuntimeInternalSigningProbeResponses, RuntimeNodesConfigureNodeRuntimeErrors, RuntimeNodesConfigureNodeRuntimeResponses, RuntimeNodesCreateTokenErrors, RuntimeNodesCreateTokenResponses, RuntimeNodesListNodesErrors, RuntimeNodesListNodesResponses, RuntimeNodesListTokensErrors, RuntimeNodesListTokensResponses, RuntimeNodesReadNodeErrors, RuntimeNodesReadNodeResponses, RuntimeNodesRevokeNodeErrors, RuntimeNodesRevokeNodeResponses, RuntimeNodesRevokeTokenErrors, RuntimeNodesRevokeTokenResponses, RuntimesCancelTaskErrors, RuntimesCancelTaskResponses, RuntimesCreatePlatformSessionErrors, RuntimesCreatePlatformSessionResponses, RuntimesCreateSessionMessageErrors, RuntimesCreateSessionMessageResponses, RuntimesInvokeSessionSkillErrors, RuntimesInvokeSessionSkillResponses, RuntimesReadPlatformRuntimeErrors, RuntimesReadPlatformRuntimeResponses, RuntimesReadTaskErrors, RuntimesReadTaskEventsErrors, RuntimesReadTaskEventsResponses, RuntimesReadTaskResponses, RuntimesStreamTaskEventsErrors, RuntimesStreamTaskEventsResponses, RuntimesUpsertPlatformRuntimeErrors, RuntimesUpsertPlatformRuntimeResponses, RuntimesValidatePlatformRuntimeErrors, RuntimesValidatePlatformRuntimeResponses, RuntimeTasksCancelTaskErrors, RuntimeTasksCancelTaskResponses, RuntimeTasksCreateTaskErrors, RuntimeTasksCreateTaskResponses, RuntimeTasksListTasksErrors, RuntimeTasksListTasksResponses, RuntimeTasksReadTaskErrors, RuntimeTasksReadTaskEventsErrors, RuntimeTasksReadTaskEventsResponses, RuntimeTasksReadTaskResponses, RuntimeTasksRetryFailedTaskErrors, RuntimeTasksRetryFailedTaskResponses, SessionCreate, SkillInvokeInput, TaskCreate, ToolIntent, UpdatePassword, UserCreate, UserRegister, UsersCreateUserErrors, UsersCreateUserResponses, UsersDeleteUserErrors, UsersDeleteUserMeErrors, UsersDeleteUserMeResponses, UsersDeleteUserResponses, UsersReadUserByIdErrors, UsersReadUserByIdResponses, UsersReadUserMeErrors, UsersReadUserMeResponses, UsersReadUsersErrors, UsersReadUsersResponses, UsersRegisterUserErrors, UsersRegisterUserResponses, UsersUpdatePasswordMeErrors, UsersUpdatePasswordMeResponses, UsersUpdateUserErrors, UsersUpdateUserMeErrors, UsersUpdateUserMeResponses, UsersUpdateUserResponses, UserUpdate, UserUpdateMe, UtilsHealthCheckResponses, UtilsTestEmailErrors, UtilsTestEmailResponses } from './types.gen';
+import type { ActivationCreate, AdminUserCreate, AdminUserUpdate, AgentCapabilitiesCreateMcpRevisionErrors, AgentCapabilitiesCreateMcpRevisionResponses, AgentCapabilitiesCreateMcpServerErrors, AgentCapabilitiesCreateMcpServerResponses, AgentCapabilitiesCreateMcpTargetErrors, AgentCapabilitiesCreateMcpTargetResponses, AgentCapabilitiesCreatePluginErrors, AgentCapabilitiesCreatePluginResponses, AgentCapabilitiesCreatePluginVersionErrors, AgentCapabilitiesCreatePluginVersionResponses, AgentCapabilitiesCreateSkillErrors, AgentCapabilitiesCreateSkillResponses, AgentCapabilitiesDeleteMcpServerErrors, AgentCapabilitiesDeleteMcpServerResponses, AgentCapabilitiesDeleteSkillErrors, AgentCapabilitiesDeleteSkillResponses, AgentCapabilitiesDeprecatePluginVersionErrors, AgentCapabilitiesDeprecatePluginVersionResponses, AgentCapabilitiesDeprecateSkillVersionErrors, AgentCapabilitiesDeprecateSkillVersionResponses, AgentCapabilitiesGetAgentCapabilitiesErrors, AgentCapabilitiesGetAgentCapabilitiesResponses, AgentCapabilitiesGetMcpRevisionErrors, AgentCapabilitiesGetMcpRevisionResponses, AgentCapabilitiesGetMcpRuntimeErrors, AgentCapabilitiesGetMcpRuntimeResponses, AgentCapabilitiesGetMcpServerErrors, AgentCapabilitiesGetMcpServerResponses, AgentCapabilitiesGetPluginDraftErrors, AgentCapabilitiesGetPluginDraftResponses, AgentCapabilitiesGetPluginErrors, AgentCapabilitiesGetPluginResponses, AgentCapabilitiesGetPluginVersionErrors, AgentCapabilitiesGetPluginVersionResponses, AgentCapabilitiesGetSkillErrors, AgentCapabilitiesGetSkillResponses, AgentCapabilitiesGetSkillVersionErrors, AgentCapabilitiesGetSkillVersionResponses, AgentCapabilitiesListMcpRevisionsErrors, AgentCapabilitiesListMcpRevisionsResponses, AgentCapabilitiesListMcpServersErrors, AgentCapabilitiesListMcpServersResponses, AgentCapabilitiesListMcpValidationsErrors, AgentCapabilitiesListMcpValidationsResponses, AgentCapabilitiesListPluginsErrors, AgentCapabilitiesListPluginsResponses, AgentCapabilitiesListPluginVersionsErrors, AgentCapabilitiesListPluginVersionsResponses, AgentCapabilitiesListSkillsErrors, AgentCapabilitiesListSkillsResponses, AgentCapabilitiesListSkillVersionsErrors, AgentCapabilitiesListSkillVersionsResponses, AgentCapabilitiesPutMcpSecretErrors, AgentCapabilitiesPutMcpSecretResponses, AgentCapabilitiesRestartMcpRuntimeErrors, AgentCapabilitiesRestartMcpRuntimeResponses, AgentCapabilitiesSavePluginDraftErrors, AgentCapabilitiesSavePluginDraftResponses, AgentCapabilitiesSetAgentMcpErrors, AgentCapabilitiesSetAgentMcpResponses, AgentCapabilitiesSetAgentPluginsErrors, AgentCapabilitiesSetAgentPluginsResponses, AgentCapabilitiesSetAgentSkillsErrors, AgentCapabilitiesSetAgentSkillsResponses, AgentCapabilitiesSetAgentToolsErrors, AgentCapabilitiesSetAgentToolsResponses, AgentCapabilitiesSetNamespaceToolPolicyErrors, AgentCapabilitiesSetNamespaceToolPolicyResponses, AgentCapabilitiesToolCatalogErrors, AgentCapabilitiesToolCatalogResponses, AgentCapabilitiesUpdateMcpServerErrors, AgentCapabilitiesUpdateMcpServerResponses, AgentCapabilitiesUpdatePluginErrors, AgentCapabilitiesUpdatePluginResponses, AgentCapabilitiesUpdateSkillErrors, AgentCapabilitiesUpdateSkillResponses, AgentCapabilitiesUploadSkillVersionErrors, AgentCapabilitiesUploadSkillVersionResponses, AgentCapabilitiesValidateMcpTargetErrors, AgentCapabilitiesValidateMcpTargetResponses, AgentCapabilitiesValidatePluginDraftErrors, AgentCapabilitiesValidatePluginDraftResponses, AgentCopy, AgentCreate, AgentManagementCopyAgentEndpointErrors, AgentManagementCopyAgentEndpointResponses, AgentManagementCreateAgentEndpointErrors, AgentManagementCreateAgentEndpointResponses, AgentManagementCreateProfileErrors, AgentManagementCreateProfileResponses, AgentManagementDeleteAgentErrors, AgentManagementDeleteAgentResponses, AgentManagementDeleteProfileErrors, AgentManagementDeleteProfileResponses, AgentManagementEnvCatalogErrors, AgentManagementEnvCatalogResponses, AgentManagementHarnessCatalogErrors, AgentManagementHarnessCatalogResponses, AgentManagementListAgentsErrors, AgentManagementListAgentsResponses, AgentManagementListProfilesErrors, AgentManagementListProfilesResponses, AgentManagementReadAgentErrors, AgentManagementReadAgentResponses, AgentManagementReadDraftErrors, AgentManagementReadDraftResponses, AgentManagementReadProfileErrors, AgentManagementReadProfileResponses, AgentManagementSaveDraftEndpointErrors, AgentManagementSaveDraftEndpointResponses, AgentManagementUpdateAgentErrors, AgentManagementUpdateAgentResponses, AgentManagementUpdateProfileErrors, AgentManagementUpdateProfileResponses, AgentManagementValidateDraftEndpointErrors, AgentManagementValidateDraftEndpointResponses, AgentMcpBindings, AgentPluginBindings, AgentReleasesActivateReleaseErrors, AgentReleasesActivateReleaseResponses, AgentReleasesApproveToolErrors, AgentReleasesApproveToolResponses, AgentReleasesCreateAgentReleaseErrors, AgentReleasesCreateAgentReleaseResponses, AgentReleasesDenyToolErrors, AgentReleasesDenyToolResponses, AgentReleasesGetActivationErrors, AgentReleasesGetActivationResponses, AgentReleasesGetAgentReleaseErrors, AgentReleasesGetAgentReleaseResponses, AgentReleasesGetResolvedSpecErrors, AgentReleasesGetResolvedSpecResponses, AgentReleasesListAgentReleasesErrors, AgentReleasesListAgentReleasesResponses, AgentReleasesListTaskApprovalsErrors, AgentReleasesListTaskApprovalsResponses, AgentReleasesPrecheckActivationErrors, AgentReleasesPrecheckActivationResponses, AgentReleasesRetryDeploymentErrors, AgentReleasesRetryDeploymentResponses, AgentReleasesRollbackDeploymentErrors, AgentReleasesRollbackDeploymentResponses, AgentReleasesRuntimeAgentErrors, AgentReleasesRuntimeAgentResponses, AgentReleasesRuntimeAgentsErrors, AgentReleasesRuntimeAgentsResponses, AgentSkillBindings, AgentToolBindings, AgentUpdate, AppAgentManagementReleaseRoutesReleaseCreate, AppApiRoutesRuntimeArtifactsReleaseCreate, ApprovalDecision, ApprovalRequestCreate, BodyAgentCapabilitiesUploadSkillVersion, BodyConversationsUploadAttachment, BodyLoginLoginAccessToken, BodyRuntimeArtifactsUploadArtifact, CapabilityReport, ClaimInput, CliLogin, CliLogout, CliRefresh, ContextRefresh, ConversationCreate, ConversationDerive, ConversationMessageCreate, ConversationsCreateConversationErrors, ConversationsCreateConversationResponses, ConversationsCreateDelegationErrors, ConversationsCreateDelegationResponses, ConversationsCreateMessageErrors, ConversationsCreateMessageResponses, ConversationsDeriveConversationErrors, ConversationsDeriveConversationResponses, ConversationsListAttachmentsErrors, ConversationsListAttachmentsResponses, ConversationsListConversationAgentsErrors, ConversationsListConversationAgentsResponses, ConversationsListConversationModelsErrors, ConversationsListConversationModelsResponses, ConversationsListConversationRuntimesErrors, ConversationsListConversationRuntimesResponses, ConversationsListConversationsErrors, ConversationsListConversationsResponses, ConversationsListDelegationsErrors, ConversationsListDelegationsResponses, ConversationsListMessagesErrors, ConversationsListMessagesResponses, ConversationsReadConversationErrors, ConversationsReadConversationResponses, ConversationsRefreshContextSnapshotErrors, ConversationsRefreshContextSnapshotResponses, ConversationsUpdateConversationErrors, ConversationsUpdateConversationResponses, ConversationsUploadAttachmentErrors, ConversationsUploadAttachmentResponses, ConversationUpdate, DelegationCreate, DeploymentResult, DraftSave, EnablementUpdate, EventBatch, ExternalStateResolution, HarnessProfileCreate, HarnessProfileUpdate, IdentityCreate, IdentityUpdate, InternalAgentReleasesClaimAgentDeploymentErrors, InternalAgentReleasesClaimAgentDeploymentResponses, InternalAgentReleasesInternalToolApprovalStatusErrors, InternalAgentReleasesInternalToolApprovalStatusResponses, InternalAgentReleasesReportAgentDeploymentErrors, InternalAgentReleasesReportAgentDeploymentResponses, InternalAgentReleasesRequestToolApprovalErrors, InternalAgentReleasesRequestToolApprovalResponses, InternalMcpClaimPlatformMcpValidationErrors, InternalMcpClaimPlatformMcpValidationResponses, InternalMcpReportPlatformMcpValidationErrors, InternalMcpReportPlatformMcpValidationResponses, ItemCreate, ItemsCreateItemErrors, ItemsCreateItemResponses, ItemsDeleteItemErrors, ItemsDeleteItemResponses, ItemsReadItemErrors, ItemsReadItemResponses, ItemsReadItemsErrors, ItemsReadItemsResponses, ItemsUpdateItemErrors, ItemsUpdateItemResponses, ItemUpdate, LeaseInput, LlmCreateProviderConfigErrors, LlmCreateProviderConfigResponses, LlmProviderConfigCreate, LlmProviderConfigUpdate, LlmProviderSyncModelsRequest, LlmReadProviderCatalogErrors, LlmReadProviderCatalogResponses, LlmReadProviderConfigsErrors, LlmReadProviderConfigsResponses, LlmSyncProviderModelsErrors, LlmSyncProviderModelsResponses, LlmUpdateProviderConfigErrors, LlmUpdateProviderConfigResponses, LlmValidateProviderConfigErrors, LlmValidateProviderConfigResponses, LoginLoginAccessTokenErrors, LoginLoginAccessTokenResponses, LoginLogoutErrors, LoginLogoutResponses, LoginRecoverPasswordErrors, LoginRecoverPasswordHtmlContentErrors, LoginRecoverPasswordHtmlContentResponses, LoginRecoverPasswordResponses, LoginRefreshAccessTokenErrors, LoginRefreshAccessTokenResponses, LoginResetPasswordErrors, LoginResetPasswordResponses, LoginTestTokenErrors, LoginTestTokenResponses, McpRevisionCreate, McpSecretWrite, McpTargetCreate, McpValidationResult, MessageInput, NamespaceCreate, NamespacesCreateNamespaceUserErrors, NamespacesCreateNamespaceUserResponses, NamespacesDeleteNamespaceUserErrors, NamespacesDeleteNamespaceUserResponses, NamespacesReadMyNamespacesErrors, NamespacesReadMyNamespacesResponses, NamespacesReadNamespaceUsersErrors, NamespacesReadNamespaceUsersResponses, NamespacesUpdateNamespaceUserErrors, NamespacesUpdateNamespaceUserResponses, NamespaceUpdate, NamespaceUserCreate, NamespaceUserUpdate, NewPassword, NodeArtifactsDownloadArtifactErrors, NodeArtifactsDownloadArtifactResponses, NodeConfirmation, NodeEnrollInput, NodeEnrollmentEnrollNodeErrors, NodeEnrollmentEnrollNodeResponses, NodeMcpNodeMcpValidationResultErrors, NodeMcpNodeMcpValidationResultResponses, NodeMessage, NodeMutation, NodeRetry, NodeRuntimeUpsert, NodeSkip, OperatorCliCapabilitiesErrors, OperatorCliCapabilitiesResponses, OperatorCliCliLoginErrors, OperatorCliCliLoginResponses, OperatorCliCliLogoutErrors, OperatorCliCliLogoutResponses, OperatorCliCliRefreshErrors, OperatorCliCliRefreshResponses, PlatformCreateNamespaceErrors, PlatformCreateNamespaceResponses, PlatformCreatePlatformUserErrors, PlatformCreatePlatformUserResponses, PlatformDeleteNamespaceErrors, PlatformDeleteNamespaceResponses, PlatformDeletePlatformUserErrors, PlatformDeletePlatformUserResponses, PlatformReadNamespacesErrors, PlatformReadNamespacesResponses, PlatformReadPlatformUsersErrors, PlatformReadPlatformUsersResponses, PlatformRuntimeUpsert, PlatformUpdateNamespaceErrors, PlatformUpdateNamespaceResponses, PlatformUpdatePlatformUserErrors, PlatformUpdatePlatformUserResponses, PluginDraftSave, PluginVersionCreate, PrivateCreateUserErrors, PrivateCreateUserResponses, PrivateUserCreate, ProjectCreate, ProjectMembersUpdate, ProjectsBindSpecStandardErrors, ProjectsBindSpecStandardResponses, ProjectsCreateProjectErrors, ProjectsCreateProjectResponses, ProjectsCreateRepositoryErrors, ProjectsCreateRepositoryResponses, ProjectsCreateSpecLocationErrors, ProjectsCreateSpecLocationResponses, ProjectsCreateSpecStandardErrors, ProjectsCreateSpecStandardResponses, ProjectsDeleteRepositoryErrors, ProjectsDeleteRepositoryResponses, ProjectsDeleteSpecLocationErrors, ProjectsDeleteSpecLocationResponses, ProjectsDeprecateStandardVersionErrors, ProjectsDeprecateStandardVersionResponses, ProjectsListProjectMembersErrors, ProjectsListProjectMembersResponses, ProjectsListProjectsErrors, ProjectsListProjectsResponses, ProjectsListRepositoriesErrors, ProjectsListRepositoriesResponses, ProjectsListSpecLocationsErrors, ProjectsListSpecLocationsResponses, ProjectsListSpecStandardsErrors, ProjectsListSpecStandardsResponses, ProjectsListStandardVersionsErrors, ProjectsListStandardVersionsResponses, ProjectsPreviewSpecDiffErrors, ProjectsPreviewSpecDiffResponses, ProjectsPublishStandardVersionErrors, ProjectsPublishStandardVersionResponses, ProjectsReadProjectErrors, ProjectsReadProjectResponses, ProjectsReplaceProjectMembersErrors, ProjectsReplaceProjectMembersResponses, ProjectsUpdateProjectErrors, ProjectsUpdateProjectResponses, ProjectsUpdateRepositoryErrors, ProjectsUpdateRepositoryResponses, ProjectsUpdateSpecLocationErrors, ProjectsUpdateSpecLocationResponses, ProjectsValidateRepositoryAccessErrors, ProjectsValidateRepositoryAccessResponses, ProjectUpdate, RegistrySync, RepositoryCreate, RepositoryUpdate, RepositoryValidationRequest, RuntimeArtifactsCreateReleaseErrors, RuntimeArtifactsCreateReleaseResponses, RuntimeArtifactsListArtifactsErrors, RuntimeArtifactsListArtifactsResponses, RuntimeArtifactsReadArtifactErrors, RuntimeArtifactsReadArtifactResponses, RuntimeArtifactsReadReleaseErrors, RuntimeArtifactsReadReleaseResponses, RuntimeArtifactsRetryDeploymentErrors, RuntimeArtifactsRetryDeploymentResponses, RuntimeArtifactsRollbackDeploymentErrors, RuntimeArtifactsRollbackDeploymentResponses, RuntimeArtifactsUploadArtifactErrors, RuntimeArtifactsUploadArtifactResponses, RuntimeInternalAppendEventsErrors, RuntimeInternalAppendEventsResponses, RuntimeInternalClaimPlatformTaskErrors, RuntimeInternalClaimPlatformTaskResponses, RuntimeInternalRenewPlatformTaskLeaseErrors, RuntimeInternalRenewPlatformTaskLeaseResponses, RuntimeInternalReportPlatformCapabilitiesErrors, RuntimeInternalReportPlatformCapabilitiesResponses, RuntimeInternalResolveRouteErrors, RuntimeInternalResolveRouteResponses, RuntimeInternalSigningProbeErrors, RuntimeInternalSigningProbeResponses, RuntimeNodesConfigureNodeRuntimeErrors, RuntimeNodesConfigureNodeRuntimeResponses, RuntimeNodesCreateTokenErrors, RuntimeNodesCreateTokenResponses, RuntimeNodesListNodesErrors, RuntimeNodesListNodesResponses, RuntimeNodesListTokensErrors, RuntimeNodesListTokensResponses, RuntimeNodesReadNodeErrors, RuntimeNodesReadNodeResponses, RuntimeNodesRevokeNodeErrors, RuntimeNodesRevokeNodeResponses, RuntimeNodesRevokeTokenErrors, RuntimeNodesRevokeTokenResponses, RuntimesCancelTaskErrors, RuntimesCancelTaskResponses, RuntimesCreatePlatformSessionErrors, RuntimesCreatePlatformSessionResponses, RuntimesCreateSessionMessageErrors, RuntimesCreateSessionMessageResponses, RuntimesInvokeSessionSkillErrors, RuntimesInvokeSessionSkillResponses, RuntimesReadPlatformRuntimeErrors, RuntimesReadPlatformRuntimeResponses, RuntimesReadTaskErrors, RuntimesReadTaskEventsErrors, RuntimesReadTaskEventsResponses, RuntimesReadTaskResponses, RuntimesStreamTaskEventsErrors, RuntimesStreamTaskEventsResponses, RuntimesUpsertPlatformRuntimeErrors, RuntimesUpsertPlatformRuntimeResponses, RuntimesValidatePlatformRuntimeErrors, RuntimesValidatePlatformRuntimeResponses, RuntimeTasksCancelTaskErrors, RuntimeTasksCancelTaskResponses, RuntimeTasksCreateTaskErrors, RuntimeTasksCreateTaskResponses, RuntimeTasksListTasksErrors, RuntimeTasksListTasksResponses, RuntimeTasksReadTaskErrors, RuntimeTasksReadTaskEventsErrors, RuntimeTasksReadTaskEventsResponses, RuntimeTasksReadTaskResponses, RuntimeTasksRetryFailedTaskErrors, RuntimeTasksRetryFailedTaskResponses, SessionCreate, SkillInvokeInput, SpecBindingUpdate, SpecLocationCreate, SpecLocationUpdate, SpecStandardCreate, SpecStandardVersionCreate, SpecVersionDeprecate, TaskCreate, ToolIntent, UpdatePassword, UserCreate, UserRegister, UsersCreateUserErrors, UsersCreateUserResponses, UsersDeleteUserErrors, UsersDeleteUserMeErrors, UsersDeleteUserMeResponses, UsersDeleteUserResponses, UsersReadUserByIdErrors, UsersReadUserByIdResponses, UsersReadUserMeErrors, UsersReadUserMeResponses, UsersReadUsersErrors, UsersReadUsersResponses, UsersRegisterUserErrors, UsersRegisterUserResponses, UsersUpdatePasswordMeErrors, UsersUpdatePasswordMeResponses, UsersUpdateUserErrors, UsersUpdateUserMeErrors, UsersUpdateUserMeResponses, UsersUpdateUserResponses, UserUpdate, UserUpdateMe, UtilsHealthCheckResponses, UtilsTestEmailErrors, UtilsTestEmailResponses, WorkflowInstanceCreate, WorkflowPreflight, WorkflowRegistrySyncRegistryErrors, WorkflowRegistrySyncRegistryResponses, WorkflowsCancelWorkflowInstanceErrors, WorkflowsCancelWorkflowInstanceResponses, WorkflowsConfirmWorkflowNodeErrors, WorkflowsConfirmWorkflowNodeResponses, WorkflowsCreateWorkflowInstanceErrors, WorkflowsCreateWorkflowInstanceResponses, WorkflowsListWorkflowEventsErrors, WorkflowsListWorkflowEventsResponses, WorkflowsListWorkflowInstancesErrors, WorkflowsListWorkflowInstancesResponses, WorkflowsListWorkflowTemplatesErrors, WorkflowsListWorkflowTemplatesResponses, WorkflowsPreflightWorkflowErrors, WorkflowsPreflightWorkflowResponses, WorkflowsReadEnablementErrors, WorkflowsReadEnablementResponses, WorkflowsReadWorkflowInstanceErrors, WorkflowsReadWorkflowInstanceResponses, WorkflowsReadWorkflowNodeErrors, WorkflowsReadWorkflowNodeResponses, WorkflowsReadWorkflowVersionErrors, WorkflowsReadWorkflowVersionResponses, WorkflowsResolveExternalStateErrors, WorkflowsResolveExternalStateResponses, WorkflowsRetryWorkflowNodeErrors, WorkflowsRetryWorkflowNodeResponses, WorkflowsSendAgentNodeMessageErrors, WorkflowsSendAgentNodeMessageResponses, WorkflowsSkipWorkflowNodeErrors, WorkflowsSkipWorkflowNodeResponses, WorkflowsSubmitWorkflowNodeErrors, WorkflowsSubmitWorkflowNodeResponses, WorkflowsUpdateEnablementErrors, WorkflowsUpdateEnablementResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -3624,6 +3624,1441 @@ export const operatorCliCapabilities = <ThrowOnError extends boolean = false>(op
     url: '/api/v1/capabilities',
     ...options
 });
+
+/**
+ * List Projects
+ */
+export const projectsListProjects = <ThrowOnError extends boolean = false>(parameters?: {
+    'X-Namespace-Id'?: string | null;
+    include_archived?: boolean;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<ProjectsListProjectsResponses, ProjectsListProjectsErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'query', key: 'include_archived' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<ProjectsListProjectsResponses, ProjectsListProjectsErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/projects',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Create Project
+ */
+export const projectsCreateProject = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    namespace_id?: string | null;
+    projectCreate: ProjectCreate;
+}, options?: Options<never, ThrowOnError>): RequestResult<ProjectsCreateProjectResponses, ProjectsCreateProjectErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'projectCreate', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<ProjectsCreateProjectResponses, ProjectsCreateProjectErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/projects',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Read Project
+ */
+export const projectsReadProject = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    project_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<ProjectsReadProjectResponses, ProjectsReadProjectErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'project_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<ProjectsReadProjectResponses, ProjectsReadProjectErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/projects/{project_id}',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Update Project
+ */
+export const projectsUpdateProject = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    project_id: string;
+    namespace_id?: string | null;
+    projectUpdate: ProjectUpdate;
+}, options?: Options<never, ThrowOnError>): RequestResult<ProjectsUpdateProjectResponses, ProjectsUpdateProjectErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'project_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'projectUpdate', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).patch<ProjectsUpdateProjectResponses, ProjectsUpdateProjectErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/projects/{project_id}',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * List Project Members
+ */
+export const projectsListProjectMembers = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    project_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<ProjectsListProjectMembersResponses, ProjectsListProjectMembersErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'project_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<ProjectsListProjectMembersResponses, ProjectsListProjectMembersErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/projects/{project_id}/members',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Replace Project Members
+ */
+export const projectsReplaceProjectMembers = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    project_id: string;
+    namespace_id?: string | null;
+    projectMembersUpdate: ProjectMembersUpdate;
+}, options?: Options<never, ThrowOnError>): RequestResult<ProjectsReplaceProjectMembersResponses, ProjectsReplaceProjectMembersErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'project_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'projectMembersUpdate', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).put<ProjectsReplaceProjectMembersResponses, ProjectsReplaceProjectMembersErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/projects/{project_id}/members',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * List Repositories
+ */
+export const projectsListRepositories = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    project_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<ProjectsListRepositoriesResponses, ProjectsListRepositoriesErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'project_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<ProjectsListRepositoriesResponses, ProjectsListRepositoriesErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/projects/{project_id}/repositories',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Create Repository
+ */
+export const projectsCreateRepository = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    project_id: string;
+    namespace_id?: string | null;
+    repositoryCreate: RepositoryCreate;
+}, options?: Options<never, ThrowOnError>): RequestResult<ProjectsCreateRepositoryResponses, ProjectsCreateRepositoryErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'project_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'repositoryCreate', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<ProjectsCreateRepositoryResponses, ProjectsCreateRepositoryErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/projects/{project_id}/repositories',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Delete Repository
+ */
+export const projectsDeleteRepository = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    project_id: string;
+    repository_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<ProjectsDeleteRepositoryResponses, ProjectsDeleteRepositoryErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'project_id' },
+                { in: 'path', key: 'repository_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).delete<ProjectsDeleteRepositoryResponses, ProjectsDeleteRepositoryErrors, ThrowOnError>({
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/projects/{project_id}/repositories/{repository_id}',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Update Repository
+ */
+export const projectsUpdateRepository = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    project_id: string;
+    repository_id: string;
+    namespace_id?: string | null;
+    repositoryUpdate: RepositoryUpdate;
+}, options?: Options<never, ThrowOnError>): RequestResult<ProjectsUpdateRepositoryResponses, ProjectsUpdateRepositoryErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'project_id' },
+                { in: 'path', key: 'repository_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'repositoryUpdate', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).patch<ProjectsUpdateRepositoryResponses, ProjectsUpdateRepositoryErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/projects/{project_id}/repositories/{repository_id}',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Validate Repository Access
+ */
+export const projectsValidateRepositoryAccess = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    project_id: string;
+    repository_id: string;
+    namespace_id?: string | null;
+    repositoryValidationRequest: RepositoryValidationRequest;
+}, options?: Options<never, ThrowOnError>): RequestResult<ProjectsValidateRepositoryAccessResponses, ProjectsValidateRepositoryAccessErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'project_id' },
+                { in: 'path', key: 'repository_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'repositoryValidationRequest', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<ProjectsValidateRepositoryAccessResponses, ProjectsValidateRepositoryAccessErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/projects/{project_id}/repositories/{repository_id}/validate',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * List Spec Locations
+ */
+export const projectsListSpecLocations = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    project_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<ProjectsListSpecLocationsResponses, ProjectsListSpecLocationsErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'project_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<ProjectsListSpecLocationsResponses, ProjectsListSpecLocationsErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/projects/{project_id}/spec-locations',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Create Spec Location
+ */
+export const projectsCreateSpecLocation = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    project_id: string;
+    namespace_id?: string | null;
+    specLocationCreate: SpecLocationCreate;
+}, options?: Options<never, ThrowOnError>): RequestResult<ProjectsCreateSpecLocationResponses, ProjectsCreateSpecLocationErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'project_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'specLocationCreate', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<ProjectsCreateSpecLocationResponses, ProjectsCreateSpecLocationErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/projects/{project_id}/spec-locations',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Delete Spec Location
+ */
+export const projectsDeleteSpecLocation = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    project_id: string;
+    location_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<ProjectsDeleteSpecLocationResponses, ProjectsDeleteSpecLocationErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'project_id' },
+                { in: 'path', key: 'location_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).delete<ProjectsDeleteSpecLocationResponses, ProjectsDeleteSpecLocationErrors, ThrowOnError>({
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/projects/{project_id}/spec-locations/{location_id}',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Update Spec Location
+ */
+export const projectsUpdateSpecLocation = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    project_id: string;
+    location_id: string;
+    namespace_id?: string | null;
+    specLocationUpdate: SpecLocationUpdate;
+}, options?: Options<never, ThrowOnError>): RequestResult<ProjectsUpdateSpecLocationResponses, ProjectsUpdateSpecLocationErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'project_id' },
+                { in: 'path', key: 'location_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'specLocationUpdate', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).patch<ProjectsUpdateSpecLocationResponses, ProjectsUpdateSpecLocationErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/projects/{project_id}/spec-locations/{location_id}',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * List Spec Standards
+ */
+export const projectsListSpecStandards = <ThrowOnError extends boolean = false>(parameters?: {
+    'X-Namespace-Id'?: string | null;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<ProjectsListSpecStandardsResponses, ProjectsListSpecStandardsErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [{ in: 'headers', key: 'X-Namespace-Id' }, { in: 'query', key: 'namespace_id' }] }]);
+    return (options?.client ?? client).get<ProjectsListSpecStandardsResponses, ProjectsListSpecStandardsErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/spec-standards',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Create Spec Standard
+ */
+export const projectsCreateSpecStandard = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    namespace_id?: string | null;
+    specStandardCreate: SpecStandardCreate;
+}, options?: Options<never, ThrowOnError>): RequestResult<ProjectsCreateSpecStandardResponses, ProjectsCreateSpecStandardErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'specStandardCreate', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<ProjectsCreateSpecStandardResponses, ProjectsCreateSpecStandardErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/spec-standards',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * List Standard Versions
+ */
+export const projectsListStandardVersions = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    standard_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<ProjectsListStandardVersionsResponses, ProjectsListStandardVersionsErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'standard_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<ProjectsListStandardVersionsResponses, ProjectsListStandardVersionsErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/spec-standards/{standard_id}/versions',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Publish Standard Version
+ */
+export const projectsPublishStandardVersion = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    standard_id: string;
+    namespace_id?: string | null;
+    specStandardVersionCreate: SpecStandardVersionCreate;
+}, options?: Options<never, ThrowOnError>): RequestResult<ProjectsPublishStandardVersionResponses, ProjectsPublishStandardVersionErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'standard_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'specStandardVersionCreate', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<ProjectsPublishStandardVersionResponses, ProjectsPublishStandardVersionErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/spec-standards/{standard_id}/versions',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Deprecate Standard Version
+ */
+export const projectsDeprecateStandardVersion = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    version_id: string;
+    namespace_id?: string | null;
+    specVersionDeprecate: SpecVersionDeprecate;
+}, options?: Options<never, ThrowOnError>): RequestResult<ProjectsDeprecateStandardVersionResponses, ProjectsDeprecateStandardVersionErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'version_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'specVersionDeprecate', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).patch<ProjectsDeprecateStandardVersionResponses, ProjectsDeprecateStandardVersionErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/spec-standard-versions/{version_id}',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Bind Spec Standard
+ */
+export const projectsBindSpecStandard = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    project_id: string;
+    location_id: string;
+    namespace_id?: string | null;
+    specBindingUpdate: SpecBindingUpdate;
+}, options?: Options<never, ThrowOnError>): RequestResult<ProjectsBindSpecStandardResponses, ProjectsBindSpecStandardErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'project_id' },
+                { in: 'path', key: 'location_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'specBindingUpdate', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).put<ProjectsBindSpecStandardResponses, ProjectsBindSpecStandardErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/projects/{project_id}/spec-locations/{location_id}/binding',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Preview Spec Diff
+ */
+export const projectsPreviewSpecDiff = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    project_id: string;
+    location_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<ProjectsPreviewSpecDiffResponses, ProjectsPreviewSpecDiffErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'project_id' },
+                { in: 'path', key: 'location_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).post<ProjectsPreviewSpecDiffResponses, ProjectsPreviewSpecDiffErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/projects/{project_id}/spec-locations/{location_id}/diff',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * List Conversation Runtimes
+ */
+export const conversationsListConversationRuntimes = <ThrowOnError extends boolean = false>(parameters?: {
+    'X-Namespace-Id'?: string | null;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<ConversationsListConversationRuntimesResponses, ConversationsListConversationRuntimesErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [{ in: 'headers', key: 'X-Namespace-Id' }, { in: 'query', key: 'namespace_id' }] }]);
+    return (options?.client ?? client).get<ConversationsListConversationRuntimesResponses, ConversationsListConversationRuntimesErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/conversation-catalog/runtimes',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * List Conversation Models
+ */
+export const conversationsListConversationModels = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    runtime_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<ConversationsListConversationModelsResponses, ConversationsListConversationModelsErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'query', key: 'runtime_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<ConversationsListConversationModelsResponses, ConversationsListConversationModelsErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/conversation-catalog/models',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * List Conversation Agents
+ */
+export const conversationsListConversationAgents = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    runtime_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<ConversationsListConversationAgentsResponses, ConversationsListConversationAgentsErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'query', key: 'runtime_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<ConversationsListConversationAgentsResponses, ConversationsListConversationAgentsErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/conversation-catalog/agents',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * List Conversations
+ */
+export const conversationsListConversations = <ThrowOnError extends boolean = false>(parameters?: {
+    'X-Namespace-Id'?: string | null;
+    include_archived?: boolean;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<ConversationsListConversationsResponses, ConversationsListConversationsErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'query', key: 'include_archived' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<ConversationsListConversationsResponses, ConversationsListConversationsErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/conversations',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Create Conversation
+ */
+export const conversationsCreateConversation = <ThrowOnError extends boolean = false>(parameters: {
+    'Idempotency-Key'?: string | null;
+    'X-Namespace-Id'?: string | null;
+    namespace_id?: string | null;
+    conversationCreate: ConversationCreate;
+}, options?: Options<never, ThrowOnError>): RequestResult<ConversationsCreateConversationResponses, ConversationsCreateConversationErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'Idempotency-Key' },
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'conversationCreate', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<ConversationsCreateConversationResponses, ConversationsCreateConversationErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/conversations',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Read Conversation
+ */
+export const conversationsReadConversation = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    conversation_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<ConversationsReadConversationResponses, ConversationsReadConversationErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'conversation_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<ConversationsReadConversationResponses, ConversationsReadConversationErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/conversations/{conversation_id}',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Update Conversation
+ */
+export const conversationsUpdateConversation = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    conversation_id: string;
+    namespace_id?: string | null;
+    conversationUpdate: ConversationUpdate;
+}, options?: Options<never, ThrowOnError>): RequestResult<ConversationsUpdateConversationResponses, ConversationsUpdateConversationErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'conversation_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'conversationUpdate', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).patch<ConversationsUpdateConversationResponses, ConversationsUpdateConversationErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/conversations/{conversation_id}',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * List Attachments
+ */
+export const conversationsListAttachments = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    conversation_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<ConversationsListAttachmentsResponses, ConversationsListAttachmentsErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'conversation_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<ConversationsListAttachmentsResponses, ConversationsListAttachmentsErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/conversations/{conversation_id}/attachments',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Upload Attachment
+ */
+export const conversationsUploadAttachment = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    conversation_id: string;
+    namespace_id?: string | null;
+    bodyConversationsUploadAttachment: BodyConversationsUploadAttachment;
+}, options?: Options<never, ThrowOnError>): RequestResult<ConversationsUploadAttachmentResponses, ConversationsUploadAttachmentErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'conversation_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'bodyConversationsUploadAttachment', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<ConversationsUploadAttachmentResponses, ConversationsUploadAttachmentErrors, ThrowOnError>({
+        ...formDataBodySerializer,
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/conversations/{conversation_id}/attachments',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': null,
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * List Messages
+ */
+export const conversationsListMessages = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    conversation_id: string;
+    after_sequence?: number;
+    limit?: number;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<ConversationsListMessagesResponses, ConversationsListMessagesErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'conversation_id' },
+                { in: 'query', key: 'after_sequence' },
+                { in: 'query', key: 'limit' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<ConversationsListMessagesResponses, ConversationsListMessagesErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/conversations/{conversation_id}/messages',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Create Message
+ */
+export const conversationsCreateMessage = <ThrowOnError extends boolean = false>(parameters: {
+    'Idempotency-Key'?: string | null;
+    'X-Namespace-Id'?: string | null;
+    conversation_id: string;
+    namespace_id?: string | null;
+    conversationMessageCreate: ConversationMessageCreate;
+}, options?: Options<never, ThrowOnError>): RequestResult<ConversationsCreateMessageResponses, ConversationsCreateMessageErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'Idempotency-Key' },
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'conversation_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'conversationMessageCreate', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<ConversationsCreateMessageResponses, ConversationsCreateMessageErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/conversations/{conversation_id}/messages',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * List Delegations
+ */
+export const conversationsListDelegations = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    conversation_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<ConversationsListDelegationsResponses, ConversationsListDelegationsErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'conversation_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<ConversationsListDelegationsResponses, ConversationsListDelegationsErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/conversations/{conversation_id}/delegations',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Create Delegation
+ */
+export const conversationsCreateDelegation = <ThrowOnError extends boolean = false>(parameters: {
+    'Idempotency-Key'?: string | null;
+    'X-Namespace-Id'?: string | null;
+    conversation_id: string;
+    namespace_id?: string | null;
+    delegationCreate: DelegationCreate;
+}, options?: Options<never, ThrowOnError>): RequestResult<ConversationsCreateDelegationResponses, ConversationsCreateDelegationErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'Idempotency-Key' },
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'conversation_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'delegationCreate', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<ConversationsCreateDelegationResponses, ConversationsCreateDelegationErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/conversations/{conversation_id}/delegations',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Refresh Context Snapshot
+ */
+export const conversationsRefreshContextSnapshot = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    conversation_id: string;
+    namespace_id?: string | null;
+    contextRefresh: ContextRefresh;
+}, options?: Options<never, ThrowOnError>): RequestResult<ConversationsRefreshContextSnapshotResponses, ConversationsRefreshContextSnapshotErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'conversation_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'contextRefresh', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<ConversationsRefreshContextSnapshotResponses, ConversationsRefreshContextSnapshotErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/conversations/{conversation_id}/context-snapshots',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Derive Conversation
+ */
+export const conversationsDeriveConversation = <ThrowOnError extends boolean = false>(parameters: {
+    'Idempotency-Key'?: string | null;
+    'X-Namespace-Id'?: string | null;
+    conversation_id: string;
+    namespace_id?: string | null;
+    conversationDerive: ConversationDerive;
+}, options?: Options<never, ThrowOnError>): RequestResult<ConversationsDeriveConversationResponses, ConversationsDeriveConversationErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'Idempotency-Key' },
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'conversation_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'conversationDerive', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<ConversationsDeriveConversationResponses, ConversationsDeriveConversationErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/conversations/{conversation_id}/derive',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * List Workflow Templates
+ */
+export const workflowsListWorkflowTemplates = <ThrowOnError extends boolean = false>(parameters?: {
+    'X-Namespace-Id'?: string | null;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<WorkflowsListWorkflowTemplatesResponses, WorkflowsListWorkflowTemplatesErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [{ in: 'headers', key: 'X-Namespace-Id' }, { in: 'query', key: 'namespace_id' }] }]);
+    return (options?.client ?? client).get<WorkflowsListWorkflowTemplatesResponses, WorkflowsListWorkflowTemplatesErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/workflow-templates',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Read Workflow Version
+ */
+export const workflowsReadWorkflowVersion = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    template_id: string;
+    version_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<WorkflowsReadWorkflowVersionResponses, WorkflowsReadWorkflowVersionErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'template_id' },
+                { in: 'path', key: 'version_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<WorkflowsReadWorkflowVersionResponses, WorkflowsReadWorkflowVersionErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/workflow-templates/{template_id}/versions/{version_id}',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Read Enablement
+ */
+export const workflowsReadEnablement = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    template_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<WorkflowsReadEnablementResponses, WorkflowsReadEnablementErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'template_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<WorkflowsReadEnablementResponses, WorkflowsReadEnablementErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/workflow-templates/{template_id}/enablement',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Update Enablement
+ */
+export const workflowsUpdateEnablement = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    template_id: string;
+    namespace_id?: string | null;
+    enablementUpdate: EnablementUpdate;
+}, options?: Options<never, ThrowOnError>): RequestResult<WorkflowsUpdateEnablementResponses, WorkflowsUpdateEnablementErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'template_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'enablementUpdate', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).put<WorkflowsUpdateEnablementResponses, WorkflowsUpdateEnablementErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/workflow-templates/{template_id}/enablement',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Preflight Workflow
+ */
+export const workflowsPreflightWorkflow = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    template_id: string;
+    namespace_id?: string | null;
+    workflowPreflight: WorkflowPreflight;
+}, options?: Options<never, ThrowOnError>): RequestResult<WorkflowsPreflightWorkflowResponses, WorkflowsPreflightWorkflowErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'template_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'workflowPreflight', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<WorkflowsPreflightWorkflowResponses, WorkflowsPreflightWorkflowErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/workflow-templates/{template_id}/preflight',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * List Workflow Instances
+ */
+export const workflowsListWorkflowInstances = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    project_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<WorkflowsListWorkflowInstancesResponses, WorkflowsListWorkflowInstancesErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'project_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<WorkflowsListWorkflowInstancesResponses, WorkflowsListWorkflowInstancesErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/projects/{project_id}/workflow-instances',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Create Workflow Instance
+ */
+export const workflowsCreateWorkflowInstance = <ThrowOnError extends boolean = false>(parameters: {
+    'Idempotency-Key'?: string | null;
+    'X-Namespace-Id'?: string | null;
+    project_id: string;
+    namespace_id?: string | null;
+    workflowInstanceCreate: WorkflowInstanceCreate;
+}, options?: Options<never, ThrowOnError>): RequestResult<WorkflowsCreateWorkflowInstanceResponses, WorkflowsCreateWorkflowInstanceErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'Idempotency-Key' },
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'project_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'workflowInstanceCreate', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<WorkflowsCreateWorkflowInstanceResponses, WorkflowsCreateWorkflowInstanceErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/projects/{project_id}/workflow-instances',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Read Workflow Instance
+ */
+export const workflowsReadWorkflowInstance = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    instance_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<WorkflowsReadWorkflowInstanceResponses, WorkflowsReadWorkflowInstanceErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'instance_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<WorkflowsReadWorkflowInstanceResponses, WorkflowsReadWorkflowInstanceErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/workflow-instances/{instance_id}',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Cancel Workflow Instance
+ */
+export const workflowsCancelWorkflowInstance = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    instance_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<WorkflowsCancelWorkflowInstanceResponses, WorkflowsCancelWorkflowInstanceErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'instance_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).post<WorkflowsCancelWorkflowInstanceResponses, WorkflowsCancelWorkflowInstanceErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/workflow-instances/{instance_id}/cancel',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * List Workflow Events
+ */
+export const workflowsListWorkflowEvents = <ThrowOnError extends boolean = false>(parameters: {
+    Accept?: string | null;
+    'Last-Event-ID'?: string | null;
+    'X-Namespace-Id'?: string | null;
+    instance_id: string;
+    after_sequence?: number;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<WorkflowsListWorkflowEventsResponses, WorkflowsListWorkflowEventsErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'Accept' },
+                { in: 'headers', key: 'Last-Event-ID' },
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'instance_id' },
+                { in: 'query', key: 'after_sequence' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<WorkflowsListWorkflowEventsResponses, WorkflowsListWorkflowEventsErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/workflow-instances/{instance_id}/events',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Read Workflow Node
+ */
+export const workflowsReadWorkflowNode = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    instance_id: string;
+    node_key: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<WorkflowsReadWorkflowNodeResponses, WorkflowsReadWorkflowNodeErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'instance_id' },
+                { in: 'path', key: 'node_key' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<WorkflowsReadWorkflowNodeResponses, WorkflowsReadWorkflowNodeErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/workflow-instances/{instance_id}/nodes/{node_key}',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Submit Workflow Node
+ */
+export const workflowsSubmitWorkflowNode = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    instance_id: string;
+    node_key: string;
+    namespace_id?: string | null;
+    nodeMutation: NodeMutation;
+}, options?: Options<never, ThrowOnError>): RequestResult<WorkflowsSubmitWorkflowNodeResponses, WorkflowsSubmitWorkflowNodeErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'instance_id' },
+                { in: 'path', key: 'node_key' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'nodeMutation', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<WorkflowsSubmitWorkflowNodeResponses, WorkflowsSubmitWorkflowNodeErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/workflow-instances/{instance_id}/nodes/{node_key}/submit',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Confirm Workflow Node
+ */
+export const workflowsConfirmWorkflowNode = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    instance_id: string;
+    node_key: string;
+    namespace_id?: string | null;
+    nodeConfirmation: NodeConfirmation;
+}, options?: Options<never, ThrowOnError>): RequestResult<WorkflowsConfirmWorkflowNodeResponses, WorkflowsConfirmWorkflowNodeErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'instance_id' },
+                { in: 'path', key: 'node_key' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'nodeConfirmation', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<WorkflowsConfirmWorkflowNodeResponses, WorkflowsConfirmWorkflowNodeErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/workflow-instances/{instance_id}/nodes/{node_key}/confirm',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Skip Workflow Node
+ */
+export const workflowsSkipWorkflowNode = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    instance_id: string;
+    node_key: string;
+    namespace_id?: string | null;
+    nodeSkip: NodeSkip;
+}, options?: Options<never, ThrowOnError>): RequestResult<WorkflowsSkipWorkflowNodeResponses, WorkflowsSkipWorkflowNodeErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'instance_id' },
+                { in: 'path', key: 'node_key' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'nodeSkip', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<WorkflowsSkipWorkflowNodeResponses, WorkflowsSkipWorkflowNodeErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/workflow-instances/{instance_id}/nodes/{node_key}/skip',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Retry Workflow Node
+ */
+export const workflowsRetryWorkflowNode = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    instance_id: string;
+    node_key: string;
+    namespace_id?: string | null;
+    nodeRetry: NodeRetry;
+}, options?: Options<never, ThrowOnError>): RequestResult<WorkflowsRetryWorkflowNodeResponses, WorkflowsRetryWorkflowNodeErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'instance_id' },
+                { in: 'path', key: 'node_key' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'nodeRetry', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<WorkflowsRetryWorkflowNodeResponses, WorkflowsRetryWorkflowNodeErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/workflow-instances/{instance_id}/nodes/{node_key}/retry',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Resolve External State
+ */
+export const workflowsResolveExternalState = <ThrowOnError extends boolean = false>(parameters: {
+    'Idempotency-Key'?: string | null;
+    'X-Namespace-Id'?: string | null;
+    instance_id: string;
+    node_key: string;
+    namespace_id?: string | null;
+    externalStateResolution: ExternalStateResolution;
+}, options?: Options<never, ThrowOnError>): RequestResult<WorkflowsResolveExternalStateResponses, WorkflowsResolveExternalStateErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'Idempotency-Key' },
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'instance_id' },
+                { in: 'path', key: 'node_key' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'externalStateResolution', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<WorkflowsResolveExternalStateResponses, WorkflowsResolveExternalStateErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/workflow-instances/{instance_id}/nodes/{node_key}/external-state-resolution',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Send Agent Node Message
+ */
+export const workflowsSendAgentNodeMessage = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    instance_id: string;
+    node_key: string;
+    namespace_id?: string | null;
+    nodeMessage: NodeMessage;
+}, options?: Options<never, ThrowOnError>): RequestResult<WorkflowsSendAgentNodeMessageResponses, WorkflowsSendAgentNodeMessageErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'instance_id' },
+                { in: 'path', key: 'node_key' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'nodeMessage', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<WorkflowsSendAgentNodeMessageResponses, WorkflowsSendAgentNodeMessageErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/workflow-instances/{instance_id}/nodes/{node_key}/messages',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Sync Registry
+ */
+export const workflowRegistrySyncRegistry = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Runtime-Token'?: string | null;
+    registrySync: RegistrySync;
+}, options?: Options<never, ThrowOnError>): RequestResult<WorkflowRegistrySyncRegistryResponses, WorkflowRegistrySyncRegistryErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [{ in: 'headers', key: 'X-Runtime-Token' }, { key: 'registrySync', map: 'body' }] }]);
+    return (options?.client ?? client).post<WorkflowRegistrySyncRegistryResponses, WorkflowRegistrySyncRegistryErrors, ThrowOnError>({
+        responseType: 'json',
+        url: '/api/v1/internal/workflow-registry/sync',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
 
 /**
  * Create User

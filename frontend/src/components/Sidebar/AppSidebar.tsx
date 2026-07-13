@@ -3,9 +3,12 @@ import {
   Briefcase,
   Building2,
   Cpu,
+  FolderKanban,
   Home,
+  MessageSquare,
   Sparkles,
   Users,
+  Workflow,
 } from "lucide-react"
 
 import { SidebarAppearance } from "@/components/Common/Appearance"
@@ -23,6 +26,8 @@ import { User } from "./User"
 const baseItems: Item[] = [
   { icon: Home, title: "Dashboard", path: "/" },
   { icon: Briefcase, title: "Items", path: "/items" },
+  { icon: MessageSquare, title: "AI 工作台", path: "/workspace" },
+  { icon: FolderKanban, title: "项目", path: "/projects" },
 ]
 
 export function AppSidebar() {
@@ -54,6 +59,14 @@ export function AppSidebar() {
             { title: "Tools", path: "/system/tools" },
             { title: "MCP Servers", path: "/system/mcp-servers" },
             { title: "Plugins", path: "/system/plugins" },
+          ],
+        })
+        items.push({
+          icon: Workflow,
+          title: "Workflow 管理",
+          children: [
+            { title: "流程模板", path: "/system/workflows" },
+            { title: "Spec 标准", path: "/system/spec-standards" },
           ],
         })
       }

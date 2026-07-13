@@ -1,12 +1,29 @@
-from sqlmodel import Session, delete
+from sqlmodel import Session, delete, update
 
 from app.agent_management.models import (
     AgentDefinition,
     AgentDraft,
     HarnessProfile,
 )
+from app.conversation_management.models import (
+    AgentDelegation,
+    Conversation,
+    ConversationAgent,
+    ConversationAttachment,
+    ConversationContextSnapshot,
+    ConversationMessage,
+)
 from app.core.config import settings
 from app.models import Item, LlmProviderConfig, LlmProviderModel, User
+from app.project_management.models import (
+    Project,
+    ProjectMember,
+    ProjectRepository,
+    ProjectSpecBinding,
+    ProjectSpecLocation,
+    SpecStandard,
+    SpecStandardVersion,
+)
 from app.runtime.models import (
     AgentEvent,
     AgentSession,
@@ -22,9 +39,44 @@ from app.runtime.models import (
     RuntimeProfile,
     RuntimeSecret,
 )
+from app.workflow_management.models import (
+    NamespaceWorkflowEnablement,
+    WorkflowArtifact,
+    WorkflowConfirmation,
+    WorkflowEvent,
+    WorkflowGateResult,
+    WorkflowInstance,
+    WorkflowNodeExecution,
+    WorkflowNodeInstance,
+    WorkflowNodeRevision,
+)
 
 
 def cleanup_test_data(session: Session) -> None:
+    session.execute(delete(WorkflowArtifact))
+    session.execute(delete(WorkflowConfirmation))
+    session.execute(delete(WorkflowGateResult))
+    session.execute(delete(WorkflowNodeExecution))
+    session.execute(update(WorkflowNodeInstance).values(current_revision_id=None))
+    session.execute(delete(WorkflowNodeRevision))
+    session.execute(delete(WorkflowNodeInstance))
+    session.execute(delete(WorkflowEvent))
+    session.execute(delete(WorkflowInstance))
+    session.execute(delete(NamespaceWorkflowEnablement))
+    session.execute(delete(AgentDelegation))
+    session.execute(delete(ConversationAttachment))
+    session.execute(delete(ConversationMessage))
+    session.execute(update(Conversation).values(current_context_snapshot_id=None))
+    session.execute(delete(ConversationContextSnapshot))
+    session.execute(delete(ConversationAgent))
+    session.execute(delete(Conversation))
+    session.execute(delete(ProjectSpecBinding))
+    session.execute(delete(ProjectSpecLocation))
+    session.execute(delete(ProjectRepository))
+    session.execute(delete(ProjectMember))
+    session.execute(delete(Project))
+    session.execute(delete(SpecStandardVersion))
+    session.execute(delete(SpecStandard))
     session.execute(delete(AgentDraft))
     session.execute(delete(AgentDefinition))
     session.execute(delete(HarnessProfile))

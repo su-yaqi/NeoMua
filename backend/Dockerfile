@@ -32,6 +32,7 @@ COPY ./backend/scripts /app/backend/scripts
 COPY ./backend/pyproject.toml ./backend/alembic.ini /app/backend/
 
 COPY ./backend/app /app/backend/app
+COPY ./workflow_apps /app/workflow_apps
 
 # Sync the project
 # Ref: https://docs.astral.sh/uv/guides/integration/docker/#intermediate-layers

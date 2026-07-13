@@ -1063,3 +1063,422 @@ export const harnessCatalogApi = {
     return data
   },
 }
+
+export type ProjectStatus = "active" | "archived"
+export interface ProjectSummary {
+  id: string
+  namespace_id: string
+  slug: string
+  name: string
+  description: string | null
+  status: ProjectStatus
+  default_runtime_id: string | null
+  member_ids: string[]
+  created_at: string
+  updated_at: string
+}
+
+export interface ProjectRepository {
+  id: string
+  project_id: string
+  remote_url: string
+  purpose: string
+  default_branch: string | null
+  credential_ref: string | null
+  status: "unvalidated" | "available" | "unavailable"
+  validated_commit: string | null
+  validation_error: Record<string, unknown> | null
+}
+
+export interface ProjectSpecLocation {
+  id: string
+  project_id: string
+  repository_id: string
+  path: string
+  location_type: "directory" | "file"
+  description: string
+  status: "pending_initialization" | "valid" | "unavailable"
+  binding: {
+    id: string
+    standard_version_id: string
+    status: "pending" | "valid" | "conflict"
+    validated_commit: string | null
+  } | null
+}
+
+export interface ConversationRuntime {
+  id: string
+  runtime_type: "platform" | "node"
+  route_mode: RuntimeRouteMode
+  model_id: string
+  compatible: boolean
+}
+
+export interface ConversationModelCatalogItem {
+  provider_config_id: string
+  provider_name: string
+  provider_slug: string
+  model_id: string
+  display_name: string | null
+}
+
+export interface ConversationAgentCatalogItem {
+  runtime_agent_release_id: string
+  agent_id: string
+  agent_name: string
+  agent_slug: string
+  release_id: string
+  release_version: string
+  resolved_spec_digest: string
+  active: boolean
+}
+
+export interface ConversationAgentParticipant {
+  id: string
+  role: "main" | "collaborator"
+  agent_id: string
+  agent_release_id: string
+  resolved_spec_digest: string
+}
+
+export interface ConversationSummary {
+  id: string
+  title: string
+  mode: "chat" | "agent"
+  visibility: "private" | "project"
+  status: "active" | "archived"
+  runtime_id: string
+  provider_config_id: string | null
+  model_id: string | null
+  project_id: string | null
+  current_context_snapshot_id: string | null
+  agents: ConversationAgentParticipant[]
+  updated_at: string
+}
+
+export interface ConversationMessage {
+  id: string
+  sequence: number
+  author_type: "user" | "model" | "agent" | "system"
+  author_id: string | null
+  target_type: "main" | "agent" | "all" | "model" | "system"
+  target_agent_id: string | null
+  payload: Record<string, unknown>
+  status: "queued" | "running" | "completed" | "failed"
+  error: Record<string, unknown> | null
+  created_at: string
+}
+
+export interface ConversationAttachment {
+  id: string
+  filename: string
+  content_type: string
+  size: number
+  content_digest: string
+  scan_status: "pending" | "clean" | "rejected"
+  scan_details: Record<string, unknown> | null
+  created_at: string
+}
+
+export interface WorkflowNodeInstance {
+  id: string
+  node_key: string
+  status: string
+  expected_revision: number
+  assignee_id: string | null
+  resolved_runtime_id: string
+}
+
+export interface WorkflowInstance {
+  id: string
+  project_id: string
+  template_version_id: string
+  workflow_slug: string
+  package_digest: string
+  title: string
+  status: string
+  input: Record<string, unknown>
+  nodes: WorkflowNodeInstance[]
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkflowTemplateCatalogItem {
+  id: string
+  slug: string
+  name: string
+  description: string | null
+  scope_type: "platform" | "namespace"
+  application: {
+    route_slug: string
+    component_key: string
+  } | null
+  versions: Array<{
+    version: {
+      id: string
+      version: string
+      package_digest: string
+      manifest: Record<string, unknown>
+    }
+    enablement: { enabled: boolean; is_default: boolean }
+  }>
+}
+
+export interface SpecStandard {
+  id: string
+  scope_type: "platform" | "namespace"
+  namespace_id: string | null
+  slug: string
+  name: string
+  description: string | null
+}
+
+export interface SpecStandardVersion {
+  id: string
+  standard_id: string
+  version: string
+  manifest: Record<string, unknown>
+  content_digest: string
+  storage_ref: string | null
+  status: "active" | "deprecated"
+  created_at: string
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`
+  if (value !== null && typeof value === "object") {
+    const record = value as Record<string, unknown>
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+      .join(",")}}`
+  }
+  return JSON.stringify(value) ?? "null"
+}
+
+async function sha256(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(value),
+  )
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("")
+}
+
+export const workspaceApi = {
+  listProjects: async (includeArchived = false) =>
+    (
+      await api.get<{ data: ProjectSummary[]; count: number }>(
+        "/api/v1/projects",
+        { params: { include_archived: includeArchived } },
+      )
+    ).data,
+  getProject: async (projectId: string) =>
+    (await api.get<ProjectSummary>(`/api/v1/projects/${projectId}`)).data,
+  createProject: async (body: Record<string, unknown>) =>
+    (await api.post<ProjectSummary>("/api/v1/projects", body)).data,
+  archiveProject: async (projectId: string) =>
+    (
+      await api.patch<ProjectSummary>(`/api/v1/projects/${projectId}`, {
+        archive: true,
+      })
+    ).data,
+  listRepositories: async (projectId: string) =>
+    (
+      await api.get<{ data: ProjectRepository[]; count: number }>(
+        `/api/v1/projects/${projectId}/repositories`,
+      )
+    ).data,
+  createRepository: async (projectId: string, body: Record<string, unknown>) =>
+    (
+      await api.post<ProjectRepository>(
+        `/api/v1/projects/${projectId}/repositories`,
+        body,
+      )
+    ).data,
+  listSpecLocations: async (projectId: string) =>
+    (
+      await api.get<{ data: ProjectSpecLocation[]; count: number }>(
+        `/api/v1/projects/${projectId}/spec-locations`,
+      )
+    ).data,
+  createSpecLocation: async (
+    projectId: string,
+    body: Record<string, unknown>,
+  ) =>
+    (
+      await api.post<ProjectSpecLocation>(
+        `/api/v1/projects/${projectId}/spec-locations`,
+        body,
+      )
+    ).data,
+  bindSpecStandard: async (
+    projectId: string,
+    locationId: string,
+    standardVersionId: string,
+  ) =>
+    (
+      await api.put(
+        `/api/v1/projects/${projectId}/spec-locations/${locationId}/binding`,
+        { standard_version_id: standardVersionId },
+      )
+    ).data,
+  listConversationRuntimes: async () =>
+    (
+      await api.get<{ data: ConversationRuntime[]; count: number }>(
+        "/api/v1/conversation-catalog/runtimes",
+      )
+    ).data,
+  listConversationModels: async (runtimeId: string) =>
+    (
+      await api.get<{ data: ConversationModelCatalogItem[]; count: number }>(
+        "/api/v1/conversation-catalog/models",
+        { params: { runtime_id: runtimeId } },
+      )
+    ).data,
+  listConversationAgents: async (runtimeId: string) =>
+    (
+      await api.get<{ data: ConversationAgentCatalogItem[]; count: number }>(
+        "/api/v1/conversation-catalog/agents",
+        { params: { runtime_id: runtimeId } },
+      )
+    ).data,
+  listConversations: async () =>
+    (
+      await api.get<{ data: ConversationSummary[]; count: number }>(
+        "/api/v1/conversations",
+      )
+    ).data,
+  getConversation: async (conversationId: string) =>
+    (
+      await api.get<ConversationSummary>(
+        `/api/v1/conversations/${conversationId}`,
+      )
+    ).data,
+  createConversation: async (body: Record<string, unknown>) =>
+    (
+      await api.post<ConversationSummary>("/api/v1/conversations", body, {
+        headers: { "Idempotency-Key": crypto.randomUUID() },
+      })
+    ).data,
+  listMessages: async (conversationId: string) =>
+    (
+      await api.get<{ data: ConversationMessage[]; count: number }>(
+        `/api/v1/conversations/${conversationId}/messages`,
+      )
+    ).data,
+  sendMessage: async (conversationId: string, body: Record<string, unknown>) =>
+    (
+      await api.post(`/api/v1/conversations/${conversationId}/messages`, body, {
+        headers: { "Idempotency-Key": crypto.randomUUID() },
+      })
+    ).data,
+  uploadConversationAttachment: async (conversationId: string, file: File) => {
+    const form = new FormData()
+    form.append("file", file)
+    return (
+      await api.post<ConversationAttachment>(
+        `/api/v1/conversations/${conversationId}/attachments`,
+        form,
+      )
+    ).data
+  },
+  refreshContext: async (conversationId: string) =>
+    (
+      await api.post(
+        `/api/v1/conversations/${conversationId}/context-snapshots`,
+        { content_refs: [] },
+      )
+    ).data,
+  listWorkflowTemplates: async () =>
+    (
+      await api.get<{ data: WorkflowTemplateCatalogItem[]; count: number }>(
+        "/api/v1/workflow-templates",
+      )
+    ).data,
+  updateWorkflowEnablement: async (
+    templateId: string,
+    body: Record<string, unknown>,
+  ) =>
+    (await api.put(`/api/v1/workflow-templates/${templateId}/enablement`, body))
+      .data,
+  listSpecStandards: async () =>
+    (
+      await api.get<{ data: SpecStandard[]; count: number }>(
+        "/api/v1/spec-standards",
+      )
+    ).data,
+  createSpecStandard: async (body: Record<string, unknown>) =>
+    (await api.post<SpecStandard>("/api/v1/spec-standards", body)).data,
+  listSpecStandardVersions: async (standardId: string) =>
+    (
+      await api.get<{ data: SpecStandardVersion[]; count: number }>(
+        `/api/v1/spec-standards/${standardId}/versions`,
+      )
+    ).data,
+  publishSpecStandardVersion: async (
+    standardId: string,
+    body: {
+      version: string
+      manifest: Record<string, unknown>
+      storage_ref?: string | null
+    },
+  ) => {
+    const contentDigest = await sha256(canonicalJson(body.manifest))
+    return (
+      await api.post<SpecStandardVersion>(
+        `/api/v1/spec-standards/${standardId}/versions`,
+        { ...body, content_digest: contentDigest },
+      )
+    ).data
+  },
+  listWorkflowInstances: async (projectId: string) =>
+    (
+      await api.get<{ data: WorkflowInstance[]; count: number }>(
+        `/api/v1/projects/${projectId}/workflow-instances`,
+      )
+    ).data,
+  getWorkflowInstance: async (instanceId: string) =>
+    (
+      await api.get<WorkflowInstance>(
+        `/api/v1/workflow-instances/${instanceId}`,
+      )
+    ).data,
+  getWorkflowNode: async (instanceId: string, nodeKey: string) =>
+    (await api.get(`/api/v1/workflow-instances/${instanceId}/nodes/${nodeKey}`))
+      .data,
+  createWorkflowInstance: async (
+    projectId: string,
+    body: Record<string, unknown>,
+  ) =>
+    (
+      await api.post<WorkflowInstance>(
+        `/api/v1/projects/${projectId}/workflow-instances`,
+        body,
+        { headers: { "Idempotency-Key": crypto.randomUUID() } },
+      )
+    ).data,
+  submitWorkflowNode: async (
+    instanceId: string,
+    nodeKey: string,
+    body: Record<string, unknown>,
+  ) =>
+    (
+      await api.post(
+        `/api/v1/workflow-instances/${instanceId}/nodes/${nodeKey}/submit`,
+        body,
+      )
+    ).data,
+  confirmWorkflowNode: async (
+    instanceId: string,
+    nodeKey: string,
+    body: Record<string, unknown>,
+  ) =>
+    (
+      await api.post(
+        `/api/v1/workflow-instances/${instanceId}/nodes/${nodeKey}/confirm`,
+        body,
+      )
+    ).data,
+}

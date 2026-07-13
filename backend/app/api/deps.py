@@ -33,9 +33,7 @@ def get_current_user(
     request: Request,
     session: SessionDep,
     token: TokenDep,
-    access_cookie: Annotated[
-        str | None, Cookie(alias="neomua_access")
-    ] = None,
+    access_cookie: Annotated[str | None, Cookie(alias="neomua_access")] = None,
 ) -> User:
     credential = token or access_cookie
     if credential is None:
@@ -136,3 +134,56 @@ def require_namespace_runtime_user(
             status_code=403, detail="Runtime access requires admin or developer"
         )
     return current_namespace_id
+
+
+def require_namespace_member(
+    session: SessionDep,
+    current_user: CurrentUser,
+    current_namespace_id: Annotated[
+        uuid.UUID | None, Depends(get_current_namespace_id)
+    ],
+) -> uuid.UUID:
+    """Resolve an active namespace that the current user may read and use."""
+    if current_namespace_id is None:
+        raise HTTPException(status_code=400, detail="namespace_id is required")
+    namespace = crud.get_namespace(session=session, namespace_id=current_namespace_id)
+    if namespace is None:
+        raise HTTPException(status_code=404, detail="Namespace not found")
+    if not namespace.is_active:
+        raise HTTPException(status_code=409, detail="Namespace is inactive")
+    if current_user.is_superuser:
+        return current_namespace_id
+    role = crud.get_namespace_role(
+        session=session,
+        user_id=current_user.id,
+        namespace_id=current_namespace_id,
+    )
+    if role is None:
+        raise HTTPException(status_code=403, detail="Namespace membership required")
+    return current_namespace_id
+
+
+def require_namespace_manager(
+    session: SessionDep,
+    current_user: CurrentUser,
+    current_namespace_id: Annotated[
+        uuid.UUID | None, Depends(get_current_namespace_id)
+    ],
+) -> uuid.UUID:
+    """Allow namespace admins and developers to manage project configuration."""
+    namespace_id = require_namespace_member(
+        session=session,
+        current_user=current_user,
+        current_namespace_id=current_namespace_id,
+    )
+    if current_user.is_superuser:
+        return namespace_id
+    role = crud.get_namespace_role(
+        session=session, user_id=current_user.id, namespace_id=namespace_id
+    )
+    if role not in {NamespaceRole.ADMIN, NamespaceRole.DEVELOPER}:
+        raise HTTPException(
+            status_code=403,
+            detail="Namespace admin or developer privilege required",
+        )
+    return namespace_id

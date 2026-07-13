@@ -2,7 +2,7 @@ from collections.abc import Generator
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import Session, SQLModel, delete
+from sqlmodel import Session, SQLModel, delete, update
 
 from app.agent_management.capability_models import (
     AgentActivation,
@@ -37,10 +37,27 @@ from app.agent_management.models import (
     AgentDraft,
     HarnessProfile,
 )
+from app.conversation_management.models import (
+    AgentDelegation,
+    Conversation,
+    ConversationAgent,
+    ConversationAttachment,
+    ConversationContextSnapshot,
+    ConversationMessage,
+)
 from app.core.config import settings
 from app.core.db import engine, init_db
 from app.main import app
 from app.models import RefreshSession
+from app.project_management.models import (
+    Project,
+    ProjectMember,
+    ProjectRepository,
+    ProjectSpecBinding,
+    ProjectSpecLocation,
+    SpecStandard,
+    SpecStandardVersion,
+)
 from app.runtime.models import (
     AgentEvent,
     AgentSession,
@@ -55,6 +72,17 @@ from app.runtime.models import (
     RuntimeNodeArtifact,
     RuntimeProfile,
     RuntimeSecret,
+)
+from app.workflow_management.models import (
+    NamespaceWorkflowEnablement,
+    WorkflowArtifact,
+    WorkflowConfirmation,
+    WorkflowEvent,
+    WorkflowGateResult,
+    WorkflowInstance,
+    WorkflowNodeExecution,
+    WorkflowNodeInstance,
+    WorkflowNodeRevision,
 )
 from tests.utils.db import cleanup_test_data
 from tests.utils.user import authentication_token_from_email
@@ -74,6 +102,30 @@ def db() -> Generator[Session, None, None]:
 def isolate_runtime_data(db: Session) -> Generator[None, None, None]:
     def clean() -> None:
         db.rollback()
+        db.execute(delete(WorkflowArtifact))
+        db.execute(delete(WorkflowConfirmation))
+        db.execute(delete(WorkflowGateResult))
+        db.execute(delete(WorkflowNodeExecution))
+        db.execute(update(WorkflowNodeInstance).values(current_revision_id=None))
+        db.execute(delete(WorkflowNodeRevision))
+        db.execute(delete(WorkflowNodeInstance))
+        db.execute(delete(WorkflowEvent))
+        db.execute(delete(WorkflowInstance))
+        db.execute(delete(NamespaceWorkflowEnablement))
+        db.execute(delete(AgentDelegation))
+        db.execute(delete(ConversationAttachment))
+        db.execute(delete(ConversationMessage))
+        db.execute(update(Conversation).values(current_context_snapshot_id=None))
+        db.execute(delete(ConversationContextSnapshot))
+        db.execute(delete(ConversationAgent))
+        db.execute(delete(Conversation))
+        db.execute(delete(ProjectSpecBinding))
+        db.execute(delete(ProjectSpecLocation))
+        db.execute(delete(ProjectRepository))
+        db.execute(delete(ProjectMember))
+        db.execute(delete(Project))
+        db.execute(delete(SpecStandardVersion))
+        db.execute(delete(SpecStandard))
         db.execute(delete(ToolApprovalRequest))
         db.execute(delete(CliSession))
         db.execute(delete(AgentReleaseComponent))

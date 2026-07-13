@@ -31,3 +31,21 @@ def init_db(session: Session) -> None:
             is_superuser=True,
         )
         user = crud.create_user(session=session, user_create=user_in)
+
+    # Bundled Workflow code is part of the deployed build. Register only its
+    # canonical manifests; executable source is never accepted from the API.
+    from app.workflow_management.bundled import bundled_manifests
+    from app.workflow_management.package import package_digest, validate_package
+    from app.workflow_management.routes import sync_registry
+    from app.workflow_management.schemas import RegistrySync
+
+    for raw_manifest in bundled_manifests():
+        manifest = validate_package(raw_manifest)
+        sync_registry(
+            RegistrySync(
+                manifest=raw_manifest,
+                package_digest=package_digest(manifest),
+                build_metadata={"source": "bundled", "validated": True},
+            ),
+            session,
+        )

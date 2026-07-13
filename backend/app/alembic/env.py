@@ -23,6 +23,9 @@ from app.models import SQLModel  # noqa
 from app.agent_management import models as agent_models  # noqa: F401,E402
 from app.agent_management import capability_models  # noqa: F401,E402
 from app.runtime import models as runtime_models  # noqa: F401,E402
+from app.project_management import models as project_models  # noqa: F401,E402
+from app.conversation_management import models as conversation_models  # noqa: F401,E402
+from app.workflow_management import models as workflow_models  # noqa: F401,E402
 from app.core.config import settings  # noqa
 
 target_metadata = SQLModel.metadata

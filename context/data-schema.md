@@ -209,3 +209,15 @@ RuntimeProfile N ---- N AgentRelease (via RuntimeAgentRelease)
 | 索引名 | 字段 | 类型 | 说明 |
 |--------|------|------|------|
 | uq_llm_provider_model_config_model | provider_config_id, model_id | 唯一 | 防止同一配置重复记录相同模型 |
+
+## v0.6 项目、会话与 Workflow
+
+| 聚合 | 核心表 | 关键不可变性/约束 |
+|------|--------|------------------|
+| 项目 | `project`、`project_member`、`project_repository`、`project_spec_location` | 项目只归档；成员必须来自 namespace；仓库无主次，路径拒绝绝对路径与 `..` 逃逸 |
+| Spec 标准 | `spec_standard`、`spec_standard_version`、`project_spec_binding` | 平台/namespace slug 唯一；版本与 content digest 不可变；项目绑定精确版本 |
+| 会话 | `conversation`、`conversation_agent`、`conversation_context_snapshot`、`conversation_message`、`agent_delegation`、`conversation_attachment` | 创建按 creator + idempotency key 唯一；每轮消息幂等；仅一个主 Agent；上下文快照追加式 |
+| Workflow 定义 | `workflow_template`、`workflow_template_version`、`workflow_node_definition`、`workflow_edge_definition`、`workflow_application`、`namespace_workflow_enablement` | Package digest 和版本不可变；节点/边固定为有限 DAG；namespace 默认版本必须启用 |
+| Workflow 运行 | `workflow_instance`、`workflow_node_instance`、`workflow_node_revision`、`workflow_node_execution`、`workflow_gate_result`、`workflow_confirmation`、`workflow_artifact`、`workflow_event` | 任务固定模板版本/Package/上下文；修订和事件追加；每输入修订仅一个 active execution；完成任务只读 |
+
+`conversation.current_context_snapshot_id` 与 `workflow_node_instance.current_revision_id` 使用具名 `use_alter` 外键，既保留当前指针，也让空库迁移可确定排序。删除历史模板、版本、Release 或已引用标准均由 `RESTRICT` 阻止。
