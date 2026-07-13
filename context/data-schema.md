@@ -29,6 +29,10 @@ Namespace 1 ---- N LlmProviderConfig 1 ---- N LlmProviderModel
 Namespace 1 ---- N RuntimeProfile / RuntimeNode / AgentTask / RuntimeArtifact
 RuntimeNode 1 ---- N NodeCredential / AgentTask / ArtifactDeployment
 AgentTask 1 ---- N AgentEvent
+Namespace 1 ---- N AgentDefinition / SkillDefinition / McpServer / Plugin
+AgentDefinition 1 ---- 1 AgentDraft 1 ---- N exact capability bindings
+AgentRelease 1 ---- N AgentActivation 1 ---- N AgentDeployment
+RuntimeProfile N ---- N AgentRelease (via RuntimeAgentRelease)
 ```
 
 ## 表结构
@@ -51,6 +55,26 @@ AgentTask 1 ---- N AgentEvent
 | `runtime_node_artifact` | 节点每个逻辑目标的 current/previous 制品指针 |
 
 `agent_task` 额外以 `dispatch_connection_id/dispatch_reserved_until` 记录短期发送预留；预留不改变 QUEUED，超时后可重新领取。`artifact_deployment` 固化 `logical_target`，部分唯一索引保证每个 `(node_id, logical_target)` 最多一个 pending/dispatched。`node_credential` 记录 replacement 签发时间和宽限截止时间。任务状态只允许显式迁移；租约过期变为 interrupted，不自动 retry。
+
+### agent_management 表组（v0.5）
+
+| 表组 | 关键职责 |
+|---|---|
+| `agent_definition` / `agent_draft` / `harness_profile` | 空间级 Agent 身份、CAS 草稿和受限 Claude Harness 配置 |
+| `skill_definition` / `skill_version` | 声明式 Skill 身份、不可变 ZIP 摘要、manifest 与校验结果 |
+| `tool_definition` / `namespace_tool_policy` / `agent_draft_tool_policy` | 内置 Tool 基线、空间只可收紧策略和 Agent 意图 |
+| `mcp_server` / `mcp_server_revision` / `mcp_target_binding` | MCP 身份、不可变 transport/config Revision 和明确运行时目标 |
+| `mcp_platform_secret` / `mcp_validation_attempt` / `mcp_tool_snapshot` | 平台密文、目标校验历史和限定名 Tool Schema 快照 |
+| `mcp_runtime_instance` / `mcp_runtime_event` | 按 runtime/revision/指纹复用的实例与脱敏生命周期事件 |
+| `plugin` / `plugin_draft` / `plugin_version` | 声明式能力包草稿、精确 dependency lock 和签名不可变版本 |
+| `agent_draft_skill/plugin/mcp` | 草稿到精确能力版本的绑定；每次变更推进 revision 并使验证失效 |
+| `agent_release` / `agent_release_component` | canonical ResolvedAgentSpec、依赖锁、manifest、签名和来源链 |
+| `agent_activation` / `agent_deployment` | 激活批次及每个 Runtime target 的独立 attempt/status/error |
+| `runtime_agent_release` | 每个 `(runtime, agent)` 的 current/previous Release 指针和 digest |
+| `tool_approval_request` | 绑定 task revision、tool call 与 args digest 的可过期审批 |
+| `cli_session` | Operator CLI 轮换 refresh token HMAC、family、绝对到期与吊销链 |
+
+`agent_session` 与 `agent_task` 增加 Agent Release、Runtime binding 和 `resolved_spec_digest` 引用；Task snapshot 冻结版本与策略但不含平台或节点 secret value。
 
 ### refresh_session
 

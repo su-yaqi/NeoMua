@@ -25,7 +25,9 @@ export default function PlatformRuntimeCard({
           </p>
         </div>
         <div className="flex gap-2">
-          {runtime.data ? <TestConversationSheet /> : null}
+          {runtime.data ? (
+            <TestConversationSheet runtimeId={runtime.data.id} />
+          ) : null}
           {canManage ? <RuntimeConfigDialog /> : null}
         </div>
       </CardHeader>

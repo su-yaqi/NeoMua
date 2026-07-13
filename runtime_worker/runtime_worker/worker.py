@@ -1,11 +1,16 @@
 import asyncio
+import hashlib
 import logging
 import random
+import time
+import json
 from typing import Any
 
 import httpx
 
 from runtime_worker.agent_shell import AgentShell, RunCommand
+from runtime_worker.release_store import AgentReleaseStore, canonical_bytes
+from runtime_worker.mcp_manager import McpRuntimeManager
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +38,10 @@ class RuntimeWorker:
         lease_interval: float = 60,
         max_backoff: float = 60,
         interrupt_grace: float = 10,
+        harness_capabilities: dict[str, Any] | None = None,
+        capability_report_interval: float = 60,
+        release_store: AgentReleaseStore | None = None,
+        mcp_manager: McpRuntimeManager | None = None,
     ) -> None:
         self.client = client
         self.headers = {"X-Runtime-Token": internal_token}
@@ -41,6 +50,110 @@ class RuntimeWorker:
         self.lease_interval = lease_interval
         self.max_backoff = max_backoff
         self.interrupt_grace = interrupt_grace
+        self.harness_capabilities = harness_capabilities
+        self.capability_report_interval = capability_report_interval
+        self._last_capability_report = 0.0
+        self.release_store = release_store
+        self.mcp_manager = mcp_manager
+
+    async def validate_mcp_once(self) -> bool:
+        if self.mcp_manager is None:
+            return False
+        try:
+            response = await self.client.post(
+                "/api/v1/internal/runtime/mcp-validations/claim",
+                headers=self.headers,
+            )
+        except httpx.TransportError as exc:
+            raise TransientWorkerError("MCP validation claim failed") from exc
+        if response.status_code == 204:
+            return False
+        self._classify_response(response)
+        command = response.json()
+        fingerprint = hashlib.sha256(
+            canonical_bytes(command["capability_inventory"])
+        ).hexdigest()
+        try:
+            tools = await self.mcp_manager.validate(command)
+            body: dict[str, Any] = {
+                "status": "verified",
+                "capability_fingerprint": fingerprint,
+                "tools": tools,
+            }
+        except Exception as exc:
+            body = {
+                "status": "failed",
+                "capability_fingerprint": fingerprint,
+                "error": {"code": "mcp_validation_failed", "message": str(exc)},
+                "tools": [],
+            }
+        reported = await self.client.post(
+            f"/api/v1/internal/runtime/mcp-validations/{command['attempt_id']}/result",
+            headers=self.headers,
+            json=body,
+        )
+        self._classify_response(reported)
+        return True
+
+    async def apply_release_once(self) -> bool:
+        if self.release_store is None:
+            return False
+        try:
+            response = await self.client.post(
+                "/api/v1/internal/runtime/agent-deployments/claim",
+                headers=self.headers,
+            )
+        except httpx.TransportError as exc:
+            raise TransientWorkerError("Agent Release claim failed") from exc
+        if response.status_code == 204:
+            return False
+        self._classify_response(response)
+        payload = response.json()
+        deployment_id = payload["deployment_id"]
+        capability_fingerprint = hashlib.sha256(
+            canonical_bytes(payload["capability_inventory"])
+        ).hexdigest()
+        try:
+            result = self.release_store.apply(payload)
+            body: dict[str, Any] = {
+                "status": "applied",
+                **result,
+                "capability_fingerprint": capability_fingerprint,
+            }
+        except (OSError, ValueError, KeyError) as exc:
+            body = {
+                "status": "failed",
+                "resolved_spec_digest": payload["release"]["resolved_spec_digest"],
+                "materialization_digest": payload["materialization"].get(
+                    "resolved_spec_digest", "0" * 64
+                ),
+                "capability_fingerprint": capability_fingerprint,
+                "error": {"code": "agent_release_apply_failed", "message": str(exc)},
+            }
+        reported = await self.client.post(
+            f"/api/v1/internal/runtime/agent-deployments/{deployment_id}/result",
+            headers=self.headers,
+            json=body,
+        )
+        self._classify_response(reported)
+        return True
+
+    async def report_capabilities(self) -> None:
+        if self.harness_capabilities is None:
+            return
+        try:
+            response = await self.client.post(
+                "/api/v1/internal/runtime/capabilities",
+                headers=self.headers,
+                json={
+                    "worker_id": self.worker_id,
+                    "harness_capabilities": self.harness_capabilities,
+                },
+            )
+        except httpx.TransportError as exc:
+            raise TransientWorkerError("capability report failed") from exc
+        self._classify_response(response)
+        self._last_capability_report = time.monotonic()
 
     @staticmethod
     def _classify_response(
@@ -73,6 +186,53 @@ class RuntimeWorker:
                     ) from exc
                 await asyncio.sleep(min(2**attempt, 4))
 
+    async def _request_tool_approval(
+        self,
+        task_id: str,
+        task_revision: int,
+        tool_name: str,
+        tool_input: dict[str, Any],
+    ) -> bool:
+        redacted = {
+            key: "[REDACTED]"
+            if key.lower()
+            in {"api_key", "token", "password", "secret", "authorization"}
+            else value
+            for key, value in tool_input.items()
+        }
+        args_digest = hashlib.sha256(
+            json.dumps(
+                tool_input, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+            ).encode()
+        ).hexdigest()
+        created = await self.client.post(
+            "/api/v1/internal/runtime/tool-approvals",
+            headers=self.headers,
+            json={
+                "task_id": task_id,
+                "task_revision": task_revision,
+                "tool_call_id": f"{tool_name}:{args_digest[:16]}",
+                "tool_qualified_name": tool_name,
+                "redacted_args": redacted,
+                "args_digest": args_digest,
+                "expires_in_seconds": 300,
+            },
+        )
+        self._classify_response(created, task_scoped=True)
+        approval_id = created.json()["id"]
+        while True:
+            await asyncio.sleep(2)
+            checked = await self.client.get(
+                f"/api/v1/internal/runtime/tool-approvals/{approval_id}",
+                headers=self.headers,
+            )
+            self._classify_response(checked, task_scoped=True)
+            status = checked.json()["status"]
+            if status == "approved":
+                return True
+            if status in {"denied", "expired", "cancelled"}:
+                return False
+
     async def run_once(self) -> bool:
         try:
             response = await self.client.post(
@@ -90,6 +250,25 @@ class RuntimeWorker:
             command = RunCommand(**payload["command"])
             task_id = str(payload["task_id"])
             revision = int(payload["revision"])
+            command.task_revision = revision
+            command.approval_callback = self._request_tool_approval
+            if payload.get("mcp_runtime_configs"):
+                if self.mcp_manager is None:
+                    raise TransientWorkerError("MCP Runtime Manager is unavailable")
+                command.mcp_servers = self.mcp_manager.execution_configs(
+                    payload["mcp_runtime_configs"]
+                )
+            release_binding = payload.get("release_binding")
+            if release_binding:
+                if self.release_store is None:
+                    raise TransientWorkerError("Agent Release store is unavailable")
+                release_path = self.release_store.verify_installed(
+                    release_binding["agent_id"],
+                    release_binding["release_id"],
+                    release_binding["resolved_spec_digest"],
+                )
+                command.add_dirs = [str(release_path)]
+                command.skills = list(release_binding.get("skill_slugs", []))
         except (KeyError, TypeError, ValueError) as exc:
             raise TransientWorkerError("claim response is invalid") from exc
 
@@ -102,15 +281,16 @@ class RuntimeWorker:
         last_sequence = command.start_sequence
         try:
             try:
+
                 async def execute() -> None:
                     nonlocal last_sequence
                     async for event in self.shell.run_session(command, task_id=task_id):
                         if ownership_lost.is_set():
                             return
                         last_sequence = int(event["sequence"])
-                        if (
-                            cancelled.is_set() or timed_out.is_set()
-                        ) and event["event_type"] == "result":
+                        if (cancelled.is_set() or timed_out.is_set()) and event[
+                            "event_type"
+                        ] == "result":
                             event = {
                                 "sequence": last_sequence,
                                 "event_type": "status",
@@ -231,9 +411,7 @@ class RuntimeWorker:
                     continue
                 ownership_lost.set()
                 await self.shell.interrupt(task_id)
-                raise TransientWorkerError(
-                    "lease renewal retries exhausted"
-                ) from exc
+                raise TransientWorkerError("lease renewal retries exhausted") from exc
             try:
                 status = response.json()["status"]
             except (KeyError, TypeError, ValueError) as exc:
@@ -249,9 +427,17 @@ class RuntimeWorker:
         attempt = 0
         while True:
             try:
+                if (
+                    self.harness_capabilities is not None
+                    and time.monotonic() - self._last_capability_report
+                    >= self.capability_report_interval
+                ):
+                    await self.report_capabilities()
+                validated_mcp = await self.validate_mcp_once()
+                applied = await self.apply_release_once()
                 worked = await self.run_once()
                 attempt = 0
-                if not worked:
+                if not worked and not applied and not validated_mcp:
                     await asyncio.sleep(2)
             except PermanentWorkerError:
                 logger.critical(

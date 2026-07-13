@@ -52,6 +52,35 @@ class HangingShell:
 
 
 @pytest.mark.anyio
+async def test_worker_reports_harness_capabilities() -> None:
+    requests: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(json.loads(request.content))
+        return httpx.Response(200, json={"updated": 1})
+
+    capabilities = {
+        "claude_code": {
+            "cli_version": "2.1.191",
+            "sdk_version": "0.2.110",
+            "harness_version": "0.1.0",
+        }
+    }
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url="http://control"
+    ) as client:
+        worker = RuntimeWorker(
+            client,
+            "token",
+            "worker-1",
+            shell=FakeShell(),
+            harness_capabilities=capabilities,
+        )
+        await worker.report_capabilities()
+    assert requests == [{"worker_id": "worker-1", "harness_capabilities": capabilities}]
+
+
+@pytest.mark.anyio
 async def test_worker_claims_executes_and_posts_events() -> None:
     requests: list[httpx.Request] = []
 

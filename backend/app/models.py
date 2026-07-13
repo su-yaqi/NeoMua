@@ -4,7 +4,7 @@ from enum import Enum
 from typing import Any, cast
 
 from pydantic import EmailStr
-from sqlalchemy import JSON, Column, UniqueConstraint
+from sqlalchemy import JSON, Column, Index, Text, UniqueConstraint
 from sqlalchemy import DateTime as _DateTime
 from sqlalchemy import Enum as _SAEnum
 from sqlmodel import Field, Relationship, SQLModel
@@ -126,12 +126,16 @@ class User(UserBase, table=True):
 
 class RefreshSession(SQLModel, table=True):
     __tablename__ = "refresh_session"
+    __table_args__ = (
+        UniqueConstraint("token_hash"),
+        Index("ix_refresh_session_token_hash", "token_hash"),
+    )
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     family_id: uuid.UUID = Field(default_factory=uuid.uuid4, index=True)
     user_id: uuid.UUID = Field(
         foreign_key="user.id", nullable=False, ondelete="CASCADE", index=True
     )
-    token_hash: str = Field(max_length=64, unique=True, index=True)
+    token_hash: str = Field(max_length=64)
     expires_at: datetime = Field(sa_type=DateTime(timezone=True), index=True)
     replaced_by_id: uuid.UUID | None = Field(
         default=None, foreign_key="refresh_session.id", ondelete="SET NULL"
@@ -140,9 +144,7 @@ class RefreshSession(SQLModel, table=True):
     created_at: datetime = Field(
         default_factory=get_datetime_utc, sa_type=DateTime(timezone=True)
     )
-    last_used_at: datetime | None = Field(
-        default=None, sa_type=DateTime(timezone=True)
-    )
+    last_used_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
 
 
 class NamespaceBase(SQLModel):
@@ -229,7 +231,9 @@ class LlmProviderConfig(SQLModel, table=True):
         )
     )
     base_url: str = Field(max_length=1024)
-    secret_ciphertext: str | None = Field(default=None)
+    secret_ciphertext: str | None = Field(
+        default=None, sa_column=Column(Text, nullable=True)
+    )
     secret_masked: str | None = Field(default=None, max_length=255)
     extra_config: dict[str, Any] = Field(
         default_factory=dict,

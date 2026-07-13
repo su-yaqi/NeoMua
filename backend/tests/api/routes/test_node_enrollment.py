@@ -9,6 +9,14 @@ from app.models import NamespaceRole
 from tests.api.routes.test_namespaces import create_namespace, namespace_headers
 from tests.utils.user import authentication_token_from_email, create_random_user
 
+HARNESS_CAPABILITIES = {
+    "claude_code": {
+        "cli_version": "2.1.191",
+        "sdk_version": "0.2.110",
+        "harness_version": "0.1.0",
+    }
+}
+
 
 def test_admin_sees_enrollment_token_only_on_creation(
     client: TestClient, db: Session, superuser_token_headers: dict[str, str]
@@ -65,6 +73,7 @@ def test_node_enrollment_consumes_token_once(
         "architecture": "arm64",
         "agent_version": "0.1.0",
         "sdk_version": "0.2.110",
+        "harness_capabilities": HARNESS_CAPABILITIES,
         "public_key": base64.b64encode(b"a" * 32).decode(),
     }
     enrolled = client.post(f"{settings.API_V1_STR}/node/enroll", json=payload)
@@ -92,12 +101,14 @@ def test_admin_lists_and_configures_enrolled_node_runtime(
             "os_name": "linux",
             "architecture": "amd64",
             "agent_version": "0.1.0",
+            "harness_capabilities": HARNESS_CAPABILITIES,
             "public_key": base64.b64encode(b"b" * 32).decode(),
         },
     ).json()
     listed = client.get(f"{settings.API_V1_STR}/runtimes/nodes", headers=headers)
     assert listed.status_code == 200
     assert listed.json()["data"][0]["id"] == enrolled["node_id"]
+    assert listed.json()["data"][0]["harness_capabilities"] == HARNESS_CAPABILITIES
     assert "public_key" not in listed.json()["data"][0]
     configured = client.put(
         f"{settings.API_V1_STR}/runtimes/nodes/{enrolled['node_id']}/runtime",

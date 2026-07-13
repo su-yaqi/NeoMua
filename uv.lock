@@ -12,6 +12,7 @@ members = [
     "app",
     "neomua-model-gateway",
     "neomua-node-runtime",
+    "neomua-operator-cli",
     "neomua-runtime-worker",
 ]
 
@@ -1638,6 +1639,29 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "typer", specifier = ">=0.21,<1" },
     { name = "websockets", specifier = ">=15,<17" },
+]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=7.4,<8" }]
+
+[[package]]
+name = "neomua-operator-cli"
+version = "0.1.0"
+source = { editable = "operator_cli" }
+dependencies = [
+    { name = "httpx" },
+    { name = "typer" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.28,<1" },
+    { name = "typer", specifier = ">=0.21,<1" },
 ]
 
 [package.metadata.requires-dev]

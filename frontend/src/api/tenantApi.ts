@@ -141,6 +141,17 @@ export interface PlatformUserCreateBody {
 
 export type RuntimeRouteMode = "platform_gateway" | "direct_anthropic"
 
+export interface HarnessCapability {
+  cli_version: string
+  sdk_version: string
+  harness_version: string
+}
+
+export interface HarnessCapabilities {
+  claude_code?: HarnessCapability
+  mcp_executables?: string[]
+}
+
 export interface PlatformRuntime {
   id: string
   namespace_id: string
@@ -151,6 +162,7 @@ export interface PlatformRuntime {
   permission_mode: string
   secret_masked: string | null
   compatibility_verified: boolean
+  harness_capabilities: HarnessCapabilities
 }
 
 export interface RuntimeNode {
@@ -161,6 +173,7 @@ export interface RuntimeNode {
   architecture: string
   agent_version: string
   sdk_version: string | null
+  harness_capabilities: HarnessCapabilities
   online: boolean
   last_seen_at: string | null
   revoked_at: string | null
@@ -387,10 +400,10 @@ export const tenantApi = {
     )
     return data
   },
-  createRuntimeSession: async () => {
+  createRuntimeSession: async (runtimeAgentReleaseId: string) => {
     const { data } = await api.post<{ id: string }>(
       "/api/v1/runtimes/platform/sessions",
-      {},
+      { runtime_agent_release_id: runtimeAgentReleaseId },
     )
     return data
   },
@@ -514,6 +527,18 @@ export const tenantApi = {
     )
     return data
   },
+  readTaskApprovals: async (taskId: string) =>
+    (await api.get(`/api/v1/runtime-tasks/${taskId}/approvals`)).data,
+  decideToolApproval: async (
+    approvalId: string,
+    decision: "approve" | "deny",
+    argsDigest: string,
+  ) =>
+    (
+      await api.post(`/api/v1/tool-approvals/${approvalId}/${decision}`, {
+        args_digest: argsDigest,
+      })
+    ).data,
   readRuntimeArtifacts: async () => {
     const { data } = await api.get<{ data: RuntimeArtifact[]; count: number }>(
       "/api/v1/runtime-artifacts",
@@ -549,6 +574,491 @@ export const tenantApi = {
   rollbackArtifactDeployment: async (deploymentId: string) => {
     const { data } = await api.post<ArtifactRelease>(
       `/api/v1/runtime-artifacts/deployments/${deploymentId}/rollback`,
+    )
+    return data
+  },
+}
+
+export interface AgentDefinition {
+  id: string
+  namespace_id: string
+  slug: string
+  name: string
+  description: string | null
+  status: "active" | "archived"
+  created_at: string
+  updated_at: string
+}
+
+export interface AgentListItem extends AgentDefinition {
+  draft_revision: number
+  validation_status: "unvalidated" | "validated" | "stale" | "error"
+  harness_type: string | null
+  model_id: string | null
+}
+
+export interface AgentDraftPublic {
+  agent_id: string
+  revision: number
+  harness_profile_id: string | null
+  provider_config_id: string | null
+  model_id: string | null
+  system_prompt: string
+  config: Record<string, unknown>
+  validated_revision: number | null
+  validation_result: Record<string, unknown> | null
+  validation_status: "unvalidated" | "validated" | "stale" | "error"
+  updated_at: string
+}
+
+export interface HarnessProfilePublic {
+  id: string
+  namespace_id: string
+  name: string
+  harness_type: string
+  config_schema_version: string
+  cli_version_constraint: string
+  sdk_version_constraint: string
+  config: Record<string, unknown>
+  archived: boolean
+  referenced_by_agents: boolean
+  target_compatibility: TargetCompatibility[]
+  created_at: string
+  updated_at: string
+}
+
+export interface HarnessCatalogField {
+  name: string
+  type: string
+  allowed?: string[]
+  max?: number
+  allowlist?: string[]
+}
+
+export interface HarnessCatalogItem {
+  type: string
+  config_schema_version: string
+  supported: boolean
+  description: string
+  fields: HarnessCatalogField[]
+}
+
+export interface EnvironmentCatalog {
+  allowlist: string[]
+  reserved: string[]
+  denylist: string[]
+}
+
+export interface Diagnostic {
+  code: string
+  field: string
+  message: string
+}
+
+export interface TargetCompatibility {
+  runtime_profile_id: string
+  runtime_type: string
+  cli_version: string | null
+  sdk_version: string | null
+  harness_version: string | null
+  compatible: boolean | null
+  reason: string | null
+}
+
+export interface ValidationResult {
+  validated_revision: number | null
+  status: string
+  errors: Diagnostic[]
+  warnings: Diagnostic[]
+  target_compatibility: TargetCompatibility[]
+}
+
+export const agentsApi = {
+  list: async () => {
+    const { data } = await api.get<{ data: AgentListItem[]; count: number }>(
+      "/api/v1/agents",
+    )
+    return data
+  },
+  create: async (body: {
+    slug: string
+    name: string
+    description?: string
+  }) => {
+    const { data } = await api.post<AgentDefinition>("/api/v1/agents", body)
+    return data
+  },
+  copy: async (agentId: string, body: { slug: string; name: string }) => {
+    const { data } = await api.post<AgentDefinition>(
+      `/api/v1/agents/${agentId}/copy`,
+      body,
+    )
+    return data
+  },
+  get: async (agentId: string) => {
+    const { data } = await api.get<AgentDefinition>(`/api/v1/agents/${agentId}`)
+    return data
+  },
+  update: async (
+    agentId: string,
+    body: {
+      name?: string
+      description?: string | null
+      status?: "active" | "archived"
+    },
+  ) => {
+    const { data } = await api.patch<AgentDefinition>(
+      `/api/v1/agents/${agentId}`,
+      body,
+    )
+    return data
+  },
+  delete: async (agentId: string) => {
+    await api.delete(`/api/v1/agents/${agentId}`)
+  },
+  getDraft: async (agentId: string) => {
+    const { data } = await api.get<AgentDraftPublic>(
+      `/api/v1/agents/${agentId}/draft`,
+    )
+    return data
+  },
+  saveDraft: async (
+    agentId: string,
+    body: {
+      expected_revision: number
+      harness_profile_id?: string | null
+      provider_config_id?: string | null
+      model_id?: string | null
+      system_prompt?: string
+      config?: Record<string, unknown>
+    },
+  ) => {
+    const { data } = await api.put<AgentDraftPublic>(
+      `/api/v1/agents/${agentId}/draft`,
+      body,
+    )
+    return data
+  },
+  validate: async (agentId: string) => {
+    const { data } = await api.post<ValidationResult>(
+      `/api/v1/agents/${agentId}/draft/validate`,
+    )
+    return data
+  },
+  getCapabilities: async (agentId: string) =>
+    (await api.get(`/api/v1/agents/${agentId}/draft/capabilities`)).data,
+  setSkills: async (
+    agentId: string,
+    expectedRevision: number,
+    skillVersionIds: string[],
+  ) =>
+    (
+      await api.put(`/api/v1/agents/${agentId}/draft/skills`, {
+        expected_revision: expectedRevision,
+        skills: skillVersionIds.map((skill_version_id) => ({
+          skill_version_id,
+        })),
+      })
+    ).data,
+  setTools: async (
+    agentId: string,
+    expectedRevision: number,
+    tools: Array<{ tool_key: string; policy: string }>,
+  ) =>
+    (
+      await api.put(`/api/v1/agents/${agentId}/draft/tools`, {
+        expected_revision: expectedRevision,
+        tools,
+      })
+    ).data,
+  setMcp: async (
+    agentId: string,
+    expectedRevision: number,
+    mcp: Array<{ revision_id: string; allowed_tools: string[] }>,
+  ) =>
+    (
+      await api.put(`/api/v1/agents/${agentId}/draft/mcp`, {
+        expected_revision: expectedRevision,
+        mcp,
+      })
+    ).data,
+  setPlugins: async (
+    agentId: string,
+    expectedRevision: number,
+    pluginVersionIds: string[],
+  ) =>
+    (
+      await api.put(`/api/v1/agents/${agentId}/draft/plugins`, {
+        expected_revision: expectedRevision,
+        plugins: pluginVersionIds.map((plugin_version_id) => ({
+          plugin_version_id,
+        })),
+      })
+    ).data,
+}
+
+export const harnessProfilesApi = {
+  list: async () => {
+    const { data } = await api.get<{
+      data: HarnessProfilePublic[]
+      count: number
+    }>("/api/v1/harness-profiles")
+    return data
+  },
+  create: async (body: {
+    name: string
+    harness_type?: string
+    config_schema_version?: string
+    cli_version_constraint?: string
+    sdk_version_constraint?: string
+    config?: Record<string, unknown>
+  }) => {
+    const { data } = await api.post<HarnessProfilePublic>(
+      "/api/v1/harness-profiles",
+      body,
+    )
+    return data
+  },
+  get: async (profileId: string) => {
+    const { data } = await api.get<HarnessProfilePublic>(
+      `/api/v1/harness-profiles/${profileId}`,
+    )
+    return data
+  },
+  update: async (
+    profileId: string,
+    body: {
+      name?: string
+      cli_version_constraint?: string
+      sdk_version_constraint?: string
+      config?: Record<string, unknown>
+      archived?: boolean
+    },
+  ) => {
+    const { data } = await api.patch<HarnessProfilePublic>(
+      `/api/v1/harness-profiles/${profileId}`,
+      body,
+    )
+    return data
+  },
+  delete: async (profileId: string) => {
+    await api.delete(`/api/v1/harness-profiles/${profileId}`)
+  },
+}
+
+export interface ManagedIdentity {
+  id: string
+  namespace_id: string
+  slug: string
+  name: string
+  description: string | null
+  archived: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface SkillVersion {
+  id: string
+  skill_id: string
+  version: string
+  content_sha256: string
+  manifest: Record<string, unknown>
+  deprecated: boolean
+}
+
+export interface PluginVersion {
+  id: string
+  plugin_id: string
+  version: string
+  manifest_digest: string
+  manifest: Record<string, unknown>
+  deprecated: boolean
+}
+
+export interface AgentRelease {
+  id: string
+  agent_id: string
+  version: string
+  draft_revision: number
+  resolved_spec_digest: string
+  manifest: Record<string, unknown>
+  dependency_lock: Record<string, unknown>
+  created_at: string
+}
+
+const identityApi = (path: string) => ({
+  list: async () =>
+    (await api.get<{ data: ManagedIdentity[]; count: number }>(path)).data,
+  create: async (body: { slug: string; name: string; description?: string }) =>
+    (await api.post<ManagedIdentity>(path, body)).data,
+  get: async (id: string) =>
+    (await api.get<Record<string, unknown>>(`${path}/${id}`)).data,
+  update: async (id: string, body: Record<string, unknown>) =>
+    (await api.patch<ManagedIdentity>(`${path}/${id}`, body)).data,
+})
+
+export const skillsApi = {
+  ...identityApi("/api/v1/skills"),
+  upload: async (skillId: string, version: string, file: File) => {
+    const form = new FormData()
+    form.append("version", version)
+    form.append("file", file)
+    return (
+      await api.post<SkillVersion>(`/api/v1/skills/${skillId}/versions`, form)
+    ).data
+  },
+  versions: async (skillId: string) =>
+    (
+      await api.get<{ data: SkillVersion[]; count: number }>(
+        `/api/v1/skills/${skillId}/versions`,
+      )
+    ).data,
+  deprecate: async (skillId: string, version: string) =>
+    (
+      await api.post(
+        `/api/v1/skills/${skillId}/versions/${encodeURIComponent(version)}/deprecate`,
+      )
+    ).data,
+}
+
+export const toolsApi = {
+  list: async () =>
+    (
+      await api.get<{ data: Record<string, unknown>[]; count: number }>(
+        "/api/v1/tools/catalog",
+      )
+    ).data,
+  setPolicy: async (toolKey: string, policy: string) =>
+    (
+      await api.put(
+        `/api/v1/tools/${encodeURIComponent(toolKey)}/namespace-policy`,
+        { tool_key: toolKey, policy },
+      )
+    ).data,
+}
+
+export const mcpServersApi = {
+  ...identityApi("/api/v1/mcp-servers"),
+  revisions: async (serverId: string) =>
+    (
+      await api.get<{ data: Record<string, unknown>[]; count: number }>(
+        `/api/v1/mcp-servers/${serverId}/revisions`,
+      )
+    ).data,
+  createRevision: async (serverId: string, body: Record<string, unknown>) =>
+    (await api.post(`/api/v1/mcp-servers/${serverId}/revisions`, body)).data,
+  getRevision: async (serverId: string, revision: number) =>
+    (await api.get(`/api/v1/mcp-servers/${serverId}/revisions/${revision}`))
+      .data,
+  createTarget: async (
+    revisionId: string,
+    body: { runtime_profile_id: string; secret_ref?: string },
+  ) =>
+    (await api.post(`/api/v1/mcp-revisions/${revisionId}/targets`, body)).data,
+  setTargetSecret: async (
+    targetId: string,
+    secretInputs: Record<string, string>,
+  ) =>
+    (
+      await api.put(`/api/v1/mcp-targets/${targetId}/secret`, {
+        secret_inputs: secretInputs,
+      })
+    ).data,
+  validateTarget: async (targetId: string) =>
+    (await api.post(`/api/v1/mcp-targets/${targetId}/validate`)).data,
+  validations: async (targetId: string) =>
+    (await api.get(`/api/v1/mcp-targets/${targetId}/validations`)).data,
+  runtime: async (targetId: string) =>
+    (await api.get(`/api/v1/mcp-targets/${targetId}/runtime`)).data,
+  restartRuntime: async (targetId: string) =>
+    (await api.post(`/api/v1/mcp-targets/${targetId}/runtime/restart`)).data,
+}
+
+export const pluginsApi = {
+  ...identityApi("/api/v1/plugins"),
+  getDraft: async (pluginId: string) =>
+    (await api.get(`/api/v1/plugins/${pluginId}/draft`)).data,
+  saveDraft: async (pluginId: string, body: Record<string, unknown>) =>
+    (await api.put(`/api/v1/plugins/${pluginId}/draft`, body)).data,
+  validate: async (pluginId: string) =>
+    (await api.post(`/api/v1/plugins/${pluginId}/draft/validate`)).data,
+  publish: async (
+    pluginId: string,
+    body: { draft_revision: number; version: string },
+  ) =>
+    (
+      await api.post<PluginVersion>(
+        `/api/v1/plugins/${pluginId}/versions`,
+        body,
+        { headers: { "Idempotency-Key": crypto.randomUUID() } },
+      )
+    ).data,
+  deprecate: async (pluginId: string, version: string) =>
+    (
+      await api.post(
+        `/api/v1/plugins/${pluginId}/versions/${encodeURIComponent(version)}/deprecate`,
+      )
+    ).data,
+}
+
+export const releasesApi = {
+  list: async (agentId: string) =>
+    (
+      await api.get<{ data: AgentRelease[]; count: number }>(
+        `/api/v1/agents/${agentId}/releases`,
+      )
+    ).data,
+  create: async (
+    agentId: string,
+    body: { draft_revision: number; version: string },
+  ) =>
+    (
+      await api.post<AgentRelease>(`/api/v1/agents/${agentId}/releases`, body, {
+        headers: { "Idempotency-Key": crypto.randomUUID() },
+      })
+    ).data,
+  get: async (releaseId: string) =>
+    (await api.get(`/api/v1/agent-releases/${releaseId}`)).data,
+  activate: async (releaseId: string, runtimeProfileIds: string[]) =>
+    (
+      await api.post(
+        `/api/v1/agent-releases/${releaseId}/activations`,
+        { runtime_profile_ids: runtimeProfileIds },
+        { headers: { "Idempotency-Key": crypto.randomUUID() } },
+      )
+    ).data,
+  precheckActivation: async (releaseId: string, runtimeProfileIds: string[]) =>
+    (
+      await api.post(
+        `/api/v1/agent-releases/${releaseId}/activations/precheck`,
+        { runtime_profile_ids: runtimeProfileIds },
+      )
+    ).data,
+  runtimeAgents: async () => (await api.get("/api/v1/runtime-agents")).data,
+  getActivation: async (activationId: string) =>
+    (await api.get(`/api/v1/agent-activations/${activationId}`)).data,
+  retryDeployment: async (deploymentId: string) =>
+    (await api.post(`/api/v1/agent-deployments/${deploymentId}/retry`)).data,
+  rollbackDeployment: async (deploymentId: string) =>
+    (
+      await api.post(
+        `/api/v1/agent-deployments/${deploymentId}/rollback`,
+        {},
+        { headers: { "Idempotency-Key": crypto.randomUUID() } },
+      )
+    ).data,
+}
+
+export const harnessCatalogApi = {
+  harnesses: async () => {
+    const { data } = await api.get<{ harnesses: HarnessCatalogItem[] }>(
+      "/api/v1/harnesses/catalog",
+    )
+    return data.harnesses
+  },
+  environment: async () => {
+    const { data } = await api.get<EnvironmentCatalog>(
+      "/api/v1/harnesses/environment-catalog",
     )
     return data
   },

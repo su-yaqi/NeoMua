@@ -1,6 +1,7 @@
+import { useQuery } from "@tanstack/react-query"
 import { useEffect, useRef, useState } from "react"
 
-import { type RuntimeEvent, tenantApi } from "@/api/tenantApi"
+import { type RuntimeEvent, releasesApi, tenantApi } from "@/api/tenantApi"
 import { Button } from "@/components/ui/button"
 import {
   Sheet,
@@ -10,11 +11,20 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet"
 
-export default function TestConversationSheet() {
+export default function TestConversationSheet({
+  runtimeId,
+}: {
+  runtimeId: string
+}) {
   const [sessionId, setSessionId] = useState<string>()
   const [prompt, setPrompt] = useState("")
   const [events, setEvents] = useState<RuntimeEvent[]>([])
   const [sending, setSending] = useState(false)
+  const [bindingId, setBindingId] = useState("")
+  const { data: bindings } = useQuery({
+    queryKey: ["runtime-agents"],
+    queryFn: releasesApi.runtimeAgents,
+  })
   const streamController = useRef<AbortController | null>(null)
 
   useEffect(() => () => streamController.current?.abort(), [])
@@ -27,7 +37,7 @@ export default function TestConversationSheet() {
     setSending(true)
     try {
       const activeSession =
-        sessionId ?? (await tenantApi.createRuntimeSession()).id
+        sessionId ?? (await tenantApi.createRuntimeSession(bindingId)).id
       setSessionId(activeSession)
       const task = await tenantApi.sendRuntimeMessage(
         activeSession,
@@ -87,9 +97,25 @@ export default function TestConversationSheet() {
             onChange={(e) => setPrompt(e.target.value)}
             placeholder="输入测试消息"
           />
+          {!sessionId && (
+            <select
+              className="w-full rounded-md border bg-background p-2"
+              value={bindingId}
+              onChange={(event) => setBindingId(event.target.value)}
+            >
+              <option value="">选择平台已激活的 Agent Release</option>
+              {((bindings?.data ?? []) as Array<Record<string, string>>)
+                .filter((item) => item.runtime_profile_id === runtimeId)
+                .map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.agent_id} · {item.current_release_id}
+                  </option>
+                ))}
+            </select>
+          )}
           <Button
             className="w-full"
-            disabled={sending || !prompt.trim()}
+            disabled={sending || !prompt.trim() || (!sessionId && !bindingId)}
             onClick={send}
           >
             {sending ? "执行中…" : "发送"}

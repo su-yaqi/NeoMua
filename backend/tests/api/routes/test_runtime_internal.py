@@ -4,10 +4,11 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session
 
 from app.core.config import settings
-from app.runtime.models import AgentTask
+from app.runtime.models import AgentTask, RuntimeProfile
 from app.runtime.policy import TaskStatus
 from app.runtime.security import expected_internal_token, issue_gateway_token
 from tests.api.routes.test_namespaces import create_namespace, namespace_headers
+from tests.utils.agent_release import create_active_agent_binding
 
 
 def test_internal_endpoint_rejects_user_jwt(
@@ -19,6 +20,42 @@ def test_internal_endpoint_rejects_user_jwt(
         json={"task_id": "00000000-0000-0000-0000-000000000000", "events": []},
     )
     assert response.status_code == 403
+
+
+def test_runtime_worker_reports_platform_harness_capabilities(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    namespace = create_namespace(db)
+    created = client.put(
+        f"{settings.API_V1_STR}/runtimes/platform",
+        headers=namespace_headers(superuser_token_headers, namespace.id),
+        json={
+            "route_mode": "direct_anthropic",
+            "model_id": "claude-test",
+            "base_url": "https://example.test",
+            "secret_inputs": {"api_key": "secret-value"},
+        },
+    ).json()
+    capabilities = {
+        "claude_code": {
+            "cli_version": "2.1.191",
+            "sdk_version": "0.2.110",
+            "harness_version": "0.1.0",
+        }
+    }
+    response = client.post(
+        f"{settings.API_V1_STR}/internal/runtime/capabilities",
+        headers={"X-Runtime-Token": expected_internal_token()},
+        json={"worker_id": "worker-1", "harness_capabilities": capabilities},
+    )
+    assert response.status_code == 200
+    assert response.json() == {"updated": 1}
+    db.expire_all()
+    runtime = db.get(RuntimeProfile, uuid.UUID(created["id"]))
+    assert runtime is not None
+    assert runtime.harness_capabilities == capabilities
 
 
 def test_gateway_can_resolve_direct_runtime_without_exposing_secret_to_browser(
@@ -70,7 +107,7 @@ def test_worker_claims_queued_platform_task(
 ) -> None:
     namespace = create_namespace(db)
     headers = namespace_headers(superuser_token_headers, namespace.id)
-    client.put(
+    runtime_response = client.put(
         f"{settings.API_V1_STR}/runtimes/platform",
         headers=headers,
         json={
@@ -79,7 +116,7 @@ def test_worker_claims_queued_platform_task(
             "base_url": "https://example.test",
             "secret_inputs": {"api_key": "secret-value"},
         },
-    )
+    ).json()
 
     async def compatible(*_args):
         return {"type": "message"}
@@ -93,8 +130,19 @@ def test_worker_claims_queued_platform_task(
         ).status_code
         == 200
     )
+    runtime = db.get(RuntimeProfile, uuid.UUID(runtime_response["id"]))
+    assert runtime is not None
+    binding = create_active_agent_binding(
+        db,
+        namespace_id=namespace.id,
+        runtime_profile_id=runtime.id,
+        provider_config_id=runtime.provider_config_id,
+        model_id=runtime.model_id,
+    )
     session_id = client.post(
-        f"{settings.API_V1_STR}/runtimes/platform/sessions", headers=headers, json={}
+        f"{settings.API_V1_STR}/runtimes/platform/sessions",
+        headers=headers,
+        json={"runtime_agent_release_id": str(binding.id)},
     ).json()["id"]
     task_id = client.post(
         f"{settings.API_V1_STR}/runtimes/sessions/{session_id}/messages",

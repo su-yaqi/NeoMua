@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router"
 import ArtifactPanel from "@/components/Runtimes/ArtifactPanel"
 import NodeTable from "@/components/Runtimes/NodeTable"
 import PlatformRuntimeCard from "@/components/Runtimes/PlatformRuntimeCard"
+import RuntimeAgentMatrix from "@/components/Runtimes/RuntimeAgentMatrix"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import useAuth from "@/hooks/useAuth"
 
@@ -39,6 +40,7 @@ function RuntimeManagementPage() {
       </div>
       <PlatformRuntimeCard canManage={canManage} />
       <NodeTable canManage={canManage} />
+      <RuntimeAgentMatrix />
       <ArtifactPanel canManage={canManage} />
     </div>
   )

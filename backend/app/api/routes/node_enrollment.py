@@ -2,6 +2,7 @@ import base64
 import hashlib
 import uuid
 from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -15,6 +16,7 @@ from app.api.deps import (
 )
 from app.llm_provider_service import seal_secret_payload
 from app.models import LlmProviderConfig, LlmProviderModel
+from app.runtime.capabilities import HarnessCapabilities
 from app.runtime.connections import node_is_online
 from app.runtime.endpoints import EndpointValidationError, canonical_endpoint
 from app.runtime.enrollment import (
@@ -65,6 +67,7 @@ class NodeEnrollInput(BaseModel):
     architecture: str = Field(min_length=1, max_length=64)
     agent_version: str = Field(min_length=1, max_length=64)
     sdk_version: str | None = Field(default=None, max_length=64)
+    harness_capabilities: HarnessCapabilities
     public_key: str
 
 
@@ -83,6 +86,7 @@ class NodePublic(BaseModel):
     architecture: str
     agent_version: str
     sdk_version: str | None
+    harness_capabilities: dict[str, Any]
     online: bool
     last_seen_at: datetime | None
     revoked_at: datetime | None
@@ -132,6 +136,7 @@ def _public_node(node: RuntimeNode) -> NodePublic:
         architecture=node.architecture,
         agent_version=node.agent_version,
         sdk_version=node.sdk_version,
+        harness_capabilities=node.harness_capabilities,
         online=node_is_online(node),
         last_seen_at=node.last_seen_at,
         revoked_at=node.revoked_at,
@@ -373,6 +378,7 @@ def enroll_node(body: NodeEnrollInput, session: SessionDep) -> NodeEnrollResult:
         architecture=body.architecture,
         agent_version=body.agent_version,
         sdk_version=body.sdk_version,
+        harness_capabilities=body.harness_capabilities.model_dump(exclude_none=True),
         public_key=body.public_key,
         key_fingerprint=fingerprint,
     )

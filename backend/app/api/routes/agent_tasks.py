@@ -9,11 +9,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, select
 
 from app import crud
+from app.agent_management.capability_models import AgentRelease, RuntimeAgentRelease
 from app.api.deps import CurrentUser, SessionDep, require_namespace_runtime_user
 from app.core.config import settings
 from app.models import NamespaceRole
 from app.runtime.connections import node_is_online
 from app.runtime.models import (
+    AgentEvent,
     AgentEventType,
     AgentTask,
     RuntimeNode,
@@ -28,6 +30,7 @@ router = APIRouter(prefix="/runtime-tasks", tags=["runtime-tasks"])
 
 
 class TaskCreate(BaseModel):
+    runtime_agent_release_id: uuid.UUID
     runtime_profile_id: uuid.UUID
     node_id: uuid.UUID | None = None
     prompt: str = Field(min_length=1)
@@ -167,6 +170,7 @@ def create_task(
         )
     ).first()
     request_identity = {
+        "runtime_agent_release_id": str(body.runtime_agent_release_id),
         "runtime_profile_id": str(body.runtime_profile_id),
         "node_id": str(body.node_id) if body.node_id else None,
         "task_kind": body.task_kind.value,
@@ -178,27 +182,61 @@ def create_task(
             raise HTTPException(409, "Idempotency-Key was used for a different task")
         return _public(existing)
     runtime, node = _resolve_target(session, namespace_id, body)
+    binding = session.get(RuntimeAgentRelease, body.runtime_agent_release_id)
+    if (
+        binding is None
+        or binding.namespace_id != namespace_id
+        or binding.runtime_profile_id != runtime.id
+    ):
+        raise HTTPException(404, "Active Agent binding not found")
+    release = session.get(AgentRelease, binding.current_release_id)
+    if (
+        release is None
+        or binding.applied_digest != release.resolved_spec_digest
+        or binding.materialization_digest != release.resolved_spec_digest
+    ):
+        raise HTTPException(409, "release_not_active")
     working_directory = _validated_working_directory(
         body.working_directory, runtime, node
     )
+    resolved_spec = release.resolved_spec
     snapshot = {
         "request": request_identity,
         "runtime_type": runtime.runtime_type.value,
         "runtime_profile_id": str(runtime.id),
         "runtime_revision": node.config_revision if node else 1,
         "route_mode": runtime.route_mode.value,
-        "provider_config_id": str(runtime.provider_config_id)
-        if runtime.provider_config_id
-        else None,
-        "model_id": runtime.model_id,
+        "agent_id": str(release.agent_id),
+        "agent_release_id": str(release.id),
+        "agent_release_version": release.version,
+        "resolved_spec_digest": release.resolved_spec_digest,
+        "system_prompt": resolved_spec["system_prompt"],
+        "provider_config_id": resolved_spec["model"]["provider_config_id"],
+        "model_id": resolved_spec["model"]["model_id"],
         "base_url": runtime.base_url,
-        "permission_mode": runtime.permission_mode,
-        "tools": runtime.config.get("tools", []),
-        "allowed_tools": runtime.config.get("allowed_tools", []),
-        "disallowed_tools": runtime.config.get("disallowed_tools", []),
+        "permission_mode": resolved_spec["policies"]["permission_mode"],
+        "tools": [item["key"] for item in resolved_spec["tools"]],
+        "allowed_tools": [
+            item["key"]
+            for item in resolved_spec["tools"]
+            if item["policy"] in {"allow", "require_approval"}
+        ],
+        "disallowed_tools": [
+            item["key"]
+            for item in resolved_spec["tools"]
+            if item["policy"] in {"deny", "disabled", "forbidden"}
+        ],
+        "require_approval_tools": [
+            item["key"]
+            for item in resolved_spec["tools"]
+            if item["policy"] == "require_approval"
+        ],
+        "skills": resolved_spec["skills"],
+        "plugins": resolved_spec["plugins"],
+        "mcp_servers": resolved_spec["mcp_servers"],
         "working_directory": working_directory,
         "allowed_working_roots": runtime.config.get("allowed_working_roots", []),
-        "timeout_seconds": runtime.config.get("timeout_seconds", 3600),
+        "timeout_seconds": resolved_spec["policies"]["timeout_seconds"],
         "executor_versions": {
             "claude_agent_sdk": "0.2.110",
             "executor": node.agent_version if node else "runtime-worker-0.1.0",
@@ -211,6 +249,9 @@ def create_task(
         task_kind=body.task_kind,
         prompt=body.prompt,
         snapshot=snapshot,
+        agent_release_id=release.id,
+        runtime_agent_release_id=binding.id,
+        resolved_spec_digest=release.resolved_spec_digest,
         idempotency_key=idempotency_key,
         created_by=current_user.id,
     )
@@ -269,6 +310,30 @@ def read_task(
     namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
 ) -> TaskPublic:
     return _public(_get_task(session, task_id, namespace_id))
+
+
+@router.get("/{task_id}/events")
+def read_task_events(
+    task_id: uuid.UUID,
+    session: SessionDep,
+    _: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
+) -> list[dict[str, Any]]:
+    _get_task(session, task_id, namespace_id)
+    rows = session.exec(
+        select(AgentEvent)
+        .where(AgentEvent.task_id == task_id)
+        .order_by(col(AgentEvent.sequence))
+    ).all()
+    return [
+        {
+            "sequence": row.sequence,
+            "event_type": row.event_type.value,
+            "payload": row.payload,
+            "created_at": row.created_at,
+        }
+        for row in rows
+    ]
 
 
 @router.post("/{task_id}/cancel", response_model=TaskPublic)

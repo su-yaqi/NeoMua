@@ -63,7 +63,17 @@ export default function NodeTable({ canManage }: { canManage: boolean }) {
                     <td>
                       {node.os_name}/{node.architecture}
                     </td>
-                    <td>{node.agent_version}</td>
+                    <td>
+                      <div>Node {node.agent_version}</div>
+                      <div className="text-xs text-muted-foreground">
+                        CLI{" "}
+                        {node.harness_capabilities.claude_code?.cli_version ??
+                          "unknown"}
+                        {" · "}SDK{" "}
+                        {node.harness_capabilities.claude_code?.sdk_version ??
+                          "unknown"}
+                      </div>
+                    </td>
                     <td>
                       <div className="flex justify-end gap-2">
                         <DispatchTaskSheet node={node} />
