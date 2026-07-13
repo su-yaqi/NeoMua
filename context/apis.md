@@ -136,3 +136,17 @@
 | GET | `/node/artifacts/{id}/download` | 节点凭短期、部署范围 JWT 下载 |
 
 内部 `/internal/runtime/*` 仅接受独立服务凭证；浏览器 JWT 无法访问。Model Gateway token 绑定 namespace/runtime/task/model，不能换模型或跨空间使用。
+
+### agent management（v0.5）
+
+| 资源 | 主要正式接口 |
+|---|---|
+| Agent/Harness | `/agents`、`/agents/{id}/draft`、`/agents/{id}/draft/validate`、`/harness-profiles` |
+| Skill/Tool | `/skills[/{id}/versions]`、`/tools/catalog`、`/tools/{key}/namespace-policy`、`/agents/{id}/draft/skills|tools` |
+| MCP | `/mcp-servers[/{id}/revisions]`、`/mcp-revisions/{id}/targets`、`/mcp-targets/{id}/secret|validate|validations|runtime` |
+| Plugin | `/plugins[/{id}/draft|versions]`、`/agents/{id}/draft/plugins` |
+| Release/Activation | `/agents/{id}/releases`、`/agent-releases/{id}`、`/agent-releases/{id}/activations/precheck|activations`、`/agent-deployments/{id}/retry|rollback` |
+| Runtime Agent/Approval | `/runtime-agents`、`/runtime-tasks/{id}/approvals`、`/tool-approvals/{id}/approve|deny` |
+| Operator CLI | `/cli/login|refresh|logout`、`/capabilities`；其余命令复用以上正式接口 |
+
+发布、激活、Plugin Version、retry/rollback 和任务创建使用 `Idempotency-Key`。MCP/Release Worker 领取与回传继续位于受独立服务凭证保护的 `/internal/runtime/*`；节点结果经已鉴权 WSS 转发。读接口不返回 secret value。

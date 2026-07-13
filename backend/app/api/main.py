@@ -1,5 +1,18 @@
 from fastapi import APIRouter
 
+from app.agent_management.capability_routes import (
+    mcp_internal_router,
+)
+from app.agent_management.capability_routes import (
+    node_router as agent_capability_node_router,
+)
+from app.agent_management.capability_routes import router as agent_capability_router
+from app.agent_management.cli_routes import router as operator_cli_router
+from app.agent_management.release_routes import (
+    internal_router as agent_release_internal_router,
+)
+from app.agent_management.release_routes import router as agent_release_router
+from app.agent_management.routes import router as agent_management_router
 from app.api.routes import (
     agent_tasks,
     items,
@@ -15,7 +28,6 @@ from app.api.routes import (
     users,
     utils,
 )
-from app.agent_management.routes import router as agent_management_router
 from app.core.config import settings
 
 api_router = APIRouter()
@@ -36,6 +48,12 @@ api_router.include_router(node_enrollment.node_router)
 api_router.include_router(node_socket.router)
 
 api_router.include_router(agent_management_router)
+api_router.include_router(agent_capability_router)
+api_router.include_router(agent_capability_node_router)
+api_router.include_router(mcp_internal_router)
+api_router.include_router(agent_release_router)
+api_router.include_router(agent_release_internal_router)
+api_router.include_router(operator_cli_router)
 
 
 if settings.ENVIRONMENT == "local" and settings.ENABLE_PRIVATE_TEST_API:

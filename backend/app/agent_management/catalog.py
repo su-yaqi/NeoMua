@@ -8,9 +8,9 @@ AgentDraft configs. The denylist always takes precedence over the allowlist.
 
 import re
 from enum import Enum
+from typing import Any
 
 from packaging.version import InvalidVersion, Version
-
 from pydantic import BaseModel
 
 # v0.5: only claude_code is an executable harness type. Unknown types may be
@@ -59,11 +59,24 @@ ENV_DENYLIST_PREFIXES: tuple[str, ...] = ("NEOMUA_", "DYLD_")
 SECRET_KEY_NAMES: set[str] = {
     "api_key",
     "apikey",
+    "api_token",
+    "access_token",
+    "auth_token",
     "token",
     "password",
     "secret",
     "authorization",
 }
+
+PROFILE_CONFIG_FIELDS = {
+    "permission_mode",
+    "timeout_seconds",
+    "working_directory_strategy",
+    "allowed_env_names",
+    "allowed_tools",
+    "disallowed_tools",
+}
+DRAFT_CONFIG_FIELDS = {"timeout_seconds", "working_directory_strategy"}
 
 # Shell metacharacters that indicate command injection attempts in string fields.
 SHELL_METACHAR_PATTERN = re.compile(r"[;|&`$]\s*\S|&&|\|\||>\s|<\s|rm\s+-rf")
@@ -138,11 +151,19 @@ def validate_env_names(names: list[str]) -> list[Diagnostic]:
     return diags
 
 
-def _check_secret_keys(config: dict, prefix: str = "") -> list[Diagnostic]:
+def _check_secret_keys(config: object, prefix: str = "") -> list[Diagnostic]:
     diags: list[Diagnostic] = []
-    for key, value in config.items():
-        field = f"{prefix}{key}" if prefix else key
-        if key.lower() in SECRET_KEY_NAMES:
+    if isinstance(config, list):
+        for index, value in enumerate(config):
+            diags.extend(_check_secret_keys(value, f"{prefix}[{index}]"))
+        return diags
+    if not isinstance(config, dict):
+        return diags
+    for raw_key, value in config.items():
+        key = str(raw_key)
+        field = f"{prefix}.{key}" if prefix else key
+        normalized_key = re.sub(r"[-\s]+", "_", key.lower())
+        if normalized_key in SECRET_KEY_NAMES:
             diags.append(
                 Diagnostic(
                     code="secret_value_forbidden",
@@ -151,15 +172,39 @@ def _check_secret_keys(config: dict, prefix: str = "") -> list[Diagnostic]:
                     "stored in config",
                 )
             )
-        if isinstance(value, dict):
-            diags.extend(_check_secret_keys(value, field + "."))
+        if normalized_key in {"header", "headers"} and value not in ({}, [], None):
+            diags.append(
+                Diagnostic(
+                    code="header_value_forbidden",
+                    field=field,
+                    message="arbitrary Header values cannot be stored in config",
+                )
+            )
+        diags.extend(_check_secret_keys(value, field))
     return diags
 
 
-def _check_shell_strings(config: dict, prefix: str = "") -> list[Diagnostic]:
+def _check_shell_strings(config: object, prefix: str = "") -> list[Diagnostic]:
     diags: list[Diagnostic] = []
-    for key, value in config.items():
-        field = f"{prefix}{key}" if prefix else key
+    if isinstance(config, list):
+        for index, value in enumerate(config):
+            field = f"{prefix}[{index}]"
+            if isinstance(value, str) and SHELL_METACHAR_PATTERN.search(value):
+                diags.append(
+                    Diagnostic(
+                        code="shell_metachar_forbidden",
+                        field=field,
+                        message="config contains shell metacharacters; shell strings are not allowed",
+                    )
+                )
+            else:
+                diags.extend(_check_shell_strings(value, field))
+        return diags
+    if not isinstance(config, dict):
+        return diags
+    for raw_key, value in config.items():
+        key = str(raw_key)
+        field = f"{prefix}.{key}" if prefix else key
         if isinstance(value, str) and SHELL_METACHAR_PATTERN.search(value):
             diags.append(
                 Diagnostic(
@@ -169,12 +214,37 @@ def _check_shell_strings(config: dict, prefix: str = "") -> list[Diagnostic]:
                     "shell strings are not allowed",
                 )
             )
-        if isinstance(value, dict):
-            diags.extend(_check_shell_strings(value, field + "."))
+        else:
+            diags.extend(_check_shell_strings(value, field))
     return diags
 
 
-def validate_config(config: dict, *, is_profile: bool = False) -> list[Diagnostic]:
+def _validate_string_list(config: dict[str, Any], field: str) -> list[Diagnostic]:
+    value = config.get(field)
+    if value is None:
+        return []
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        return [
+            Diagnostic(
+                code="invalid_string_list",
+                field=field,
+                message=f"{field} must be a list of strings",
+            )
+        ]
+    if len(set(value)) != len(value):
+        return [
+            Diagnostic(
+                code="duplicate_list_item",
+                field=field,
+                message=f"{field} must not contain duplicate values",
+            )
+        ]
+    return []
+
+
+def validate_config(
+    config: dict[str, Any], *, is_profile: bool = True
+) -> list[Diagnostic]:
     """Validate a non-sensitive structured config (HarnessProfile or AgentDraft).
 
     Rejects bypassPermissions, unknown permission modes, secret-named keys,
@@ -182,6 +252,16 @@ def validate_config(config: dict, *, is_profile: bool = False) -> list[Diagnosti
     env names. Returns a list of Diagnostic (empty == valid).
     """
     diags: list[Diagnostic] = []
+    allowed_fields = PROFILE_CONFIG_FIELDS if is_profile else DRAFT_CONFIG_FIELDS
+    for key in config:
+        if key not in allowed_fields:
+            diags.append(
+                Diagnostic(
+                    code="unknown_config_field",
+                    field=str(key),
+                    message=f"config field '{key}' is not supported by this schema",
+                )
+            )
     diags.extend(_check_secret_keys(config))
     diags.extend(_check_shell_strings(config))
 
@@ -224,7 +304,10 @@ def validate_config(config: dict, *, is_profile: bool = False) -> list[Diagnosti
             )
 
     working_dir_strategy = config.get("working_directory_strategy")
-    if working_dir_strategy is not None and working_dir_strategy not in {"inherit", "require_root"}:
+    if working_dir_strategy is not None and working_dir_strategy not in {
+        "inherit",
+        "require_root",
+    }:
         diags.append(
             Diagnostic(
                 code="invalid_working_directory_strategy",
@@ -235,7 +318,9 @@ def validate_config(config: dict, *, is_profile: bool = False) -> list[Diagnosti
 
     env_names = config.get("allowed_env_names")
     if env_names is not None:
-        if not isinstance(env_names, list):
+        if not isinstance(env_names, list) or any(
+            not isinstance(name, str) for name in env_names
+        ):
             diags.append(
                 Diagnostic(
                     code="invalid_env_names",
@@ -245,6 +330,21 @@ def validate_config(config: dict, *, is_profile: bool = False) -> list[Diagnosti
             )
         else:
             diags.extend(validate_env_names(env_names))
+
+    for field in ("allowed_tools", "disallowed_tools"):
+        diags.extend(_validate_string_list(config, field))
+    allowed_tools = config.get("allowed_tools")
+    disallowed_tools = config.get("disallowed_tools")
+    if isinstance(allowed_tools, list) and isinstance(disallowed_tools, list):
+        overlap = sorted(set(allowed_tools) & set(disallowed_tools))
+        if overlap:
+            diags.append(
+                Diagnostic(
+                    code="tool_policy_conflict",
+                    field="allowed_tools",
+                    message=f"tools cannot be both allowed and disallowed: {overlap}",
+                )
+            )
 
     return diags
 
@@ -313,23 +413,37 @@ def evaluate_version_constraint(reported_version: str, constraint: str) -> bool:
     return True
 
 
-HARNESS_CATALOG: list[dict] = [
+HARNESS_CATALOG: list[dict[str, Any]] = [
     {
         "type": "claude_code",
         "config_schema_version": "1.0",
         "supported": True,
         "description": "Claude Code CLI / Claude Agent SDK harness",
         "fields": [
-            {"name": "permission_mode", "type": "enum", "allowed": sorted(VALID_PERMISSION_MODES)},
+            {
+                "name": "permission_mode",
+                "type": "enum",
+                "allowed": sorted(VALID_PERMISSION_MODES),
+            },
             {"name": "timeout_seconds", "type": "integer", "max": MAX_TIMEOUT_SECONDS},
-            {"name": "working_directory_strategy", "type": "enum", "allowed": ["inherit", "require_root"]},
-            {"name": "allowed_env_names", "type": "string_list", "allowlist": sorted(ENV_ALLOWLIST)},
+            {
+                "name": "working_directory_strategy",
+                "type": "enum",
+                "allowed": ["inherit", "require_root"],
+            },
+            {
+                "name": "allowed_env_names",
+                "type": "string_list",
+                "allowlist": sorted(ENV_ALLOWLIST),
+            },
+            {"name": "allowed_tools", "type": "string_list"},
+            {"name": "disallowed_tools", "type": "string_list"},
         ],
     }
 ]
 
 
-def environment_catalog() -> dict:
+def environment_catalog() -> dict[str, list[str]]:
     return {
         "allowlist": sorted(ENV_ALLOWLIST),
         "reserved": sorted(ENV_RESERVED),

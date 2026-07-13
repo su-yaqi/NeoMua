@@ -50,6 +50,10 @@ export function AppSidebar() {
           children: [
             { title: "Agent", path: "/system/agents" },
             { title: "Harness 配置", path: "/system/harnesses" },
+            { title: "Skills", path: "/system/skills" },
+            { title: "Tools", path: "/system/tools" },
+            { title: "MCP Servers", path: "/system/mcp-servers" },
+            { title: "Plugins", path: "/system/plugins" },
           ],
         })
       }

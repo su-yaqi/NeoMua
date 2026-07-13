@@ -1,4 +1,6 @@
 import asyncio
+import hashlib
+import json
 from enum import Enum
 from typing import Protocol
 
@@ -7,6 +9,9 @@ from node_runtime.protocol import Envelope, envelope
 from node_runtime.spool import EventSpool
 from runtime_worker.agent_shell import AgentShell, RunCommand
 from runtime_worker.permissions import validate_permission_mode
+from runtime_worker.release_store import AgentReleaseStore
+from runtime_worker.mcp_manager import McpRuntimeManager
+from node_runtime.secrets import read_node_secret
 
 
 class DispatchDecision(str, Enum):
@@ -49,6 +54,9 @@ class NodeTaskExecutor:
         node_id: str,
         *,
         shell: AgentShell | None = None,
+        release_store: AgentReleaseStore | None = None,
+        approval_callback=None,
+        mcp_manager: McpRuntimeManager | None = None,
     ) -> None:
         self.spool = spool
         self.route_store = route_store
@@ -57,9 +65,19 @@ class NodeTaskExecutor:
         self.shell = shell or AgentShell()
         self.running: dict[str, asyncio.Task] = {}
         self.cancelling: set[str] = set()
+        self.release_store = release_store
+        self.approval_callback = approval_callback
+        self.mcp_manager = mcp_manager or McpRuntimeManager()
 
     def validate(self, command: dict) -> None:
         snapshot = command["snapshot"]
+        if self.release_store is None:
+            raise ValueError("release_not_active: Agent Release store is unavailable")
+        self.release_store.verify_installed(
+            str(snapshot["agent_id"]),
+            str(snapshot["agent_release_id"]),
+            str(snapshot["resolved_spec_digest"]),
+        )
         validate_permission_mode(snapshot.get("permission_mode", "default"))
         cwd = snapshot.get("working_directory")
         roots = snapshot.get("allowed_working_roots", [])
@@ -101,9 +119,13 @@ class NodeTaskExecutor:
         sequence = 0
         try:
             env = build_route_env(command["route"], snapshot, self.route_store)
+            release_store = self.release_store
+            if release_store is None:
+                raise ValueError("agent_release_store_unavailable")
             run_command = RunCommand(
                 prompt=command["prompt"],
                 model=snapshot["model_id"],
+                system_prompt=snapshot.get("system_prompt"),
                 permission_mode=snapshot.get("permission_mode", "default"),
                 tools=snapshot.get("tools", []),
                 allowed_tools=snapshot.get("allowed_tools", []),
@@ -112,7 +134,42 @@ class NodeTaskExecutor:
                 env=env,
                 start_sequence=int(command.get("event_sequence_start", 1)),
                 timeout_seconds=int(snapshot.get("timeout_seconds", 3600)),
+                task_revision=revision,
+                require_approval_tools=snapshot.get("require_approval_tools", []),
+                approval_callback=self.approval_callback,
+                add_dirs=[
+                    str(
+                        release_store.verify_installed(
+                            str(snapshot["agent_id"]),
+                            str(snapshot["agent_release_id"]),
+                            str(snapshot["resolved_spec_digest"]),
+                        )
+                    )
+                ],
+                skills=[str(item["slug"]) for item in snapshot.get("skills", [])],
             )
+            mcp_runtime_configs = []
+            for server in snapshot.get("mcp_servers", []):
+                handles = [
+                    item
+                    for item in server.get("secret_handles", [])
+                    if item.get("runtime_profile_id")
+                    == str(snapshot["runtime_profile_id"])
+                ]
+                if len(handles) != 1 or not handles[0].get("secret_ref"):
+                    raise ValueError(f"mcp_target_not_ready: {server.get('slug')}")
+                mcp_runtime_configs.append(
+                    {
+                        **server,
+                        "secret_inputs": read_node_secret(
+                            str(handles[0]["secret_ref"])
+                        ),
+                    }
+                )
+            run_command.mcp_servers = self.mcp_manager.execution_configs(
+                mcp_runtime_configs
+            )
+
             async def consume() -> None:
                 nonlocal sequence
                 async for event in self.shell.run_session(run_command, task_id=task_id):
@@ -211,12 +268,20 @@ class NodeTaskController:
         route_store: ModelRouteStore,
         *,
         shell: AgentShell | None = None,
+        release_store: AgentReleaseStore | None = None,
     ) -> None:
         self.node_id = node_id
         self.spool = spool
         self.outbox: asyncio.Queue[Envelope] = asyncio.Queue()
+        self.approval_waiters: dict[str, asyncio.Future[bool]] = {}
         self.executor = NodeTaskExecutor(
-            spool, route_store, self.outbox, node_id, shell=shell
+            spool,
+            route_store,
+            self.outbox,
+            node_id,
+            shell=shell,
+            release_store=release_store,
+            approval_callback=self._request_approval,
         )
         self.dispatcher = TaskDispatcher(spool, self.executor)
 
@@ -268,7 +333,61 @@ class NodeTaskController:
                     },
                 )
             ]
+        elif message.type == "tool_approval_decision":
+            approval_id = str(message.payload["approval_id"])
+            approval_key = str(message.payload["client_approval_key"])
+            waiter = self.approval_waiters.get(approval_key)
+            if waiter and not waiter.done():
+                waiter.set_result(message.payload["status"] == "approved")
+            return [
+                envelope(
+                    "tool_approval_decision_ack",
+                    self.node_id,
+                    {"approval_id": approval_id},
+                )
+            ]
         return []
+
+    async def _request_approval(
+        self, task_id: str, task_revision: int, tool_name: str, tool_input: dict
+    ) -> bool:
+        args_digest = hashlib.sha256(
+            json.dumps(
+                tool_input, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+            ).encode()
+        ).hexdigest()
+        approval_key = f"{task_id}:{task_revision}:{tool_name}:{args_digest}"
+        loop = asyncio.get_running_loop()
+        waiter = self.approval_waiters.setdefault(approval_key, loop.create_future())
+        redacted = {
+            key: "[REDACTED]"
+            if key.lower()
+            in {"api_key", "token", "password", "secret", "authorization"}
+            else value
+            for key, value in tool_input.items()
+        }
+        await self.outbox.put(
+            envelope(
+                "tool_approval_request",
+                self.node_id,
+                {
+                    "client_approval_key": approval_key,
+                    "task_id": task_id,
+                    "task_revision": task_revision,
+                    "tool_call_id": f"{tool_name}:{args_digest[:16]}",
+                    "tool_qualified_name": tool_name,
+                    "redacted_args": redacted,
+                    "args_digest": args_digest,
+                    "expires_in_seconds": 300,
+                },
+            )
+        )
+        try:
+            return await asyncio.wait_for(waiter, timeout=305)
+        except TimeoutError:
+            return False
+        finally:
+            self.approval_waiters.pop(approval_key, None)
 
     async def replay_pending(self) -> None:
         task_ids = sorted({event.task_id for event in self.spool.pending()})

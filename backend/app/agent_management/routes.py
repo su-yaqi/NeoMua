@@ -1,15 +1,17 @@
 import uuid
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import col, select
 
 from app import crud
 from app.agent_management.catalog import (
+    HARNESS_CATALOG,
+    Diagnostic,
     environment_catalog,
     validate_config,
     validate_harness_type,
     validate_version_constraint,
-    HARNESS_CATALOG,
 )
 from app.agent_management.models import (
     AgentDefinition,
@@ -18,6 +20,7 @@ from app.agent_management.models import (
     HarnessProfile,
 )
 from app.agent_management.schemas import (
+    AgentCopy,
     AgentCreate,
     AgentDraftPublic,
     AgentListItem,
@@ -33,8 +36,10 @@ from app.agent_management.schemas import (
     HarnessProfileUpdate,
 )
 from app.agent_management.service import (
-    DraftConflict,
     _UNSET,
+    DraftConflict,
+    build_target_compatibility,
+    copy_agent,
     create_agent,
     draft_validation_status,
     is_profile_referenced,
@@ -47,9 +52,11 @@ from app.api.deps import (
     require_namespace_admin,
     require_namespace_runtime_user,
 )
-from app.models import NamespaceRole
+from app.models import LlmProviderConfig, NamespaceRole
 
 router = APIRouter(tags=["agent-management"])
+
+SUPPORTED_CONFIG_SCHEMA_VERSIONS = {"claude_code": {"1.0"}}
 
 
 def _require_admin(
@@ -149,6 +156,9 @@ def _profile_public(
         config=profile.config,
         archived=profile.archived,
         referenced_by_agents=is_profile_referenced(session, profile.id),
+        target_compatibility=build_target_compatibility(
+            session, profile.namespace_id, profile
+        ),
         created_at=profile.created_at,
         updated_at=profile.updated_at,
     )
@@ -202,6 +212,30 @@ def create_agent_endpoint(
     return _agent_public(agent)
 
 
+@router.post("/agents/{agent_id}/copy", response_model=AgentPublic, status_code=201)
+def copy_agent_endpoint(
+    agent_id: uuid.UUID,
+    body: AgentCopy,
+    session: SessionDep,
+    current_user: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_admin),
+) -> AgentPublic:
+    source = _get_agent(session, agent_id, namespace_id)
+    try:
+        copied = copy_agent(
+            session,
+            source,
+            slug=body.slug,
+            name=body.name,
+            user_id=current_user.id,
+        )
+        session.commit()
+        session.refresh(copied)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return _agent_public(copied)
+
+
 @router.get("/agents/{agent_id}", response_model=AgentPublic)
 def read_agent(
     agent_id: uuid.UUID,
@@ -222,7 +256,13 @@ def update_agent(
 ) -> AgentPublic:
     agent = _get_agent(session, agent_id, namespace_id)
     _require_admin(session, current_user, namespace_id)
-    if agent.status == AgentStatus.ARCHIVED:
+    reactivating = (
+        agent.status == AgentStatus.ARCHIVED
+        and body.status == AgentStatus.ACTIVE.value
+        and body.name is None
+        and body.description is None
+    )
+    if agent.status == AgentStatus.ARCHIVED and not reactivating:
         raise HTTPException(409, "Archived agent cannot be modified")
     if body.name is not None:
         agent.name = body.name
@@ -286,28 +326,38 @@ def save_draft_endpoint(
         raise HTTPException(409, "Archived agent cannot be edited")
     # Pre-validate config security before saving.
     if body.config is not None:
-        diags = validate_config(body.config)
+        diags = validate_config(body.config, is_profile=False)
         if diags:
             raise HTTPException(422, {"errors": [d.model_dump() for d in diags]})
+    provided = body.model_fields_set
+    if "harness_profile_id" in provided and body.harness_profile_id is not None:
+        profile = session.get(HarnessProfile, body.harness_profile_id)
+        if profile is None or profile.namespace_id != namespace_id:
+            raise HTTPException(
+                422, "Harness profile must belong to the current namespace"
+            )
+        if profile.archived:
+            raise HTTPException(422, "Archived harness profile cannot be selected")
+    if "provider_config_id" in provided and body.provider_config_id is not None:
+        provider = session.get(LlmProviderConfig, body.provider_config_id)
+        if provider is None or provider.namespace_id != namespace_id:
+            raise HTTPException(
+                422, "Provider config must belong to the current namespace"
+            )
     # Use model_fields_set to distinguish "field omitted" (_UNSET -> unchanged)
     # from "field explicitly null" (None -> clear the field). The frontend sends
     # the full intended state on every save, sending null to clear optional
     # fields like harness_profile_id.
-    provided = body.model_fields_set
     try:
         draft = save_draft(
             session,
             agent,
             expected_revision=body.expected_revision,
             harness_profile_id=(
-                body.harness_profile_id
-                if "harness_profile_id" in provided
-                else _UNSET
+                body.harness_profile_id if "harness_profile_id" in provided else _UNSET
             ),
             provider_config_id=(
-                body.provider_config_id
-                if "provider_config_id" in provided
-                else _UNSET
+                body.provider_config_id if "provider_config_id" in provided else _UNSET
             ),
             model_id=body.model_id if "model_id" in provided else _UNSET,
             system_prompt=(
@@ -335,7 +385,7 @@ def validate_draft_endpoint(
     session: SessionDep,
     current_user: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_admin),
-) -> dict:
+) -> dict[str, Any]:
     agent = _get_agent(session, agent_id, namespace_id)
     _require_admin(session, current_user, namespace_id)
     if agent.status == AgentStatus.ARCHIVED:
@@ -372,8 +422,20 @@ def create_profile(
 ) -> HarnessProfilePublic:
     _require_admin(session, current_user, namespace_id)
     # Schema-layer security validation before persisting.
-    errors: list = []
+    errors: list[Diagnostic] = []
     errors.extend(validate_harness_type(body.harness_type))
+    supported_versions = SUPPORTED_CONFIG_SCHEMA_VERSIONS.get(body.harness_type, set())
+    if body.config_schema_version not in supported_versions:
+        errors.append(
+            Diagnostic(
+                code="unsupported_config_schema",
+                field="config_schema_version",
+                message=(
+                    f"config schema version '{body.config_schema_version}' is not supported "
+                    f"for harness '{body.harness_type}'"
+                ),
+            )
+        )
     errors.extend(validate_config(body.config, is_profile=True))
     errors.extend(validate_version_constraint(body.cli_version_constraint))
     errors.extend(validate_version_constraint(body.sdk_version_constraint))
@@ -398,7 +460,9 @@ def create_profile(
         session.rollback()
         msg = str(exc).lower()
         if "uq_harness_profile_namespace_name" in msg or "name" in msg:
-            raise HTTPException(409, "Profile name already exists in this namespace") from exc
+            raise HTTPException(
+                409, "Profile name already exists in this namespace"
+            ) from exc
         raise
     return _profile_public(session, profile)
 
@@ -430,7 +494,7 @@ def update_profile(
     _require_admin(session, current_user, namespace_id)
     # Validate new config/values before saving.
     candidate_config = body.config if body.config is not None else profile.config
-    errors: list = []
+    errors: list[Diagnostic] = []
     errors.extend(validate_config(candidate_config, is_profile=True))
     if body.cli_version_constraint is not None:
         errors.extend(validate_version_constraint(body.cli_version_constraint))
@@ -459,7 +523,9 @@ def update_profile(
         session.rollback()
         msg = str(exc).lower()
         if "uq_harness_profile_namespace_name" in msg or "name" in msg:
-            raise HTTPException(409, "Profile name already exists in this namespace") from exc
+            raise HTTPException(
+                409, "Profile name already exists in this namespace"
+            ) from exc
         raise
     return _profile_public(session, profile)
 

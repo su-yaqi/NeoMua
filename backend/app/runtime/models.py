@@ -3,9 +3,10 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, cast
 
-from sqlalchemy import JSON, Column, Index, UniqueConstraint, text
+from sqlalchemy import JSON, Column, Index, Text, UniqueConstraint, text
 from sqlalchemy import DateTime as _DateTime
 from sqlalchemy import Enum as _SAEnum
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
 from app.runtime.artifacts.manifest import ArtifactKind, LogicalTarget
@@ -23,6 +24,9 @@ def SAEnum(*args: Any, **kwargs: Any) -> type[Any]:
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+POSTGRES_JSON = JSON().with_variant(JSONB(astext_type=Text()), "postgresql")
 
 
 class RuntimeType(str, Enum):
@@ -43,6 +47,9 @@ class AgentEventType(str, Enum):
     STATUS = "status"
     ERROR = "error"
     RESULT = "result"
+    APPROVAL_REQUESTED = "approval_requested"
+    APPROVAL_RESOLVED = "approval_resolved"
+    APPROVAL_EXPIRED = "approval_expired"
 
 
 class RuntimeProfile(SQLModel, table=True):
@@ -83,6 +90,9 @@ class RuntimeProfile(SQLModel, table=True):
     config: dict[str, Any] = Field(
         default_factory=dict, sa_column=Column(JSON, nullable=False)
     )
+    harness_capabilities: dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(POSTGRES_JSON, nullable=False)
+    )
     created_at: datetime = Field(
         default_factory=utcnow, sa_type=DateTime(timezone=True)
     )
@@ -103,7 +113,7 @@ class RuntimeSecret(SQLModel, table=True):
         ondelete="CASCADE",
         unique=True,
     )
-    secret_ciphertext: str
+    secret_ciphertext: str = Field(sa_column=Column(Text, nullable=False))
     secret_masked: str | None = Field(default=None, max_length=255)
 
 
@@ -120,6 +130,13 @@ class AgentSession(SQLModel, table=True):
     created_by: uuid.UUID | None = Field(
         default=None, foreign_key="user.id", ondelete="SET NULL"
     )
+    agent_release_id: uuid.UUID | None = Field(
+        default=None, foreign_key="agent_release.id", ondelete="SET NULL"
+    )
+    runtime_agent_release_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_agent_release.id", ondelete="SET NULL"
+    )
+    resolved_spec_digest: str | None = Field(default=None, max_length=64)
     created_at: datetime = Field(
         default_factory=utcnow, sa_type=DateTime(timezone=True)
     )
@@ -169,7 +186,7 @@ class AgentTask(SQLModel, table=True):
             values_callable=lambda v: [x.value for x in v],
         ),
     )
-    prompt: str
+    prompt: str = Field(sa_column=Column(Text, nullable=False))
     snapshot: dict[str, Any] = Field(
         default_factory=dict, sa_column=Column(JSON, nullable=False)
     )
@@ -188,6 +205,13 @@ class AgentTask(SQLModel, table=True):
     retry_of_task_id: uuid.UUID | None = Field(
         default=None, foreign_key="agent_task.id", ondelete="SET NULL"
     )
+    agent_release_id: uuid.UUID | None = Field(
+        default=None, foreign_key="agent_release.id", ondelete="SET NULL"
+    )
+    runtime_agent_release_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_agent_release.id", ondelete="SET NULL"
+    )
+    resolved_spec_digest: str | None = Field(default=None, max_length=64)
     idempotency_key: str | None = Field(default=None, max_length=255)
     created_by: uuid.UUID | None = Field(
         default=None, foreign_key="user.id", ondelete="SET NULL"
@@ -231,6 +255,10 @@ class AgentEvent(SQLModel, table=True):
 
 class RuntimeNode(SQLModel, table=True):
     __tablename__ = "runtime_node"
+    __table_args__ = (
+        UniqueConstraint("key_fingerprint"),
+        Index("ix_runtime_node_key_fingerprint", "key_fingerprint"),
+    )
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     namespace_id: uuid.UUID = Field(
         foreign_key="namespace.id", nullable=False, ondelete="CASCADE", index=True
@@ -244,8 +272,11 @@ class RuntimeNode(SQLModel, table=True):
     architecture: str = Field(max_length=64)
     agent_version: str = Field(max_length=64)
     sdk_version: str | None = Field(default=None, max_length=64)
-    public_key: str
-    key_fingerprint: str = Field(max_length=128, unique=True, index=True)
+    harness_capabilities: dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(POSTGRES_JSON, nullable=False)
+    )
+    public_key: str = Field(sa_column=Column(Text, nullable=False))
+    key_fingerprint: str = Field(max_length=128)
     last_seen_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     connected_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     connection_id: uuid.UUID | None = Field(default=None, index=True)
@@ -258,11 +289,15 @@ class RuntimeNode(SQLModel, table=True):
 
 class NodeEnrollmentToken(SQLModel, table=True):
     __tablename__ = "node_enrollment_token"
+    __table_args__ = (
+        UniqueConstraint("token_hash"),
+        Index("ix_node_enrollment_token_token_hash", "token_hash"),
+    )
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     namespace_id: uuid.UUID = Field(
         foreign_key="namespace.id", nullable=False, ondelete="CASCADE", index=True
     )
-    token_hash: str = Field(max_length=64, unique=True, index=True)
+    token_hash: str = Field(max_length=64)
     expires_at: datetime = Field(sa_type=DateTime(timezone=True))
     consumed_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     revoked_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
@@ -342,8 +377,8 @@ class RuntimeArtifact(SQLModel, table=True):
     manifest: dict[str, Any] = Field(
         default_factory=dict, sa_column=Column(JSON, nullable=False)
     )
-    signature: str
-    signing_public_key: str
+    signature: str = Field(sa_column=Column(Text, nullable=False))
+    signing_public_key: str = Field(sa_column=Column(Text, nullable=False))
     created_by: uuid.UUID | None = Field(
         default=None, foreign_key="user.id", ondelete="SET NULL"
     )
@@ -468,11 +503,15 @@ class RuntimeNodeArtifact(SQLModel, table=True):
 
 class NodeHandshakeNonce(SQLModel, table=True):
     __tablename__ = "node_handshake_nonce"
+    __table_args__ = (
+        UniqueConstraint("nonce_hash"),
+        Index("ix_node_handshake_nonce_nonce_hash", "nonce_hash"),
+    )
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     node_id: uuid.UUID = Field(
         foreign_key="runtime_node.id", nullable=False, ondelete="CASCADE", index=True
     )
-    nonce_hash: str = Field(max_length=64, unique=True, index=True)
+    nonce_hash: str = Field(max_length=64)
     expires_at: datetime = Field(sa_type=DateTime(timezone=True), index=True)
     created_at: datetime = Field(
         default_factory=utcnow, sa_type=DateTime(timezone=True)

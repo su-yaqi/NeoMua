@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlmodel import col, select
 
+from app.agent_management.capability_models import AgentRelease, RuntimeAgentRelease
 from app.api.deps import (
     CurrentUser,
     SessionDep,
@@ -61,6 +62,7 @@ class PlatformRuntimePublic(BaseModel):
     permission_mode: PermissionMode
     secret_masked: str | None
     compatibility_verified: bool
+    harness_capabilities: dict[str, Any]
 
 
 class SessionPublic(BaseModel):
@@ -69,8 +71,16 @@ class SessionPublic(BaseModel):
     sdk_session_id: str | None
 
 
+class SessionCreate(BaseModel):
+    runtime_agent_release_id: uuid.UUID
+
+
 class MessageInput(BaseModel):
     prompt: str = Field(min_length=1)
+
+
+class SkillInvokeInput(BaseModel):
+    arguments: dict[str, Any] = Field(default_factory=dict)
 
 
 class TaskPublic(BaseModel):
@@ -98,6 +108,7 @@ def _public(
         permission_mode=PermissionMode(runtime.permission_mode),
         secret_masked=secret.secret_masked if secret else None,
         compatibility_verified=bool(runtime.config.get("compatibility_verified")),
+        harness_capabilities=runtime.harness_capabilities,
     )
 
 
@@ -130,10 +141,7 @@ def upsert_platform_runtime(
     endpoint_changed = bool(runtime and canonical_base_url != runtime.base_url)
     if body.route_mode == RuntimeRouteMode.DIRECT_ANTHROPIC and (
         not canonical_base_url
-        or (
-            not body.secret_inputs
-            and (existing_secret is None or endpoint_changed)
-        )
+        or (not body.secret_inputs and (existing_secret is None or endpoint_changed))
     ):
         raise HTTPException(
             400,
@@ -264,6 +272,7 @@ def read_platform_runtime(
 
 @router.post("/platform/sessions", response_model=SessionPublic, status_code=201)
 def create_platform_session(
+    body: SessionCreate,
     session: SessionDep,
     current_user: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
@@ -278,10 +287,27 @@ def create_platform_session(
         raise HTTPException(409, "Platform runtime not configured")
     if not runtime.config.get("compatibility_verified"):
         raise HTTPException(409, "Platform runtime compatibility is not verified")
+    binding = session.get(RuntimeAgentRelease, body.runtime_agent_release_id)
+    if (
+        binding is None
+        or binding.namespace_id != namespace_id
+        or binding.runtime_profile_id != runtime.id
+    ):
+        raise HTTPException(404, "Active Agent binding not found")
+    release = session.get(AgentRelease, binding.current_release_id)
+    if (
+        release is None
+        or binding.applied_digest != release.resolved_spec_digest
+        or binding.materialization_digest != release.resolved_spec_digest
+    ):
+        raise HTTPException(409, "release_not_active")
     agent_session = AgentSession(
         namespace_id=namespace_id,
         runtime_profile_id=runtime.id,
         created_by=current_user.id,
+        agent_release_id=release.id,
+        runtime_agent_release_id=binding.id,
+        resolved_spec_digest=release.resolved_spec_digest,
     )
     session.add(agent_session)
     session.commit()
@@ -304,15 +330,30 @@ def create_session_message(
     namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
 ) -> TaskPublic:
     agent_session = session.exec(
-        select(AgentSession)
-        .where(AgentSession.id == session_id)
-        .with_for_update()
+        select(AgentSession).where(AgentSession.id == session_id).with_for_update()
     ).first()
     if agent_session is None or agent_session.namespace_id != namespace_id:
         raise HTTPException(404, "Session not found")
     runtime = session.get(RuntimeProfile, agent_session.runtime_profile_id)
     if runtime is None:
         raise HTTPException(409, "Runtime is unavailable")
+    release = (
+        session.get(AgentRelease, agent_session.agent_release_id)
+        if agent_session.agent_release_id
+        else None
+    )
+    binding = (
+        session.get(RuntimeAgentRelease, agent_session.runtime_agent_release_id)
+        if agent_session.runtime_agent_release_id
+        else None
+    )
+    if (
+        release is None
+        or binding is None
+        or agent_session.resolved_spec_digest != release.resolved_spec_digest
+    ):
+        raise HTTPException(409, "release_not_active")
+    resolved_spec = release.resolved_spec
     active_task = session.exec(
         select(AgentTask).where(
             AgentTask.session_id == agent_session.id,
@@ -321,6 +362,7 @@ def create_session_message(
                     TaskStatus.QUEUED,
                     TaskStatus.DISPATCHED,
                     TaskStatus.RUNNING,
+                    TaskStatus.AWAITING_APPROVAL,
                     TaskStatus.CANCELLING,
                 ]
             ),
@@ -341,19 +383,41 @@ def create_session_message(
         prompt=body.prompt,
         snapshot={
             "route_mode": runtime.route_mode.value,
-            "model_id": runtime.model_id,
-            "permission_mode": runtime.permission_mode,
-            "tools": runtime.config.get("tools", []),
-            "allowed_tools": runtime.config.get("allowed_tools", []),
-            "disallowed_tools": runtime.config.get("disallowed_tools", []),
+            "agent_id": str(release.agent_id),
+            "agent_release_id": str(release.id),
+            "agent_release_version": release.version,
+            "resolved_spec_digest": release.resolved_spec_digest,
+            "system_prompt": resolved_spec["system_prompt"],
+            "model_id": resolved_spec["model"]["model_id"],
+            "permission_mode": resolved_spec["policies"]["permission_mode"],
+            "tools": [item["key"] for item in resolved_spec["tools"]],
+            "allowed_tools": [
+                item["key"]
+                for item in resolved_spec["tools"]
+                if item["policy"] in {"allow", "require_approval"}
+            ],
+            "disallowed_tools": [
+                item["key"]
+                for item in resolved_spec["tools"]
+                if item["policy"] in {"deny", "disabled", "forbidden"}
+            ],
+            "require_approval_tools": [
+                item["key"]
+                for item in resolved_spec["tools"]
+                if item["policy"] == "require_approval"
+            ],
+            "skills": resolved_spec["skills"],
+            "plugins": resolved_spec["plugins"],
+            "mcp_servers": resolved_spec["mcp_servers"],
             "working_directory": runtime.config.get("cwd"),
-            "timeout_seconds": runtime.config.get("timeout_seconds", 3600),
-            "provider_config_id": str(runtime.provider_config_id)
-            if runtime.provider_config_id
-            else None,
+            "timeout_seconds": resolved_spec["policies"]["timeout_seconds"],
+            "provider_config_id": resolved_spec["model"]["provider_config_id"],
             "base_url": runtime.base_url,
         },
         created_by=current_user.id,
+        agent_release_id=release.id,
+        runtime_agent_release_id=binding.id,
+        resolved_spec_digest=release.resolved_spec_digest,
     )
     session.add(task)
     session.flush()
@@ -363,6 +427,56 @@ def create_session_message(
     session.commit()
     session.refresh(task)
     return TaskPublic(id=task.id, session_id=task.session_id, status=task.status.value)
+
+
+@router.post(
+    "/sessions/{session_id}/skills/{skill_slug}/invoke",
+    response_model=TaskPublic,
+    status_code=202,
+)
+def invoke_session_skill(
+    session_id: uuid.UUID,
+    skill_slug: str,
+    body: SkillInvokeInput,
+    session: SessionDep,
+    current_user: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
+) -> TaskPublic:
+    agent_session = session.get(AgentSession, session_id)
+    if agent_session is None or agent_session.namespace_id != namespace_id:
+        raise HTTPException(404, "Session not found")
+    release = (
+        session.get(AgentRelease, agent_session.agent_release_id)
+        if agent_session.agent_release_id
+        else None
+    )
+    if release is None:
+        raise HTTPException(409, "release_not_active")
+    skill = next(
+        (
+            item
+            for item in release.resolved_spec.get("skills", [])
+            if item.get("slug") == skill_slug
+        ),
+        None,
+    )
+    if skill is None or skill.get("invocation_mode") != "explicit_user_message":
+        raise HTTPException(
+            409, "Skill is not an explicit invocation in this Session Release"
+        )
+    prompt = json.dumps(
+        {
+            "type": "skill_invocation",
+            "skill": skill_slug,
+            "version": skill["version"],
+            "arguments": body.arguments,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    return create_session_message(
+        session_id, MessageInput(prompt=prompt), session, current_user, namespace_id
+    )
 
 
 def _namespace_task(
@@ -421,9 +535,7 @@ async def stream_task_events(
     _namespace_task(session, task_id, namespace_id)
     try:
         cursor = (
-            max(after_sequence, int(last_event_id))
-            if last_event_id
-            else after_sequence
+            max(after_sequence, int(last_event_id)) if last_event_id else after_sequence
         )
     except ValueError as exc:
         raise HTTPException(400, "Last-Event-ID must be an integer") from exc
@@ -494,7 +606,9 @@ def cancel_task(
         TaskStatus.REJECTED,
     }:
         session.rollback()
-        return TaskPublic(id=task.id, session_id=task.session_id, status=task.status.value)
+        return TaskPublic(
+            id=task.id, session_id=task.session_id, status=task.status.value
+        )
     target = (
         TaskStatus.CANCELLING
         if task.status == TaskStatus.RUNNING

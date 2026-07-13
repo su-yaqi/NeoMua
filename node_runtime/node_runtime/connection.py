@@ -5,6 +5,7 @@ import random
 import secrets
 import time
 from collections.abc import Awaitable, Callable
+from typing import Any
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from pydantic import ValidationError
@@ -18,6 +19,8 @@ from node_runtime.reconcile import ReconcileState
 from node_runtime.tasks import NodeTaskController
 from node_runtime.runtime_config import RuntimeConfigManager
 from node_runtime.artifacts.controller import ArtifactController
+from node_runtime.agent_releases import AgentReleaseController
+from node_runtime.mcp_validation import NodeMcpValidationController
 
 
 class PermanentConnectionError(RuntimeError):
@@ -66,6 +69,10 @@ class NodeConnection:
         task_controller: NodeTaskController | None = None,
         runtime_config_manager: RuntimeConfigManager | None = None,
         artifact_controller: ArtifactController | None = None,
+        harness_capabilities: dict[str, Any] | None = None,
+        secret_fingerprints: Callable[[], dict[str, str]] | None = None,
+        agent_release_controller: AgentReleaseController | None = None,
+        mcp_validation_controller: NodeMcpValidationController | None = None,
     ) -> None:
         self.url = websocket_url(platform_url)
         self.identity = identity
@@ -75,6 +82,10 @@ class NodeConnection:
         self.task_controller = task_controller
         self.runtime_config_manager = runtime_config_manager
         self.artifact_controller = artifact_controller
+        self.harness_capabilities = harness_capabilities
+        self.secret_fingerprints = secret_fingerprints
+        self.agent_release_controller = agent_release_controller
+        self.mcp_validation_controller = mcp_validation_controller
 
     async def connect_once(self) -> None:
         try:
@@ -133,8 +144,17 @@ class NodeConnection:
     async def _heartbeat_loop(self, websocket) -> None:
         while True:
             await asyncio.sleep(20)
+            payload: dict[str, Any] = {}
+            if self.harness_capabilities is not None:
+                payload["harness_capabilities"] = self.harness_capabilities
+            if self.secret_fingerprints is not None:
+                payload["mcp_secret_fingerprints"] = self.secret_fingerprints()
             await websocket.send(
-                envelope("heartbeat", self.identity.node_id, {}).model_dump_json()
+                envelope(
+                    "heartbeat",
+                    self.identity.node_id,
+                    payload,
+                ).model_dump_json()
             )
 
     async def _receive_loop(self, websocket) -> None:
@@ -194,6 +214,26 @@ class NodeConnection:
                     else:
                         await websocket.send(response.model_dump_json())
                 if artifact_responses:
+                    continue
+            if self.agent_release_controller:
+                release_responses = await self.agent_release_controller.handle(message)
+                for response in release_responses:
+                    if self.task_controller:
+                        self.task_controller.outbox.put_nowait(response)
+                    else:
+                        await websocket.send(response.model_dump_json())
+                if release_responses:
+                    continue
+            if self.mcp_validation_controller:
+                validation_responses = await self.mcp_validation_controller.handle(
+                    message
+                )
+                for response in validation_responses:
+                    if self.task_controller:
+                        self.task_controller.outbox.put_nowait(response)
+                    else:
+                        await websocket.send(response.model_dump_json())
+                if validation_responses:
                     continue
             if self.task_controller:
                 responses = await self.task_controller.handle(message)

@@ -1,8 +1,8 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
 import { useState } from "react"
 
-import { type RuntimeNode, tenantApi } from "@/api/tenantApi"
+import { type RuntimeNode, releasesApi, tenantApi } from "@/api/tenantApi"
 import { Button } from "@/components/ui/button"
 import {
   Sheet,
@@ -14,6 +14,14 @@ import {
 
 export default function DispatchTaskSheet({ node }: { node: RuntimeNode }) {
   const [prompt, setPrompt] = useState("")
+  const [bindingId, setBindingId] = useState("")
+  const { data: bindings } = useQuery({
+    queryKey: ["runtime-agents"],
+    queryFn: releasesApi.runtimeAgents,
+  })
+  const options = (
+    (bindings?.data ?? []) as Array<Record<string, string>>
+  ).filter((item) => item.runtime_profile_id === node.runtime_profile_id)
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const create = useMutation({
@@ -21,6 +29,7 @@ export default function DispatchTaskSheet({ node }: { node: RuntimeNode }) {
       tenantApi.createRuntimeTask(
         {
           runtime_profile_id: node.runtime_profile_id,
+          runtime_agent_release_id: bindingId,
           node_id: node.id,
           prompt,
           task_kind: "ordinary",
@@ -53,9 +62,21 @@ export default function DispatchTaskSheet({ node }: { node: RuntimeNode }) {
             onChange={(event) => setPrompt(event.target.value)}
             placeholder="描述需要 Agent 完成的工作"
           />
+          <select
+            className="w-full rounded-md border bg-background p-2"
+            value={bindingId}
+            onChange={(event) => setBindingId(event.target.value)}
+          >
+            <option value="">选择该目标已激活的 Agent Release</option>
+            {options.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.agent_id} · {item.current_release_id}
+              </option>
+            ))}
+          </select>
           <Button
             className="w-full"
-            disabled={!prompt.trim() || create.isPending}
+            disabled={!prompt.trim() || !bindingId || create.isPending}
             onClick={() => create.mutate()}
           >
             确认下发

@@ -5,6 +5,7 @@ class TaskStatus(str, Enum):
     QUEUED = "queued"
     DISPATCHED = "dispatched"
     RUNNING = "running"
+    AWAITING_APPROVAL = "awaiting_approval"
     CANCELLING = "cancelling"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
@@ -42,8 +43,15 @@ _TRANSITIONS = {
         TaskStatus.INTERRUPTED,
     },
     TaskStatus.RUNNING: {
+        TaskStatus.AWAITING_APPROVAL,
         TaskStatus.CANCELLING,
         TaskStatus.SUCCEEDED,
+        TaskStatus.FAILED,
+        TaskStatus.INTERRUPTED,
+    },
+    TaskStatus.AWAITING_APPROVAL: {
+        TaskStatus.RUNNING,
+        TaskStatus.CANCELLING,
         TaskStatus.FAILED,
         TaskStatus.INTERRUPTED,
     },

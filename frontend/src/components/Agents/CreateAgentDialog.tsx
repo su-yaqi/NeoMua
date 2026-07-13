@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
 import { useState } from "react"
-import { agentsApi } from "@/api/tenantApi"
+import { type AgentDefinition, agentsApi } from "@/api/tenantApi"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -16,20 +16,30 @@ import { Label } from "@/components/ui/label"
 import useCustomToast from "@/hooks/useCustomToast"
 import { handleError } from "@/utils"
 
-export default function CreateAgentDialog() {
+export default function CreateAgentDialog({
+  source,
+}: {
+  source?: AgentDefinition
+}) {
   const [open, setOpen] = useState(false)
-  const [slug, setSlug] = useState("")
-  const [name, setName] = useState("")
-  const [description, setDescription] = useState("")
+  const [slug, setSlug] = useState(source ? `${source.slug}-copy` : "")
+  const [name, setName] = useState(source ? `${source.name} 副本` : "")
+  const [description, setDescription] = useState(source?.description ?? "")
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { showSuccessToast, showErrorToast } = useCustomToast()
 
   const mutation = useMutation({
     mutationFn: () =>
-      agentsApi.create({ slug, name, description: description || undefined }),
+      source
+        ? agentsApi.copy(source.id, { slug, name })
+        : agentsApi.create({
+            slug,
+            name,
+            description: description || undefined,
+          }),
     onSuccess: (agent) => {
-      showSuccessToast("Agent 已创建")
+      showSuccessToast(source ? "Agent 已复制" : "Agent 已创建")
       setOpen(false)
       setSlug("")
       setName("")
@@ -40,20 +50,34 @@ export default function CreateAgentDialog() {
     onError: handleError.bind(showErrorToast),
   })
 
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (nextOpen) {
+      setSlug(source ? `${source.slug}-copy` : "")
+      setName(source ? `${source.name} 副本` : "")
+      setDescription(source?.description ?? "")
+    }
+    setOpen(nextOpen)
+  }
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-        <Button>创建 Agent</Button>
+        <Button
+          variant={source ? "outline" : "default"}
+          size={source ? "sm" : "default"}
+        >
+          {source ? "复制" : "创建 Agent"}
+        </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>创建 Agent</DialogTitle>
+          <DialogTitle>{source ? "复制 Agent" : "创建 Agent"}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="agent-slug">Slug</Label>
+            <Label htmlFor={`agent-slug-${source?.id ?? "new"}`}>Slug</Label>
             <Input
-              id="agent-slug"
+              id={`agent-slug-${source?.id ?? "new"}`}
               value={slug}
               onChange={(e) => setSlug(e.target.value)}
               placeholder="my-agent"
@@ -63,28 +87,30 @@ export default function CreateAgentDialog() {
             </p>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="agent-name">名称</Label>
+            <Label htmlFor={`agent-name-${source?.id ?? "new"}`}>名称</Label>
             <Input
-              id="agent-name"
+              id={`agent-name-${source?.id ?? "new"}`}
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="agent-desc">说明</Label>
-            <Input
-              id="agent-desc"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </div>
+          {!source && (
+            <div className="space-y-2">
+              <Label htmlFor="agent-desc">说明</Label>
+              <Input
+                id="agent-desc"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button
             onClick={() => mutation.mutate()}
             disabled={!slug || !name || mutation.isPending}
           >
-            创建
+            {source ? "复制" : "创建"}
           </Button>
         </DialogFooter>
       </DialogContent>

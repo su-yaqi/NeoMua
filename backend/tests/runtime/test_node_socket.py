@@ -10,6 +10,13 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session
 from starlette.websockets import WebSocketDisconnect
 
+from app.agent_management.capability_models import (
+    McpServer,
+    McpServerRevision,
+    McpTargetBinding,
+    McpTargetStatus,
+    McpTransport,
+)
 from app.core.config import settings
 from app.runtime.connections import node_is_online
 from app.runtime.models import (
@@ -23,6 +30,14 @@ from app.runtime.models import (
 from app.runtime.policy import TaskStatus
 from app.runtime.repository import append_event_idempotent
 from tests.api.routes.test_namespaces import create_namespace, namespace_headers
+
+HARNESS_CAPABILITIES = {
+    "claude_code": {
+        "cli_version": "2.1.191",
+        "sdk_version": "0.2.110",
+        "harness_version": "0.1.0",
+    }
+}
 
 
 def _enroll(
@@ -47,6 +62,7 @@ def _enroll(
             "architecture": "arm64",
             "agent_version": "0.1.0",
             "sdk_version": "0.2.110",
+            "harness_capabilities": HARNESS_CAPABILITIES,
             "public_key": base64.b64encode(public).decode(),
         },
     ).json()
@@ -99,6 +115,13 @@ def test_authenticated_node_connects_and_heartbeats(
         "X-Node-Nonce": nonce,
         "X-Node-Signature": base64.b64encode(signature).decode(),
     }
+    heartbeat_capabilities = {
+        "claude_code": {
+            "cli_version": "2.1.192",
+            "sdk_version": "0.2.111",
+            "harness_version": "0.1.1",
+        }
+    }
     with client.websocket_connect(
         f"{settings.API_V1_STR}/node/ws", headers=headers
     ) as websocket:
@@ -113,12 +136,86 @@ def test_authenticated_node_connects_and_heartbeats(
                 "correlation_id": None,
                 "node_id": enrolled["node_id"],
                 "sent_at": datetime.now(timezone.utc).isoformat(),
-                "payload": {},
+                "payload": {"harness_capabilities": heartbeat_capabilities},
             }
         )
         ack = websocket.receive_json()
         assert ack["type"] == "heartbeat_ack"
         assert ack["correlation_id"] == message_id
+
+    db.expire_all()
+    node = db.get(RuntimeNode, uuid.UUID(enrolled["node_id"]))
+    assert node is not None
+    assert node.harness_capabilities == heartbeat_capabilities
+
+
+def test_node_secret_fingerprint_change_marks_mcp_target_stale(
+    client: TestClient, db: Session, superuser_token_headers: dict[str, str]
+) -> None:
+    enrolled, private = _enroll(client, db, superuser_token_headers)
+    node = db.get(RuntimeNode, uuid.UUID(enrolled["node_id"]))
+    assert node is not None
+    runtime = RuntimeProfile(
+        namespace_id=node.namespace_id,
+        runtime_type=RuntimeType.NODE,
+        route_mode=RuntimeRouteMode.DIRECT_ANTHROPIC,
+        model_id="claude-node",
+        base_url="https://anthropic.example",
+        config={"direct_compatibility_verified": True},
+    )
+    db.add(runtime)
+    db.flush()
+    node.runtime_profile_id = runtime.id
+    server = McpServer(
+        namespace_id=node.namespace_id,
+        slug="local-mcp",
+        name="Local MCP",
+    )
+    db.add(server)
+    db.flush()
+    revision = McpServerRevision(
+        server_id=server.id,
+        revision=1,
+        transport=McpTransport.STREAMABLE_HTTP,
+        config={"endpoint": "https://mcp.example"},
+        config_sha256="b" * 64,
+    )
+    db.add(revision)
+    db.flush()
+    target = McpTargetBinding(
+        revision_id=revision.id,
+        runtime_profile_id=runtime.id,
+        secret_ref="github",
+        secret_fingerprint="a" * 64,
+        status=McpTargetStatus.VERIFIED,
+    )
+    db.add(node)
+    db.add(target)
+    db.commit()
+
+    with client.websocket_connect(
+        f"{settings.API_V1_STR}/node/ws",
+        headers=_connection_headers(enrolled, private),
+    ) as websocket:
+        assert websocket.receive_json()["type"] == "hello_ack"
+        websocket.send_json(
+            {
+                "type": "heartbeat",
+                "protocol_version": "2",
+                "message_id": str(uuid.uuid4()),
+                "correlation_id": None,
+                "node_id": enrolled["node_id"],
+                "sent_at": datetime.now(timezone.utc).isoformat(),
+                "payload": {"mcp_secret_fingerprints": {"github": "c" * 64}},
+            }
+        )
+        assert websocket.receive_json()["type"] == "heartbeat_ack"
+
+    db.expire_all()
+    updated = db.get(McpTargetBinding, target.id)
+    assert updated is not None
+    assert updated.status == McpTargetStatus.STALE
+    assert updated.secret_fingerprint == "c" * 64
 
 
 def test_new_connection_supersedes_old_generation(

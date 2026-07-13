@@ -1,11 +1,15 @@
+import uuid
+
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
 from app import crud
 from app.core.config import settings
 from app.models import NamespaceRole
+from app.runtime.models import RuntimeProfile
 from tests.api.routes.test_llm_provider_configs import create_provider_config
 from tests.api.routes.test_namespaces import create_namespace, namespace_headers
+from tests.utils.agent_release import create_active_agent_binding
 from tests.utils.user import authentication_token_from_email, create_random_user
 
 
@@ -127,7 +131,7 @@ def test_developer_can_create_session_and_message_task(
         role=NamespaceRole.DEVELOPER,
     )
     admin_headers = namespace_headers(superuser_token_headers, namespace.id)
-    client.put(
+    runtime_response = client.put(
         f"{settings.API_V1_STR}/runtimes/platform",
         headers=admin_headers,
         json={
@@ -136,7 +140,7 @@ def test_developer_can_create_session_and_message_task(
             "base_url": "https://example.test",
             "secret_inputs": {"api_key": "test-secret"},
         },
-    )
+    ).json()
 
     async def compatible(*_args):
         return {"type": "message"}
@@ -150,12 +154,23 @@ def test_developer_can_create_session_and_message_task(
         ).status_code
         == 200
     )
+    runtime = db.get(RuntimeProfile, uuid.UUID(runtime_response["id"]))
+    assert runtime is not None
+    binding = create_active_agent_binding(
+        db,
+        namespace_id=namespace.id,
+        runtime_profile_id=runtime.id,
+        provider_config_id=runtime.provider_config_id,
+        model_id=runtime.model_id,
+    )
     headers = namespace_headers(
         authentication_token_from_email(client=client, email=developer.email, db=db),
         namespace.id,
     )
     session_response = client.post(
-        f"{settings.API_V1_STR}/runtimes/platform/sessions", headers=headers, json={}
+        f"{settings.API_V1_STR}/runtimes/platform/sessions",
+        headers=headers,
+        json={"runtime_agent_release_id": str(binding.id)},
     )
     assert session_response.status_code == 201
     task_response = client.post(
@@ -175,7 +190,7 @@ def test_developer_can_read_task_events_and_cancel_queued_task(
 ) -> None:
     namespace = create_namespace(db)
     headers = namespace_headers(superuser_token_headers, namespace.id)
-    client.put(
+    runtime_response = client.put(
         f"{settings.API_V1_STR}/runtimes/platform",
         headers=headers,
         json={
@@ -184,7 +199,7 @@ def test_developer_can_read_task_events_and_cancel_queued_task(
             "base_url": "https://example.test",
             "secret_inputs": {"api_key": "secret"},
         },
-    )
+    ).json()
 
     async def compatible(*_args):
         return {"type": "message"}
@@ -198,8 +213,19 @@ def test_developer_can_read_task_events_and_cancel_queued_task(
         ).status_code
         == 200
     )
+    runtime = db.get(RuntimeProfile, uuid.UUID(runtime_response["id"]))
+    assert runtime is not None
+    binding = create_active_agent_binding(
+        db,
+        namespace_id=namespace.id,
+        runtime_profile_id=runtime.id,
+        provider_config_id=runtime.provider_config_id,
+        model_id=runtime.model_id,
+    )
     session_id = client.post(
-        f"{settings.API_V1_STR}/runtimes/platform/sessions", headers=headers, json={}
+        f"{settings.API_V1_STR}/runtimes/platform/sessions",
+        headers=headers,
+        json={"runtime_agent_release_id": str(binding.id)},
     ).json()["id"]
     task = client.post(
         f"{settings.API_V1_STR}/runtimes/sessions/{session_id}/messages",

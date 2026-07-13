@@ -2,7 +2,7 @@
 
 import { buildClientParams, type Client, type ClientMeta, formDataBodySerializer, type Options as Options2, type RequestResult, type TDataShape, urlSearchParamsBodySerializer } from './client';
 import { client } from './client.gen';
-import type { AdminUserCreate, AdminUserUpdate, BodyLoginLoginAccessToken, BodyRuntimeArtifactsUploadArtifact, ClaimInput, EventBatch, ItemCreate, ItemsCreateItemErrors, ItemsCreateItemResponses, ItemsDeleteItemErrors, ItemsDeleteItemResponses, ItemsReadItemErrors, ItemsReadItemResponses, ItemsReadItemsErrors, ItemsReadItemsResponses, ItemsUpdateItemErrors, ItemsUpdateItemResponses, ItemUpdate, LeaseInput, LlmCreateProviderConfigErrors, LlmCreateProviderConfigResponses, LlmProviderConfigCreate, LlmProviderConfigUpdate, LlmProviderSyncModelsRequest, LlmReadProviderCatalogErrors, LlmReadProviderCatalogResponses, LlmReadProviderConfigsErrors, LlmReadProviderConfigsResponses, LlmSyncProviderModelsErrors, LlmSyncProviderModelsResponses, LlmUpdateProviderConfigErrors, LlmUpdateProviderConfigResponses, LlmValidateProviderConfigErrors, LlmValidateProviderConfigResponses, LoginLoginAccessTokenErrors, LoginLoginAccessTokenResponses, LoginLogoutErrors, LoginLogoutResponses, LoginRecoverPasswordErrors, LoginRecoverPasswordHtmlContentErrors, LoginRecoverPasswordHtmlContentResponses, LoginRecoverPasswordResponses, LoginRefreshAccessTokenErrors, LoginRefreshAccessTokenResponses, LoginResetPasswordErrors, LoginResetPasswordResponses, LoginTestTokenErrors, LoginTestTokenResponses, MessageInput, NamespaceCreate, NamespacesCreateNamespaceUserErrors, NamespacesCreateNamespaceUserResponses, NamespacesDeleteNamespaceUserErrors, NamespacesDeleteNamespaceUserResponses, NamespacesReadMyNamespacesErrors, NamespacesReadMyNamespacesResponses, NamespacesReadNamespaceUsersErrors, NamespacesReadNamespaceUsersResponses, NamespacesUpdateNamespaceUserErrors, NamespacesUpdateNamespaceUserResponses, NamespaceUpdate, NamespaceUserCreate, NamespaceUserUpdate, NewPassword, NodeArtifactsDownloadArtifactErrors, NodeArtifactsDownloadArtifactResponses, NodeEnrollInput, NodeEnrollmentEnrollNodeErrors, NodeEnrollmentEnrollNodeResponses, NodeRuntimeUpsert, PlatformCreateNamespaceErrors, PlatformCreateNamespaceResponses, PlatformCreatePlatformUserErrors, PlatformCreatePlatformUserResponses, PlatformDeleteNamespaceErrors, PlatformDeleteNamespaceResponses, PlatformDeletePlatformUserErrors, PlatformDeletePlatformUserResponses, PlatformReadNamespacesErrors, PlatformReadNamespacesResponses, PlatformReadPlatformUsersErrors, PlatformReadPlatformUsersResponses, PlatformRuntimeUpsert, PlatformUpdateNamespaceErrors, PlatformUpdateNamespaceResponses, PlatformUpdatePlatformUserErrors, PlatformUpdatePlatformUserResponses, PrivateCreateUserErrors, PrivateCreateUserResponses, PrivateUserCreate, ReleaseCreate, RuntimeArtifactsCreateReleaseErrors, RuntimeArtifactsCreateReleaseResponses, RuntimeArtifactsListArtifactsErrors, RuntimeArtifactsListArtifactsResponses, RuntimeArtifactsReadArtifactErrors, RuntimeArtifactsReadArtifactResponses, RuntimeArtifactsReadReleaseErrors, RuntimeArtifactsReadReleaseResponses, RuntimeArtifactsRetryDeploymentErrors, RuntimeArtifactsRetryDeploymentResponses, RuntimeArtifactsRollbackDeploymentErrors, RuntimeArtifactsRollbackDeploymentResponses, RuntimeArtifactsUploadArtifactErrors, RuntimeArtifactsUploadArtifactResponses, RuntimeInternalAppendEventsErrors, RuntimeInternalAppendEventsResponses, RuntimeInternalClaimPlatformTaskErrors, RuntimeInternalClaimPlatformTaskResponses, RuntimeInternalRenewPlatformTaskLeaseErrors, RuntimeInternalRenewPlatformTaskLeaseResponses, RuntimeInternalResolveRouteErrors, RuntimeInternalResolveRouteResponses, RuntimeInternalSigningProbeErrors, RuntimeInternalSigningProbeResponses, RuntimeNodesConfigureNodeRuntimeErrors, RuntimeNodesConfigureNodeRuntimeResponses, RuntimeNodesCreateTokenErrors, RuntimeNodesCreateTokenResponses, RuntimeNodesListNodesErrors, RuntimeNodesListNodesResponses, RuntimeNodesListTokensErrors, RuntimeNodesListTokensResponses, RuntimeNodesReadNodeErrors, RuntimeNodesReadNodeResponses, RuntimeNodesRevokeNodeErrors, RuntimeNodesRevokeNodeResponses, RuntimeNodesRevokeTokenErrors, RuntimeNodesRevokeTokenResponses, RuntimesCancelTaskErrors, RuntimesCancelTaskResponses, RuntimesCreatePlatformSessionErrors, RuntimesCreatePlatformSessionResponses, RuntimesCreateSessionMessageErrors, RuntimesCreateSessionMessageResponses, RuntimesReadPlatformRuntimeErrors, RuntimesReadPlatformRuntimeResponses, RuntimesReadTaskErrors, RuntimesReadTaskEventsErrors, RuntimesReadTaskEventsResponses, RuntimesReadTaskResponses, RuntimesStreamTaskEventsErrors, RuntimesStreamTaskEventsResponses, RuntimesUpsertPlatformRuntimeErrors, RuntimesUpsertPlatformRuntimeResponses, RuntimesValidatePlatformRuntimeErrors, RuntimesValidatePlatformRuntimeResponses, RuntimeTasksCancelTaskErrors, RuntimeTasksCancelTaskResponses, RuntimeTasksCreateTaskErrors, RuntimeTasksCreateTaskResponses, RuntimeTasksListTasksErrors, RuntimeTasksListTasksResponses, RuntimeTasksReadTaskErrors, RuntimeTasksReadTaskResponses, RuntimeTasksRetryFailedTaskErrors, RuntimeTasksRetryFailedTaskResponses, TaskCreate, UpdatePassword, UserCreate, UserRegister, UsersCreateUserErrors, UsersCreateUserResponses, UsersDeleteUserErrors, UsersDeleteUserMeErrors, UsersDeleteUserMeResponses, UsersDeleteUserResponses, UsersReadUserByIdErrors, UsersReadUserByIdResponses, UsersReadUserMeErrors, UsersReadUserMeResponses, UsersReadUsersErrors, UsersReadUsersResponses, UsersRegisterUserErrors, UsersRegisterUserResponses, UsersUpdatePasswordMeErrors, UsersUpdatePasswordMeResponses, UsersUpdateUserErrors, UsersUpdateUserMeErrors, UsersUpdateUserMeResponses, UsersUpdateUserResponses, UserUpdate, UserUpdateMe, UtilsHealthCheckResponses, UtilsTestEmailErrors, UtilsTestEmailResponses } from './types.gen';
+import type { ActivationCreate, AdminUserCreate, AdminUserUpdate, AgentCapabilitiesCreateMcpRevisionErrors, AgentCapabilitiesCreateMcpRevisionResponses, AgentCapabilitiesCreateMcpServerErrors, AgentCapabilitiesCreateMcpServerResponses, AgentCapabilitiesCreateMcpTargetErrors, AgentCapabilitiesCreateMcpTargetResponses, AgentCapabilitiesCreatePluginErrors, AgentCapabilitiesCreatePluginResponses, AgentCapabilitiesCreatePluginVersionErrors, AgentCapabilitiesCreatePluginVersionResponses, AgentCapabilitiesCreateSkillErrors, AgentCapabilitiesCreateSkillResponses, AgentCapabilitiesDeleteMcpServerErrors, AgentCapabilitiesDeleteMcpServerResponses, AgentCapabilitiesDeleteSkillErrors, AgentCapabilitiesDeleteSkillResponses, AgentCapabilitiesDeprecatePluginVersionErrors, AgentCapabilitiesDeprecatePluginVersionResponses, AgentCapabilitiesDeprecateSkillVersionErrors, AgentCapabilitiesDeprecateSkillVersionResponses, AgentCapabilitiesGetAgentCapabilitiesErrors, AgentCapabilitiesGetAgentCapabilitiesResponses, AgentCapabilitiesGetMcpRevisionErrors, AgentCapabilitiesGetMcpRevisionResponses, AgentCapabilitiesGetMcpRuntimeErrors, AgentCapabilitiesGetMcpRuntimeResponses, AgentCapabilitiesGetMcpServerErrors, AgentCapabilitiesGetMcpServerResponses, AgentCapabilitiesGetPluginDraftErrors, AgentCapabilitiesGetPluginDraftResponses, AgentCapabilitiesGetPluginErrors, AgentCapabilitiesGetPluginResponses, AgentCapabilitiesGetPluginVersionErrors, AgentCapabilitiesGetPluginVersionResponses, AgentCapabilitiesGetSkillErrors, AgentCapabilitiesGetSkillResponses, AgentCapabilitiesGetSkillVersionErrors, AgentCapabilitiesGetSkillVersionResponses, AgentCapabilitiesListMcpRevisionsErrors, AgentCapabilitiesListMcpRevisionsResponses, AgentCapabilitiesListMcpServersErrors, AgentCapabilitiesListMcpServersResponses, AgentCapabilitiesListMcpValidationsErrors, AgentCapabilitiesListMcpValidationsResponses, AgentCapabilitiesListPluginsErrors, AgentCapabilitiesListPluginsResponses, AgentCapabilitiesListPluginVersionsErrors, AgentCapabilitiesListPluginVersionsResponses, AgentCapabilitiesListSkillsErrors, AgentCapabilitiesListSkillsResponses, AgentCapabilitiesListSkillVersionsErrors, AgentCapabilitiesListSkillVersionsResponses, AgentCapabilitiesPutMcpSecretErrors, AgentCapabilitiesPutMcpSecretResponses, AgentCapabilitiesRestartMcpRuntimeErrors, AgentCapabilitiesRestartMcpRuntimeResponses, AgentCapabilitiesSavePluginDraftErrors, AgentCapabilitiesSavePluginDraftResponses, AgentCapabilitiesSetAgentMcpErrors, AgentCapabilitiesSetAgentMcpResponses, AgentCapabilitiesSetAgentPluginsErrors, AgentCapabilitiesSetAgentPluginsResponses, AgentCapabilitiesSetAgentSkillsErrors, AgentCapabilitiesSetAgentSkillsResponses, AgentCapabilitiesSetAgentToolsErrors, AgentCapabilitiesSetAgentToolsResponses, AgentCapabilitiesSetNamespaceToolPolicyErrors, AgentCapabilitiesSetNamespaceToolPolicyResponses, AgentCapabilitiesToolCatalogErrors, AgentCapabilitiesToolCatalogResponses, AgentCapabilitiesUpdateMcpServerErrors, AgentCapabilitiesUpdateMcpServerResponses, AgentCapabilitiesUpdatePluginErrors, AgentCapabilitiesUpdatePluginResponses, AgentCapabilitiesUpdateSkillErrors, AgentCapabilitiesUpdateSkillResponses, AgentCapabilitiesUploadSkillVersionErrors, AgentCapabilitiesUploadSkillVersionResponses, AgentCapabilitiesValidateMcpTargetErrors, AgentCapabilitiesValidateMcpTargetResponses, AgentCapabilitiesValidatePluginDraftErrors, AgentCapabilitiesValidatePluginDraftResponses, AgentCopy, AgentCreate, AgentManagementCopyAgentEndpointErrors, AgentManagementCopyAgentEndpointResponses, AgentManagementCreateAgentEndpointErrors, AgentManagementCreateAgentEndpointResponses, AgentManagementCreateProfileErrors, AgentManagementCreateProfileResponses, AgentManagementDeleteAgentErrors, AgentManagementDeleteAgentResponses, AgentManagementDeleteProfileErrors, AgentManagementDeleteProfileResponses, AgentManagementEnvCatalogErrors, AgentManagementEnvCatalogResponses, AgentManagementHarnessCatalogErrors, AgentManagementHarnessCatalogResponses, AgentManagementListAgentsErrors, AgentManagementListAgentsResponses, AgentManagementListProfilesErrors, AgentManagementListProfilesResponses, AgentManagementReadAgentErrors, AgentManagementReadAgentResponses, AgentManagementReadDraftErrors, AgentManagementReadDraftResponses, AgentManagementReadProfileErrors, AgentManagementReadProfileResponses, AgentManagementSaveDraftEndpointErrors, AgentManagementSaveDraftEndpointResponses, AgentManagementUpdateAgentErrors, AgentManagementUpdateAgentResponses, AgentManagementUpdateProfileErrors, AgentManagementUpdateProfileResponses, AgentManagementValidateDraftEndpointErrors, AgentManagementValidateDraftEndpointResponses, AgentMcpBindings, AgentPluginBindings, AgentReleasesActivateReleaseErrors, AgentReleasesActivateReleaseResponses, AgentReleasesApproveToolErrors, AgentReleasesApproveToolResponses, AgentReleasesCreateAgentReleaseErrors, AgentReleasesCreateAgentReleaseResponses, AgentReleasesDenyToolErrors, AgentReleasesDenyToolResponses, AgentReleasesGetActivationErrors, AgentReleasesGetActivationResponses, AgentReleasesGetAgentReleaseErrors, AgentReleasesGetAgentReleaseResponses, AgentReleasesGetResolvedSpecErrors, AgentReleasesGetResolvedSpecResponses, AgentReleasesListAgentReleasesErrors, AgentReleasesListAgentReleasesResponses, AgentReleasesListTaskApprovalsErrors, AgentReleasesListTaskApprovalsResponses, AgentReleasesPrecheckActivationErrors, AgentReleasesPrecheckActivationResponses, AgentReleasesRetryDeploymentErrors, AgentReleasesRetryDeploymentResponses, AgentReleasesRollbackDeploymentErrors, AgentReleasesRollbackDeploymentResponses, AgentReleasesRuntimeAgentErrors, AgentReleasesRuntimeAgentResponses, AgentReleasesRuntimeAgentsErrors, AgentReleasesRuntimeAgentsResponses, AgentSkillBindings, AgentToolBindings, AgentUpdate, AppAgentManagementReleaseRoutesReleaseCreate, AppApiRoutesRuntimeArtifactsReleaseCreate, ApprovalDecision, ApprovalRequestCreate, BodyAgentCapabilitiesUploadSkillVersion, BodyLoginLoginAccessToken, BodyRuntimeArtifactsUploadArtifact, CapabilityReport, ClaimInput, CliLogin, CliLogout, CliRefresh, DeploymentResult, DraftSave, EventBatch, HarnessProfileCreate, HarnessProfileUpdate, IdentityCreate, IdentityUpdate, InternalAgentReleasesClaimAgentDeploymentErrors, InternalAgentReleasesClaimAgentDeploymentResponses, InternalAgentReleasesInternalToolApprovalStatusErrors, InternalAgentReleasesInternalToolApprovalStatusResponses, InternalAgentReleasesReportAgentDeploymentErrors, InternalAgentReleasesReportAgentDeploymentResponses, InternalAgentReleasesRequestToolApprovalErrors, InternalAgentReleasesRequestToolApprovalResponses, InternalMcpClaimPlatformMcpValidationErrors, InternalMcpClaimPlatformMcpValidationResponses, InternalMcpReportPlatformMcpValidationErrors, InternalMcpReportPlatformMcpValidationResponses, ItemCreate, ItemsCreateItemErrors, ItemsCreateItemResponses, ItemsDeleteItemErrors, ItemsDeleteItemResponses, ItemsReadItemErrors, ItemsReadItemResponses, ItemsReadItemsErrors, ItemsReadItemsResponses, ItemsUpdateItemErrors, ItemsUpdateItemResponses, ItemUpdate, LeaseInput, LlmCreateProviderConfigErrors, LlmCreateProviderConfigResponses, LlmProviderConfigCreate, LlmProviderConfigUpdate, LlmProviderSyncModelsRequest, LlmReadProviderCatalogErrors, LlmReadProviderCatalogResponses, LlmReadProviderConfigsErrors, LlmReadProviderConfigsResponses, LlmSyncProviderModelsErrors, LlmSyncProviderModelsResponses, LlmUpdateProviderConfigErrors, LlmUpdateProviderConfigResponses, LlmValidateProviderConfigErrors, LlmValidateProviderConfigResponses, LoginLoginAccessTokenErrors, LoginLoginAccessTokenResponses, LoginLogoutErrors, LoginLogoutResponses, LoginRecoverPasswordErrors, LoginRecoverPasswordHtmlContentErrors, LoginRecoverPasswordHtmlContentResponses, LoginRecoverPasswordResponses, LoginRefreshAccessTokenErrors, LoginRefreshAccessTokenResponses, LoginResetPasswordErrors, LoginResetPasswordResponses, LoginTestTokenErrors, LoginTestTokenResponses, McpRevisionCreate, McpSecretWrite, McpTargetCreate, McpValidationResult, MessageInput, NamespaceCreate, NamespacesCreateNamespaceUserErrors, NamespacesCreateNamespaceUserResponses, NamespacesDeleteNamespaceUserErrors, NamespacesDeleteNamespaceUserResponses, NamespacesReadMyNamespacesErrors, NamespacesReadMyNamespacesResponses, NamespacesReadNamespaceUsersErrors, NamespacesReadNamespaceUsersResponses, NamespacesUpdateNamespaceUserErrors, NamespacesUpdateNamespaceUserResponses, NamespaceUpdate, NamespaceUserCreate, NamespaceUserUpdate, NewPassword, NodeArtifactsDownloadArtifactErrors, NodeArtifactsDownloadArtifactResponses, NodeEnrollInput, NodeEnrollmentEnrollNodeErrors, NodeEnrollmentEnrollNodeResponses, NodeMcpNodeMcpValidationResultErrors, NodeMcpNodeMcpValidationResultResponses, NodeRuntimeUpsert, OperatorCliCapabilitiesErrors, OperatorCliCapabilitiesResponses, OperatorCliCliLoginErrors, OperatorCliCliLoginResponses, OperatorCliCliLogoutErrors, OperatorCliCliLogoutResponses, OperatorCliCliRefreshErrors, OperatorCliCliRefreshResponses, PlatformCreateNamespaceErrors, PlatformCreateNamespaceResponses, PlatformCreatePlatformUserErrors, PlatformCreatePlatformUserResponses, PlatformDeleteNamespaceErrors, PlatformDeleteNamespaceResponses, PlatformDeletePlatformUserErrors, PlatformDeletePlatformUserResponses, PlatformReadNamespacesErrors, PlatformReadNamespacesResponses, PlatformReadPlatformUsersErrors, PlatformReadPlatformUsersResponses, PlatformRuntimeUpsert, PlatformUpdateNamespaceErrors, PlatformUpdateNamespaceResponses, PlatformUpdatePlatformUserErrors, PlatformUpdatePlatformUserResponses, PluginDraftSave, PluginVersionCreate, PrivateCreateUserErrors, PrivateCreateUserResponses, PrivateUserCreate, RuntimeArtifactsCreateReleaseErrors, RuntimeArtifactsCreateReleaseResponses, RuntimeArtifactsListArtifactsErrors, RuntimeArtifactsListArtifactsResponses, RuntimeArtifactsReadArtifactErrors, RuntimeArtifactsReadArtifactResponses, RuntimeArtifactsReadReleaseErrors, RuntimeArtifactsReadReleaseResponses, RuntimeArtifactsRetryDeploymentErrors, RuntimeArtifactsRetryDeploymentResponses, RuntimeArtifactsRollbackDeploymentErrors, RuntimeArtifactsRollbackDeploymentResponses, RuntimeArtifactsUploadArtifactErrors, RuntimeArtifactsUploadArtifactResponses, RuntimeInternalAppendEventsErrors, RuntimeInternalAppendEventsResponses, RuntimeInternalClaimPlatformTaskErrors, RuntimeInternalClaimPlatformTaskResponses, RuntimeInternalRenewPlatformTaskLeaseErrors, RuntimeInternalRenewPlatformTaskLeaseResponses, RuntimeInternalReportPlatformCapabilitiesErrors, RuntimeInternalReportPlatformCapabilitiesResponses, RuntimeInternalResolveRouteErrors, RuntimeInternalResolveRouteResponses, RuntimeInternalSigningProbeErrors, RuntimeInternalSigningProbeResponses, RuntimeNodesConfigureNodeRuntimeErrors, RuntimeNodesConfigureNodeRuntimeResponses, RuntimeNodesCreateTokenErrors, RuntimeNodesCreateTokenResponses, RuntimeNodesListNodesErrors, RuntimeNodesListNodesResponses, RuntimeNodesListTokensErrors, RuntimeNodesListTokensResponses, RuntimeNodesReadNodeErrors, RuntimeNodesReadNodeResponses, RuntimeNodesRevokeNodeErrors, RuntimeNodesRevokeNodeResponses, RuntimeNodesRevokeTokenErrors, RuntimeNodesRevokeTokenResponses, RuntimesCancelTaskErrors, RuntimesCancelTaskResponses, RuntimesCreatePlatformSessionErrors, RuntimesCreatePlatformSessionResponses, RuntimesCreateSessionMessageErrors, RuntimesCreateSessionMessageResponses, RuntimesInvokeSessionSkillErrors, RuntimesInvokeSessionSkillResponses, RuntimesReadPlatformRuntimeErrors, RuntimesReadPlatformRuntimeResponses, RuntimesReadTaskErrors, RuntimesReadTaskEventsErrors, RuntimesReadTaskEventsResponses, RuntimesReadTaskResponses, RuntimesStreamTaskEventsErrors, RuntimesStreamTaskEventsResponses, RuntimesUpsertPlatformRuntimeErrors, RuntimesUpsertPlatformRuntimeResponses, RuntimesValidatePlatformRuntimeErrors, RuntimesValidatePlatformRuntimeResponses, RuntimeTasksCancelTaskErrors, RuntimeTasksCancelTaskResponses, RuntimeTasksCreateTaskErrors, RuntimeTasksCreateTaskResponses, RuntimeTasksListTasksErrors, RuntimeTasksListTasksResponses, RuntimeTasksReadTaskErrors, RuntimeTasksReadTaskEventsErrors, RuntimeTasksReadTaskEventsResponses, RuntimeTasksReadTaskResponses, RuntimeTasksRetryFailedTaskErrors, RuntimeTasksRetryFailedTaskResponses, SessionCreate, SkillInvokeInput, TaskCreate, ToolIntent, UpdatePassword, UserCreate, UserRegister, UsersCreateUserErrors, UsersCreateUserResponses, UsersDeleteUserErrors, UsersDeleteUserMeErrors, UsersDeleteUserMeResponses, UsersDeleteUserResponses, UsersReadUserByIdErrors, UsersReadUserByIdResponses, UsersReadUserMeErrors, UsersReadUserMeResponses, UsersReadUsersErrors, UsersReadUsersResponses, UsersRegisterUserErrors, UsersRegisterUserResponses, UsersUpdatePasswordMeErrors, UsersUpdatePasswordMeResponses, UsersUpdateUserErrors, UsersUpdateUserMeErrors, UsersUpdateUserMeResponses, UsersUpdateUserResponses, UserUpdate, UserUpdateMe, UtilsHealthCheckResponses, UtilsTestEmailErrors, UtilsTestEmailResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -81,6 +81,28 @@ export const runtimeTasksReadTask = <ThrowOnError extends boolean = false>(param
         responseType: 'json',
         security: [{ scheme: 'bearer', type: 'http' }],
         url: '/api/v1/runtime-tasks/{task_id}',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Read Task Events
+ */
+export const runtimeTasksReadTaskEvents = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    task_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<RuntimeTasksReadTaskEventsResponses, RuntimeTasksReadTaskEventsErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'task_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<RuntimeTasksReadTaskEventsResponses, RuntimeTasksReadTaskEventsErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/runtime-tasks/{task_id}/events',
         ...options,
         ...params
     });
@@ -1023,17 +1045,27 @@ export const runtimesValidatePlatformRuntime = <ThrowOnError extends boolean = f
 /**
  * Create Platform Session
  */
-export const runtimesCreatePlatformSession = <ThrowOnError extends boolean = false>(parameters?: {
+export const runtimesCreatePlatformSession = <ThrowOnError extends boolean = false>(parameters: {
     'X-Namespace-Id'?: string | null;
     namespace_id?: string | null;
+    sessionCreate: SessionCreate;
 }, options?: Options<never, ThrowOnError>): RequestResult<RuntimesCreatePlatformSessionResponses, RuntimesCreatePlatformSessionErrors, ThrowOnError> => {
-    const params = buildClientParams([parameters], [{ args: [{ in: 'headers', key: 'X-Namespace-Id' }, { in: 'query', key: 'namespace_id' }] }]);
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'sessionCreate', map: 'body' }
+            ] }]);
     return (options?.client ?? client).post<RuntimesCreatePlatformSessionResponses, RuntimesCreatePlatformSessionErrors, ThrowOnError>({
         responseType: 'json',
         security: [{ scheme: 'bearer', type: 'http' }],
         url: '/api/v1/runtimes/platform/sessions',
         ...options,
-        ...params
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
     });
 };
 
@@ -1056,6 +1088,37 @@ export const runtimesCreateSessionMessage = <ThrowOnError extends boolean = fals
         responseType: 'json',
         security: [{ scheme: 'bearer', type: 'http' }],
         url: '/api/v1/runtimes/sessions/{session_id}/messages',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Invoke Session Skill
+ */
+export const runtimesInvokeSessionSkill = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    session_id: string;
+    skill_slug: string;
+    namespace_id?: string | null;
+    skillInvokeInput: SkillInvokeInput;
+}, options?: Options<never, ThrowOnError>): RequestResult<RuntimesInvokeSessionSkillResponses, RuntimesInvokeSessionSkillErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'session_id' },
+                { in: 'path', key: 'skill_slug' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'skillInvokeInput', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<RuntimesInvokeSessionSkillResponses, RuntimesInvokeSessionSkillErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/runtimes/sessions/{session_id}/skills/{skill_slug}/invoke',
         ...options,
         ...params,
         headers: {
@@ -1172,6 +1235,27 @@ export const runtimeInternalSigningProbe = <ThrowOnError extends boolean = false
         url: '/api/v1/internal/runtime/signing-probe',
         ...options,
         ...params
+    });
+};
+
+/**
+ * Report Platform Capabilities
+ */
+export const runtimeInternalReportPlatformCapabilities = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Runtime-Token'?: string | null;
+    capabilityReport: CapabilityReport;
+}, options?: Options<never, ThrowOnError>): RequestResult<RuntimeInternalReportPlatformCapabilitiesResponses, RuntimeInternalReportPlatformCapabilitiesErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [{ in: 'headers', key: 'X-Runtime-Token' }, { key: 'capabilityReport', map: 'body' }] }]);
+    return (options?.client ?? client).post<RuntimeInternalReportPlatformCapabilitiesResponses, RuntimeInternalReportPlatformCapabilitiesErrors, ThrowOnError>({
+        responseType: 'json',
+        url: '/api/v1/internal/runtime/capabilities',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
     });
 };
 
@@ -1341,12 +1425,12 @@ export const runtimeArtifactsReadArtifact = <ThrowOnError extends boolean = fals
 export const runtimeArtifactsCreateRelease = <ThrowOnError extends boolean = false>(parameters: {
     'X-Namespace-Id'?: string | null;
     namespace_id?: string | null;
-    releaseCreate: ReleaseCreate;
+    appApiRoutesRuntimeArtifactsReleaseCreate: AppApiRoutesRuntimeArtifactsReleaseCreate;
 }, options?: Options<never, ThrowOnError>): RequestResult<RuntimeArtifactsCreateReleaseResponses, RuntimeArtifactsCreateReleaseErrors, ThrowOnError> => {
     const params = buildClientParams([parameters], [{ args: [
                 { in: 'headers', key: 'X-Namespace-Id' },
                 { in: 'query', key: 'namespace_id' },
-                { key: 'releaseCreate', map: 'body' }
+                { key: 'appApiRoutesRuntimeArtifactsReleaseCreate', map: 'body' }
             ] }]);
     return (options?.client ?? client).post<RuntimeArtifactsCreateReleaseResponses, RuntimeArtifactsCreateReleaseErrors, ThrowOnError>({
         responseType: 'json',
@@ -1607,6 +1691,1939 @@ export const nodeEnrollmentEnrollNode = <ThrowOnError extends boolean = false>(p
         }
     });
 };
+
+/**
+ * List Agents
+ */
+export const agentManagementListAgents = <ThrowOnError extends boolean = false>(parameters?: {
+    'X-Namespace-Id'?: string | null;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentManagementListAgentsResponses, AgentManagementListAgentsErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [{ in: 'headers', key: 'X-Namespace-Id' }, { in: 'query', key: 'namespace_id' }] }]);
+    return (options?.client ?? client).get<AgentManagementListAgentsResponses, AgentManagementListAgentsErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/agents',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Create Agent Endpoint
+ */
+export const agentManagementCreateAgentEndpoint = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    namespace_id?: string | null;
+    agentCreate: AgentCreate;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentManagementCreateAgentEndpointResponses, AgentManagementCreateAgentEndpointErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'agentCreate', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<AgentManagementCreateAgentEndpointResponses, AgentManagementCreateAgentEndpointErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/agents',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Copy Agent Endpoint
+ */
+export const agentManagementCopyAgentEndpoint = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    agent_id: string;
+    namespace_id?: string | null;
+    agentCopy: AgentCopy;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentManagementCopyAgentEndpointResponses, AgentManagementCopyAgentEndpointErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'agent_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'agentCopy', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<AgentManagementCopyAgentEndpointResponses, AgentManagementCopyAgentEndpointErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/agents/{agent_id}/copy',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Delete Agent
+ */
+export const agentManagementDeleteAgent = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    agent_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentManagementDeleteAgentResponses, AgentManagementDeleteAgentErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'agent_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).delete<AgentManagementDeleteAgentResponses, AgentManagementDeleteAgentErrors, ThrowOnError>({
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/agents/{agent_id}',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Read Agent
+ */
+export const agentManagementReadAgent = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    agent_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentManagementReadAgentResponses, AgentManagementReadAgentErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'agent_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<AgentManagementReadAgentResponses, AgentManagementReadAgentErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/agents/{agent_id}',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Update Agent
+ */
+export const agentManagementUpdateAgent = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    agent_id: string;
+    namespace_id?: string | null;
+    agentUpdate: AgentUpdate;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentManagementUpdateAgentResponses, AgentManagementUpdateAgentErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'agent_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'agentUpdate', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).patch<AgentManagementUpdateAgentResponses, AgentManagementUpdateAgentErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/agents/{agent_id}',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Read Draft
+ */
+export const agentManagementReadDraft = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    agent_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentManagementReadDraftResponses, AgentManagementReadDraftErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'agent_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<AgentManagementReadDraftResponses, AgentManagementReadDraftErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/agents/{agent_id}/draft',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Save Draft Endpoint
+ */
+export const agentManagementSaveDraftEndpoint = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    agent_id: string;
+    namespace_id?: string | null;
+    draftSave: DraftSave;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentManagementSaveDraftEndpointResponses, AgentManagementSaveDraftEndpointErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'agent_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'draftSave', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).put<AgentManagementSaveDraftEndpointResponses, AgentManagementSaveDraftEndpointErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/agents/{agent_id}/draft',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Validate Draft Endpoint
+ */
+export const agentManagementValidateDraftEndpoint = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    agent_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentManagementValidateDraftEndpointResponses, AgentManagementValidateDraftEndpointErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'agent_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).post<AgentManagementValidateDraftEndpointResponses, AgentManagementValidateDraftEndpointErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/agents/{agent_id}/draft/validate',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * List Profiles
+ */
+export const agentManagementListProfiles = <ThrowOnError extends boolean = false>(parameters?: {
+    'X-Namespace-Id'?: string | null;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentManagementListProfilesResponses, AgentManagementListProfilesErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [{ in: 'headers', key: 'X-Namespace-Id' }, { in: 'query', key: 'namespace_id' }] }]);
+    return (options?.client ?? client).get<AgentManagementListProfilesResponses, AgentManagementListProfilesErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/harness-profiles',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Create Profile
+ */
+export const agentManagementCreateProfile = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    namespace_id?: string | null;
+    harnessProfileCreate: HarnessProfileCreate;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentManagementCreateProfileResponses, AgentManagementCreateProfileErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'harnessProfileCreate', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<AgentManagementCreateProfileResponses, AgentManagementCreateProfileErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/harness-profiles',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Delete Profile
+ */
+export const agentManagementDeleteProfile = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    profile_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentManagementDeleteProfileResponses, AgentManagementDeleteProfileErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'profile_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).delete<AgentManagementDeleteProfileResponses, AgentManagementDeleteProfileErrors, ThrowOnError>({
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/harness-profiles/{profile_id}',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Read Profile
+ */
+export const agentManagementReadProfile = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    profile_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentManagementReadProfileResponses, AgentManagementReadProfileErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'profile_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<AgentManagementReadProfileResponses, AgentManagementReadProfileErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/harness-profiles/{profile_id}',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Update Profile
+ */
+export const agentManagementUpdateProfile = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    profile_id: string;
+    namespace_id?: string | null;
+    harnessProfileUpdate: HarnessProfileUpdate;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentManagementUpdateProfileResponses, AgentManagementUpdateProfileErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'profile_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'harnessProfileUpdate', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).patch<AgentManagementUpdateProfileResponses, AgentManagementUpdateProfileErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/harness-profiles/{profile_id}',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Harness Catalog
+ */
+export const agentManagementHarnessCatalog = <ThrowOnError extends boolean = false>(parameters?: {
+    'X-Namespace-Id'?: string | null;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentManagementHarnessCatalogResponses, AgentManagementHarnessCatalogErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [{ in: 'headers', key: 'X-Namespace-Id' }, { in: 'query', key: 'namespace_id' }] }]);
+    return (options?.client ?? client).get<AgentManagementHarnessCatalogResponses, AgentManagementHarnessCatalogErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/harnesses/catalog',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Env Catalog
+ */
+export const agentManagementEnvCatalog = <ThrowOnError extends boolean = false>(parameters?: {
+    'X-Namespace-Id'?: string | null;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentManagementEnvCatalogResponses, AgentManagementEnvCatalogErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [{ in: 'headers', key: 'X-Namespace-Id' }, { in: 'query', key: 'namespace_id' }] }]);
+    return (options?.client ?? client).get<AgentManagementEnvCatalogResponses, AgentManagementEnvCatalogErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/harnesses/environment-catalog',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Get Agent Capabilities
+ */
+export const agentCapabilitiesGetAgentCapabilities = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    agent_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesGetAgentCapabilitiesResponses, AgentCapabilitiesGetAgentCapabilitiesErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'agent_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<AgentCapabilitiesGetAgentCapabilitiesResponses, AgentCapabilitiesGetAgentCapabilitiesErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/agents/{agent_id}/draft/capabilities',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * List Skills
+ */
+export const agentCapabilitiesListSkills = <ThrowOnError extends boolean = false>(parameters?: {
+    'X-Namespace-Id'?: string | null;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesListSkillsResponses, AgentCapabilitiesListSkillsErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [{ in: 'headers', key: 'X-Namespace-Id' }, { in: 'query', key: 'namespace_id' }] }]);
+    return (options?.client ?? client).get<AgentCapabilitiesListSkillsResponses, AgentCapabilitiesListSkillsErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/skills',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Create Skill
+ */
+export const agentCapabilitiesCreateSkill = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    namespace_id?: string | null;
+    identityCreate: IdentityCreate;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesCreateSkillResponses, AgentCapabilitiesCreateSkillErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'identityCreate', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<AgentCapabilitiesCreateSkillResponses, AgentCapabilitiesCreateSkillErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/skills',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Delete Skill
+ */
+export const agentCapabilitiesDeleteSkill = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    skill_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesDeleteSkillResponses, AgentCapabilitiesDeleteSkillErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'skill_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).delete<AgentCapabilitiesDeleteSkillResponses, AgentCapabilitiesDeleteSkillErrors, ThrowOnError>({
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/skills/{skill_id}',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Get Skill
+ */
+export const agentCapabilitiesGetSkill = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    skill_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesGetSkillResponses, AgentCapabilitiesGetSkillErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'skill_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<AgentCapabilitiesGetSkillResponses, AgentCapabilitiesGetSkillErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/skills/{skill_id}',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Update Skill
+ */
+export const agentCapabilitiesUpdateSkill = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    skill_id: string;
+    namespace_id?: string | null;
+    identityUpdate: IdentityUpdate;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesUpdateSkillResponses, AgentCapabilitiesUpdateSkillErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'skill_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'identityUpdate', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).patch<AgentCapabilitiesUpdateSkillResponses, AgentCapabilitiesUpdateSkillErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/skills/{skill_id}',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * List Skill Versions
+ */
+export const agentCapabilitiesListSkillVersions = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    skill_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesListSkillVersionsResponses, AgentCapabilitiesListSkillVersionsErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'skill_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<AgentCapabilitiesListSkillVersionsResponses, AgentCapabilitiesListSkillVersionsErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/skills/{skill_id}/versions',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Upload Skill Version
+ */
+export const agentCapabilitiesUploadSkillVersion = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    skill_id: string;
+    namespace_id?: string | null;
+    bodyAgentCapabilitiesUploadSkillVersion: BodyAgentCapabilitiesUploadSkillVersion;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesUploadSkillVersionResponses, AgentCapabilitiesUploadSkillVersionErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'skill_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'bodyAgentCapabilitiesUploadSkillVersion', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<AgentCapabilitiesUploadSkillVersionResponses, AgentCapabilitiesUploadSkillVersionErrors, ThrowOnError>({
+        ...formDataBodySerializer,
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/skills/{skill_id}/versions',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': null,
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Get Skill Version
+ */
+export const agentCapabilitiesGetSkillVersion = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    skill_id: string;
+    version: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesGetSkillVersionResponses, AgentCapabilitiesGetSkillVersionErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'skill_id' },
+                { in: 'path', key: 'version' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<AgentCapabilitiesGetSkillVersionResponses, AgentCapabilitiesGetSkillVersionErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/skills/{skill_id}/versions/{version}',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Deprecate Skill Version
+ */
+export const agentCapabilitiesDeprecateSkillVersion = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    skill_id: string;
+    version: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesDeprecateSkillVersionResponses, AgentCapabilitiesDeprecateSkillVersionErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'skill_id' },
+                { in: 'path', key: 'version' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).post<AgentCapabilitiesDeprecateSkillVersionResponses, AgentCapabilitiesDeprecateSkillVersionErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/skills/{skill_id}/versions/{version}/deprecate',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Tool Catalog
+ */
+export const agentCapabilitiesToolCatalog = <ThrowOnError extends boolean = false>(parameters?: {
+    'X-Namespace-Id'?: string | null;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesToolCatalogResponses, AgentCapabilitiesToolCatalogErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [{ in: 'headers', key: 'X-Namespace-Id' }, { in: 'query', key: 'namespace_id' }] }]);
+    return (options?.client ?? client).get<AgentCapabilitiesToolCatalogResponses, AgentCapabilitiesToolCatalogErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/tools/catalog',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Set Namespace Tool Policy
+ */
+export const agentCapabilitiesSetNamespaceToolPolicy = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    tool_key: string;
+    namespace_id?: string | null;
+    toolIntent: ToolIntent;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesSetNamespaceToolPolicyResponses, AgentCapabilitiesSetNamespaceToolPolicyErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'tool_key' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'toolIntent', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).put<AgentCapabilitiesSetNamespaceToolPolicyResponses, AgentCapabilitiesSetNamespaceToolPolicyErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/tools/{tool_key}/namespace-policy',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Set Agent Skills
+ */
+export const agentCapabilitiesSetAgentSkills = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    agent_id: string;
+    namespace_id?: string | null;
+    agentSkillBindings: AgentSkillBindings;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesSetAgentSkillsResponses, AgentCapabilitiesSetAgentSkillsErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'agent_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'agentSkillBindings', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).put<AgentCapabilitiesSetAgentSkillsResponses, AgentCapabilitiesSetAgentSkillsErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/agents/{agent_id}/draft/skills',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Set Agent Tools
+ */
+export const agentCapabilitiesSetAgentTools = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    agent_id: string;
+    namespace_id?: string | null;
+    agentToolBindings: AgentToolBindings;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesSetAgentToolsResponses, AgentCapabilitiesSetAgentToolsErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'agent_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'agentToolBindings', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).put<AgentCapabilitiesSetAgentToolsResponses, AgentCapabilitiesSetAgentToolsErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/agents/{agent_id}/draft/tools',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * List Mcp Servers
+ */
+export const agentCapabilitiesListMcpServers = <ThrowOnError extends boolean = false>(parameters?: {
+    'X-Namespace-Id'?: string | null;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesListMcpServersResponses, AgentCapabilitiesListMcpServersErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [{ in: 'headers', key: 'X-Namespace-Id' }, { in: 'query', key: 'namespace_id' }] }]);
+    return (options?.client ?? client).get<AgentCapabilitiesListMcpServersResponses, AgentCapabilitiesListMcpServersErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/mcp-servers',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Create Mcp Server
+ */
+export const agentCapabilitiesCreateMcpServer = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    namespace_id?: string | null;
+    identityCreate: IdentityCreate;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesCreateMcpServerResponses, AgentCapabilitiesCreateMcpServerErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'identityCreate', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<AgentCapabilitiesCreateMcpServerResponses, AgentCapabilitiesCreateMcpServerErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/mcp-servers',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Delete Mcp Server
+ */
+export const agentCapabilitiesDeleteMcpServer = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    server_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesDeleteMcpServerResponses, AgentCapabilitiesDeleteMcpServerErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'server_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).delete<AgentCapabilitiesDeleteMcpServerResponses, AgentCapabilitiesDeleteMcpServerErrors, ThrowOnError>({
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/mcp-servers/{server_id}',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Get Mcp Server
+ */
+export const agentCapabilitiesGetMcpServer = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    server_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesGetMcpServerResponses, AgentCapabilitiesGetMcpServerErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'server_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<AgentCapabilitiesGetMcpServerResponses, AgentCapabilitiesGetMcpServerErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/mcp-servers/{server_id}',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Update Mcp Server
+ */
+export const agentCapabilitiesUpdateMcpServer = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    server_id: string;
+    namespace_id?: string | null;
+    identityUpdate: IdentityUpdate;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesUpdateMcpServerResponses, AgentCapabilitiesUpdateMcpServerErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'server_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'identityUpdate', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).patch<AgentCapabilitiesUpdateMcpServerResponses, AgentCapabilitiesUpdateMcpServerErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/mcp-servers/{server_id}',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * List Mcp Revisions
+ */
+export const agentCapabilitiesListMcpRevisions = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    server_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesListMcpRevisionsResponses, AgentCapabilitiesListMcpRevisionsErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'server_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<AgentCapabilitiesListMcpRevisionsResponses, AgentCapabilitiesListMcpRevisionsErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/mcp-servers/{server_id}/revisions',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Create Mcp Revision
+ */
+export const agentCapabilitiesCreateMcpRevision = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    server_id: string;
+    namespace_id?: string | null;
+    mcpRevisionCreate: McpRevisionCreate;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesCreateMcpRevisionResponses, AgentCapabilitiesCreateMcpRevisionErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'server_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'mcpRevisionCreate', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<AgentCapabilitiesCreateMcpRevisionResponses, AgentCapabilitiesCreateMcpRevisionErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/mcp-servers/{server_id}/revisions',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Get Mcp Revision
+ */
+export const agentCapabilitiesGetMcpRevision = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    server_id: string;
+    revision: number;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesGetMcpRevisionResponses, AgentCapabilitiesGetMcpRevisionErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'server_id' },
+                { in: 'path', key: 'revision' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<AgentCapabilitiesGetMcpRevisionResponses, AgentCapabilitiesGetMcpRevisionErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/mcp-servers/{server_id}/revisions/{revision}',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Create Mcp Target
+ */
+export const agentCapabilitiesCreateMcpTarget = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    revision_id: string;
+    namespace_id?: string | null;
+    mcpTargetCreate: McpTargetCreate;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesCreateMcpTargetResponses, AgentCapabilitiesCreateMcpTargetErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'revision_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'mcpTargetCreate', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<AgentCapabilitiesCreateMcpTargetResponses, AgentCapabilitiesCreateMcpTargetErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/mcp-revisions/{revision_id}/targets',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Put Mcp Secret
+ */
+export const agentCapabilitiesPutMcpSecret = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    target_id: string;
+    namespace_id?: string | null;
+    mcpSecretWrite: McpSecretWrite;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesPutMcpSecretResponses, AgentCapabilitiesPutMcpSecretErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'target_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'mcpSecretWrite', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).put<AgentCapabilitiesPutMcpSecretResponses, AgentCapabilitiesPutMcpSecretErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/mcp-targets/{target_id}/secret',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Validate Mcp Target
+ */
+export const agentCapabilitiesValidateMcpTarget = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    target_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesValidateMcpTargetResponses, AgentCapabilitiesValidateMcpTargetErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'target_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).post<AgentCapabilitiesValidateMcpTargetResponses, AgentCapabilitiesValidateMcpTargetErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/mcp-targets/{target_id}/validate',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * List Mcp Validations
+ */
+export const agentCapabilitiesListMcpValidations = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    target_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesListMcpValidationsResponses, AgentCapabilitiesListMcpValidationsErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'target_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<AgentCapabilitiesListMcpValidationsResponses, AgentCapabilitiesListMcpValidationsErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/mcp-targets/{target_id}/validations',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Get Mcp Runtime
+ */
+export const agentCapabilitiesGetMcpRuntime = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    target_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesGetMcpRuntimeResponses, AgentCapabilitiesGetMcpRuntimeErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'target_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<AgentCapabilitiesGetMcpRuntimeResponses, AgentCapabilitiesGetMcpRuntimeErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/mcp-targets/{target_id}/runtime',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Restart Mcp Runtime
+ */
+export const agentCapabilitiesRestartMcpRuntime = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    target_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesRestartMcpRuntimeResponses, AgentCapabilitiesRestartMcpRuntimeErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'target_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).post<AgentCapabilitiesRestartMcpRuntimeResponses, AgentCapabilitiesRestartMcpRuntimeErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/mcp-targets/{target_id}/runtime/restart',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Set Agent Mcp
+ */
+export const agentCapabilitiesSetAgentMcp = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    agent_id: string;
+    namespace_id?: string | null;
+    agentMcpBindings: AgentMcpBindings;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesSetAgentMcpResponses, AgentCapabilitiesSetAgentMcpErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'agent_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'agentMcpBindings', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).put<AgentCapabilitiesSetAgentMcpResponses, AgentCapabilitiesSetAgentMcpErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/agents/{agent_id}/draft/mcp',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * List Plugins
+ */
+export const agentCapabilitiesListPlugins = <ThrowOnError extends boolean = false>(parameters?: {
+    'X-Namespace-Id'?: string | null;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesListPluginsResponses, AgentCapabilitiesListPluginsErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [{ in: 'headers', key: 'X-Namespace-Id' }, { in: 'query', key: 'namespace_id' }] }]);
+    return (options?.client ?? client).get<AgentCapabilitiesListPluginsResponses, AgentCapabilitiesListPluginsErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/plugins',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Create Plugin
+ */
+export const agentCapabilitiesCreatePlugin = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    namespace_id?: string | null;
+    identityCreate: IdentityCreate;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesCreatePluginResponses, AgentCapabilitiesCreatePluginErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'identityCreate', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<AgentCapabilitiesCreatePluginResponses, AgentCapabilitiesCreatePluginErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/plugins',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Get Plugin
+ */
+export const agentCapabilitiesGetPlugin = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    plugin_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesGetPluginResponses, AgentCapabilitiesGetPluginErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'plugin_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<AgentCapabilitiesGetPluginResponses, AgentCapabilitiesGetPluginErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/plugins/{plugin_id}',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Update Plugin
+ */
+export const agentCapabilitiesUpdatePlugin = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    plugin_id: string;
+    namespace_id?: string | null;
+    identityUpdate: IdentityUpdate;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesUpdatePluginResponses, AgentCapabilitiesUpdatePluginErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'plugin_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'identityUpdate', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).patch<AgentCapabilitiesUpdatePluginResponses, AgentCapabilitiesUpdatePluginErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/plugins/{plugin_id}',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Get Plugin Draft
+ */
+export const agentCapabilitiesGetPluginDraft = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    plugin_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesGetPluginDraftResponses, AgentCapabilitiesGetPluginDraftErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'plugin_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<AgentCapabilitiesGetPluginDraftResponses, AgentCapabilitiesGetPluginDraftErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/plugins/{plugin_id}/draft',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Save Plugin Draft
+ */
+export const agentCapabilitiesSavePluginDraft = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    plugin_id: string;
+    namespace_id?: string | null;
+    pluginDraftSave: PluginDraftSave;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesSavePluginDraftResponses, AgentCapabilitiesSavePluginDraftErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'plugin_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'pluginDraftSave', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).put<AgentCapabilitiesSavePluginDraftResponses, AgentCapabilitiesSavePluginDraftErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/plugins/{plugin_id}/draft',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Validate Plugin Draft
+ */
+export const agentCapabilitiesValidatePluginDraft = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    plugin_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesValidatePluginDraftResponses, AgentCapabilitiesValidatePluginDraftErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'plugin_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).post<AgentCapabilitiesValidatePluginDraftResponses, AgentCapabilitiesValidatePluginDraftErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/plugins/{plugin_id}/draft/validate',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * List Plugin Versions
+ */
+export const agentCapabilitiesListPluginVersions = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    plugin_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesListPluginVersionsResponses, AgentCapabilitiesListPluginVersionsErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'plugin_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<AgentCapabilitiesListPluginVersionsResponses, AgentCapabilitiesListPluginVersionsErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/plugins/{plugin_id}/versions',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Create Plugin Version
+ */
+export const agentCapabilitiesCreatePluginVersion = <ThrowOnError extends boolean = false>(parameters: {
+    'Idempotency-Key'?: string | null;
+    'X-Namespace-Id'?: string | null;
+    plugin_id: string;
+    namespace_id?: string | null;
+    pluginVersionCreate: PluginVersionCreate;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesCreatePluginVersionResponses, AgentCapabilitiesCreatePluginVersionErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'Idempotency-Key' },
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'plugin_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'pluginVersionCreate', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<AgentCapabilitiesCreatePluginVersionResponses, AgentCapabilitiesCreatePluginVersionErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/plugins/{plugin_id}/versions',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Get Plugin Version
+ */
+export const agentCapabilitiesGetPluginVersion = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    plugin_id: string;
+    version: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesGetPluginVersionResponses, AgentCapabilitiesGetPluginVersionErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'plugin_id' },
+                { in: 'path', key: 'version' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<AgentCapabilitiesGetPluginVersionResponses, AgentCapabilitiesGetPluginVersionErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/plugins/{plugin_id}/versions/{version}',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Deprecate Plugin Version
+ */
+export const agentCapabilitiesDeprecatePluginVersion = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    plugin_id: string;
+    version: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesDeprecatePluginVersionResponses, AgentCapabilitiesDeprecatePluginVersionErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'plugin_id' },
+                { in: 'path', key: 'version' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).post<AgentCapabilitiesDeprecatePluginVersionResponses, AgentCapabilitiesDeprecatePluginVersionErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/plugins/{plugin_id}/versions/{version}/deprecate',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Set Agent Plugins
+ */
+export const agentCapabilitiesSetAgentPlugins = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    agent_id: string;
+    namespace_id?: string | null;
+    agentPluginBindings: AgentPluginBindings;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentCapabilitiesSetAgentPluginsResponses, AgentCapabilitiesSetAgentPluginsErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'agent_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'agentPluginBindings', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).put<AgentCapabilitiesSetAgentPluginsResponses, AgentCapabilitiesSetAgentPluginsErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/agents/{agent_id}/draft/plugins',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Node Mcp Validation Result
+ */
+export const nodeMcpNodeMcpValidationResult = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Runtime-Token'?: string | null;
+    attempt_id: string;
+    mcpValidationResult: McpValidationResult;
+}, options?: Options<never, ThrowOnError>): RequestResult<NodeMcpNodeMcpValidationResultResponses, NodeMcpNodeMcpValidationResultErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Runtime-Token' },
+                { in: 'path', key: 'attempt_id' },
+                { key: 'mcpValidationResult', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<NodeMcpNodeMcpValidationResultResponses, NodeMcpNodeMcpValidationResultErrors, ThrowOnError>({
+        responseType: 'json',
+        url: '/api/v1/node/mcp-validations/{attempt_id}/result',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Claim Platform Mcp Validation
+ */
+export const internalMcpClaimPlatformMcpValidation = <ThrowOnError extends boolean = false>(parameters?: {
+    'X-Runtime-Token'?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<InternalMcpClaimPlatformMcpValidationResponses, InternalMcpClaimPlatformMcpValidationErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [{ in: 'headers', key: 'X-Runtime-Token' }] }]);
+    return (options?.client ?? client).post<InternalMcpClaimPlatformMcpValidationResponses, InternalMcpClaimPlatformMcpValidationErrors, ThrowOnError>({
+        responseType: 'json',
+        url: '/api/v1/internal/runtime/mcp-validations/claim',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Report Platform Mcp Validation
+ */
+export const internalMcpReportPlatformMcpValidation = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Runtime-Token'?: string | null;
+    attempt_id: string;
+    mcpValidationResult: McpValidationResult;
+}, options?: Options<never, ThrowOnError>): RequestResult<InternalMcpReportPlatformMcpValidationResponses, InternalMcpReportPlatformMcpValidationErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Runtime-Token' },
+                { in: 'path', key: 'attempt_id' },
+                { key: 'mcpValidationResult', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<InternalMcpReportPlatformMcpValidationResponses, InternalMcpReportPlatformMcpValidationErrors, ThrowOnError>({
+        responseType: 'json',
+        url: '/api/v1/internal/runtime/mcp-validations/{attempt_id}/result',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * List Agent Releases
+ */
+export const agentReleasesListAgentReleases = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    agent_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentReleasesListAgentReleasesResponses, AgentReleasesListAgentReleasesErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'agent_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<AgentReleasesListAgentReleasesResponses, AgentReleasesListAgentReleasesErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/agents/{agent_id}/releases',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Create Agent Release
+ */
+export const agentReleasesCreateAgentRelease = <ThrowOnError extends boolean = false>(parameters: {
+    'Idempotency-Key'?: string | null;
+    'X-Namespace-Id'?: string | null;
+    agent_id: string;
+    namespace_id?: string | null;
+    appAgentManagementReleaseRoutesReleaseCreate: AppAgentManagementReleaseRoutesReleaseCreate;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentReleasesCreateAgentReleaseResponses, AgentReleasesCreateAgentReleaseErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'Idempotency-Key' },
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'agent_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'appAgentManagementReleaseRoutesReleaseCreate', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<AgentReleasesCreateAgentReleaseResponses, AgentReleasesCreateAgentReleaseErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/agents/{agent_id}/releases',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Get Agent Release
+ */
+export const agentReleasesGetAgentRelease = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    release_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentReleasesGetAgentReleaseResponses, AgentReleasesGetAgentReleaseErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'release_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<AgentReleasesGetAgentReleaseResponses, AgentReleasesGetAgentReleaseErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/agent-releases/{release_id}',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Get Resolved Spec
+ */
+export const agentReleasesGetResolvedSpec = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    release_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentReleasesGetResolvedSpecResponses, AgentReleasesGetResolvedSpecErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'release_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<AgentReleasesGetResolvedSpecResponses, AgentReleasesGetResolvedSpecErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/agent-releases/{release_id}/resolved-spec',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Precheck Activation
+ */
+export const agentReleasesPrecheckActivation = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    release_id: string;
+    namespace_id?: string | null;
+    activationCreate: ActivationCreate;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentReleasesPrecheckActivationResponses, AgentReleasesPrecheckActivationErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'release_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'activationCreate', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<AgentReleasesPrecheckActivationResponses, AgentReleasesPrecheckActivationErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/agent-releases/{release_id}/activations/precheck',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Activate Release
+ */
+export const agentReleasesActivateRelease = <ThrowOnError extends boolean = false>(parameters: {
+    'Idempotency-Key'?: string | null;
+    'X-Namespace-Id'?: string | null;
+    release_id: string;
+    namespace_id?: string | null;
+    activationCreate: ActivationCreate;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentReleasesActivateReleaseResponses, AgentReleasesActivateReleaseErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'Idempotency-Key' },
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'release_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'activationCreate', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<AgentReleasesActivateReleaseResponses, AgentReleasesActivateReleaseErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/agent-releases/{release_id}/activations',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Get Activation
+ */
+export const agentReleasesGetActivation = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    activation_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentReleasesGetActivationResponses, AgentReleasesGetActivationErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'activation_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<AgentReleasesGetActivationResponses, AgentReleasesGetActivationErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/agent-activations/{activation_id}',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Retry Deployment
+ */
+export const agentReleasesRetryDeployment = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    deployment_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentReleasesRetryDeploymentResponses, AgentReleasesRetryDeploymentErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'deployment_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).post<AgentReleasesRetryDeploymentResponses, AgentReleasesRetryDeploymentErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/agent-deployments/{deployment_id}/retry',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Rollback Deployment
+ */
+export const agentReleasesRollbackDeployment = <ThrowOnError extends boolean = false>(parameters: {
+    'Idempotency-Key'?: string | null;
+    'X-Namespace-Id'?: string | null;
+    deployment_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentReleasesRollbackDeploymentResponses, AgentReleasesRollbackDeploymentErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'Idempotency-Key' },
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'deployment_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).post<AgentReleasesRollbackDeploymentResponses, AgentReleasesRollbackDeploymentErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/agent-deployments/{deployment_id}/rollback',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Runtime Agents
+ */
+export const agentReleasesRuntimeAgents = <ThrowOnError extends boolean = false>(parameters?: {
+    'X-Namespace-Id'?: string | null;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentReleasesRuntimeAgentsResponses, AgentReleasesRuntimeAgentsErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [{ in: 'headers', key: 'X-Namespace-Id' }, { in: 'query', key: 'namespace_id' }] }]);
+    return (options?.client ?? client).get<AgentReleasesRuntimeAgentsResponses, AgentReleasesRuntimeAgentsErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/runtime-agents',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Runtime Agent
+ */
+export const agentReleasesRuntimeAgent = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    binding_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentReleasesRuntimeAgentResponses, AgentReleasesRuntimeAgentErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'binding_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<AgentReleasesRuntimeAgentResponses, AgentReleasesRuntimeAgentErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/runtime-agents/{binding_id}',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * List Task Approvals
+ */
+export const agentReleasesListTaskApprovals = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    task_id: string;
+    namespace_id?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentReleasesListTaskApprovalsResponses, AgentReleasesListTaskApprovalsErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'task_id' },
+                { in: 'query', key: 'namespace_id' }
+            ] }]);
+    return (options?.client ?? client).get<AgentReleasesListTaskApprovalsResponses, AgentReleasesListTaskApprovalsErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/runtime-tasks/{task_id}/approvals',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Approve Tool
+ */
+export const agentReleasesApproveTool = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    approval_id: string;
+    namespace_id?: string | null;
+    approvalDecision: ApprovalDecision;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentReleasesApproveToolResponses, AgentReleasesApproveToolErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'approval_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'approvalDecision', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<AgentReleasesApproveToolResponses, AgentReleasesApproveToolErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/tool-approvals/{approval_id}/approve',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Deny Tool
+ */
+export const agentReleasesDenyTool = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Namespace-Id'?: string | null;
+    approval_id: string;
+    namespace_id?: string | null;
+    approvalDecision: ApprovalDecision;
+}, options?: Options<never, ThrowOnError>): RequestResult<AgentReleasesDenyToolResponses, AgentReleasesDenyToolErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Namespace-Id' },
+                { in: 'path', key: 'approval_id' },
+                { in: 'query', key: 'namespace_id' },
+                { key: 'approvalDecision', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<AgentReleasesDenyToolResponses, AgentReleasesDenyToolErrors, ThrowOnError>({
+        responseType: 'json',
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/tool-approvals/{approval_id}/deny',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Claim Agent Deployment
+ */
+export const internalAgentReleasesClaimAgentDeployment = <ThrowOnError extends boolean = false>(parameters?: {
+    'X-Runtime-Token'?: string | null;
+}, options?: Options<never, ThrowOnError>): RequestResult<InternalAgentReleasesClaimAgentDeploymentResponses, InternalAgentReleasesClaimAgentDeploymentErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [{ in: 'headers', key: 'X-Runtime-Token' }] }]);
+    return (options?.client ?? client).post<InternalAgentReleasesClaimAgentDeploymentResponses, InternalAgentReleasesClaimAgentDeploymentErrors, ThrowOnError>({
+        responseType: 'json',
+        url: '/api/v1/internal/runtime/agent-deployments/claim',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Report Agent Deployment
+ */
+export const internalAgentReleasesReportAgentDeployment = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Runtime-Token'?: string | null;
+    deployment_id: string;
+    deploymentResult: DeploymentResult;
+}, options?: Options<never, ThrowOnError>): RequestResult<InternalAgentReleasesReportAgentDeploymentResponses, InternalAgentReleasesReportAgentDeploymentErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'headers', key: 'X-Runtime-Token' },
+                { in: 'path', key: 'deployment_id' },
+                { key: 'deploymentResult', map: 'body' }
+            ] }]);
+    return (options?.client ?? client).post<InternalAgentReleasesReportAgentDeploymentResponses, InternalAgentReleasesReportAgentDeploymentErrors, ThrowOnError>({
+        responseType: 'json',
+        url: '/api/v1/internal/runtime/agent-deployments/{deployment_id}/result',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Request Tool Approval
+ */
+export const internalAgentReleasesRequestToolApproval = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Runtime-Token'?: string | null;
+    approvalRequestCreate: ApprovalRequestCreate;
+}, options?: Options<never, ThrowOnError>): RequestResult<InternalAgentReleasesRequestToolApprovalResponses, InternalAgentReleasesRequestToolApprovalErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [{ in: 'headers', key: 'X-Runtime-Token' }, { key: 'approvalRequestCreate', map: 'body' }] }]);
+    return (options?.client ?? client).post<InternalAgentReleasesRequestToolApprovalResponses, InternalAgentReleasesRequestToolApprovalErrors, ThrowOnError>({
+        responseType: 'json',
+        url: '/api/v1/internal/runtime/tool-approvals',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Internal Tool Approval Status
+ */
+export const internalAgentReleasesInternalToolApprovalStatus = <ThrowOnError extends boolean = false>(parameters: {
+    'X-Runtime-Token'?: string | null;
+    approval_id: string;
+}, options?: Options<never, ThrowOnError>): RequestResult<InternalAgentReleasesInternalToolApprovalStatusResponses, InternalAgentReleasesInternalToolApprovalStatusErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [{ in: 'headers', key: 'X-Runtime-Token' }, { in: 'path', key: 'approval_id' }] }]);
+    return (options?.client ?? client).get<InternalAgentReleasesInternalToolApprovalStatusResponses, InternalAgentReleasesInternalToolApprovalStatusErrors, ThrowOnError>({
+        responseType: 'json',
+        url: '/api/v1/internal/runtime/tool-approvals/{approval_id}',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Cli Login
+ */
+export const operatorCliCliLogin = <ThrowOnError extends boolean = false>(parameters: {
+    cliLogin: CliLogin;
+}, options?: Options<never, ThrowOnError>): RequestResult<OperatorCliCliLoginResponses, OperatorCliCliLoginErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [{ key: 'cliLogin', map: 'body' }] }]);
+    return (options?.client ?? client).post<OperatorCliCliLoginResponses, OperatorCliCliLoginErrors, ThrowOnError>({
+        responseType: 'json',
+        url: '/api/v1/cli/login',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Cli Refresh
+ */
+export const operatorCliCliRefresh = <ThrowOnError extends boolean = false>(parameters: {
+    cliRefresh: CliRefresh;
+}, options?: Options<never, ThrowOnError>): RequestResult<OperatorCliCliRefreshResponses, OperatorCliCliRefreshErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [{ key: 'cliRefresh', map: 'body' }] }]);
+    return (options?.client ?? client).post<OperatorCliCliRefreshResponses, OperatorCliCliRefreshErrors, ThrowOnError>({
+        responseType: 'json',
+        url: '/api/v1/cli/refresh',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Cli Logout
+ */
+export const operatorCliCliLogout = <ThrowOnError extends boolean = false>(parameters: {
+    cliLogout: CliLogout;
+}, options?: Options<never, ThrowOnError>): RequestResult<OperatorCliCliLogoutResponses, OperatorCliCliLogoutErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [{ key: 'cliLogout', map: 'body' }] }]);
+    return (options?.client ?? client).post<OperatorCliCliLogoutResponses, OperatorCliCliLogoutErrors, ThrowOnError>({
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/api/v1/cli/logout',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Capabilities
+ */
+export const operatorCliCapabilities = <ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>): RequestResult<OperatorCliCapabilitiesResponses, OperatorCliCapabilitiesErrors, ThrowOnError> => (options?.client ?? client).get<OperatorCliCapabilitiesResponses, OperatorCliCapabilitiesErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/capabilities',
+    ...options
+});
 
 /**
  * Create User

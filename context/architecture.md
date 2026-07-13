@@ -23,6 +23,9 @@ llm_configs -> namespaces
 llm_configs -> users
 runtime_management -> namespaces
 runtime_management -> llm_configs
+agent_management -> namespaces
+agent_management -> llm_configs
+agent_management -> runtime_management
 
 frontend routes --> frontend components --> client SDK / tenantApi
 backend routes --> deps / crud --> models --> db
@@ -36,6 +39,7 @@ backend routes --> deps / crud --> models --> db
 - `namespaces` 负责空间实体、用户-空间关联关系和空间管理员权限校验。
 - `llm_configs` 负责空间级供应商接入配置；`runtime_management` 只通过同空间、已启用的配置引用模型。
 - `runtime_management` 的控制面仍位于 FastAPI；`runtime-worker` 独占平台 Claude SDK/CLI 生命周期；`model-gateway` 提供 Anthropic Messages API 并做供应商转换。
+- `agent_management` 拥有 Agent/Harness 草稿、Skill/Tool/MCP/Plugin、canonical Resolver/Claude Adapter、Release/Activation 和 Tool Approval；运行时只能消费签名且已激活的 ResolvedAgentSpec，不读取草稿。
 - 节点守护进程只建立出站 WSS，使用短期握手签名、20 秒心跳、60 秒离线阈值和数据库连接代次；离线不删除配对。
 - 节点直连仅接受经节点实测通过的 Anthropic Messages API；非兼容供应商必须经 Model Gateway。
 
@@ -48,6 +52,8 @@ backend routes --> deps / crud --> models --> db
 - 供应商预置目录内置在后端服务层：以统一 `ProviderDefinition` 描述不同供应商的接入参数、鉴权方式、探活和模型发现能力。
 - 密钥仅以版本化 AES-GCM v2 密文落库、对外固定显示 `****`；reader 在迁移期兼容 v1，自带独立 purpose/version AAD。
 - 单体服务 + Compose 编排：当前规模下优先简化开发、测试和部署链路。
+- 能力不可变与目标显式性：Skill/Plugin Version、MCP Revision、Agent Release 均按精确版本冻结；激活前按具体 Runtime target 校验，不做模型、Harness、Tool 或权限降级。
+- MCP secret 分域：平台 target 使用 AES-GCM 密文；节点 target 只保存 `secret_ref`，本地 Keychain 指纹通过心跳上报，变化或移除使 target `stale`。
 
 ## 部署拓扑
 
@@ -69,6 +75,7 @@ browser -> backend(control plane) -> PostgreSQL
 Claude SDK / node ------>|-> model-gateway -> Anthropic / OpenAI-compatible API
 node daemon -- outbound WSS --> backend
 backend <-> local volume or S3-compatible immutable artifact storage
+operator CLI -> HTTPS/Bearer API；refresh token -> OS Keychain
 ```
 
 FastAPI 多 worker 不共享内存连接表：节点每次连接写入 PostgreSQL `connection_id`。每次查询和发送前都重验代次；任务和发布先持久化短 reservation，再由当前 generation 下发。独立 maintenance loop 使用 PostgreSQL advisory lock 处理过期 reservation、租约、轮换宽限和发布。

@@ -1,31 +1,40 @@
 import uuid
 from datetime import datetime
+from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
-from app.agent_management.catalog import Diagnostic
-from app.agent_management.service import TargetCompatibility, ValidationResult
+from app.agent_management.service import TargetCompatibility
 
 
-class AgentCreate(BaseModel):
+class StrictRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class AgentCreate(StrictRequest):
     slug: str = Field(min_length=1, max_length=128, pattern=r"^[a-z0-9][a-z0-9-]*$")
     name: str = Field(min_length=1, max_length=255)
     description: str | None = None
 
 
-class AgentUpdate(BaseModel):
+class AgentCopy(StrictRequest):
+    slug: str = Field(min_length=1, max_length=128, pattern=r"^[a-z0-9][a-z0-9-]*$")
+    name: str = Field(min_length=1, max_length=255)
+
+
+class AgentUpdate(StrictRequest):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None
     status: str | None = None  # "active" | "archived"
 
 
-class DraftSave(BaseModel):
+class DraftSave(StrictRequest):
     expected_revision: int
     harness_profile_id: uuid.UUID | None = None
     provider_config_id: uuid.UUID | None = None
     model_id: str | None = Field(default=None, max_length=255)
     system_prompt: str | None = None
-    config: dict | None = None
+    config: dict[str, Any] | None = None
 
 
 class AgentDraftPublic(BaseModel):
@@ -35,9 +44,9 @@ class AgentDraftPublic(BaseModel):
     provider_config_id: uuid.UUID | None
     model_id: str | None
     system_prompt: str
-    config: dict
+    config: dict[str, Any]
     validated_revision: int | None
-    validation_result: dict | None
+    validation_result: dict[str, Any] | None
     validation_status: str
     updated_at: datetime
 
@@ -65,20 +74,20 @@ class AgentsPublic(BaseModel):
     count: int
 
 
-class HarnessProfileCreate(BaseModel):
+class HarnessProfileCreate(StrictRequest):
     name: str = Field(min_length=1, max_length=255)
     harness_type: str = Field(default="claude_code", max_length=64)
     config_schema_version: str = Field(default="1.0", max_length=32)
     cli_version_constraint: str = Field(default=">=1.0.0", max_length=128)
     sdk_version_constraint: str = Field(default=">=0.2.0", max_length=128)
-    config: dict = Field(default_factory=dict)
+    config: dict[str, Any] = Field(default_factory=dict)
 
 
-class HarnessProfileUpdate(BaseModel):
+class HarnessProfileUpdate(StrictRequest):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     cli_version_constraint: str | None = Field(default=None, max_length=128)
     sdk_version_constraint: str | None = Field(default=None, max_length=128)
-    config: dict | None = None
+    config: dict[str, Any] | None = None
     archived: bool | None = None
 
 
@@ -90,9 +99,10 @@ class HarnessProfilePublic(BaseModel):
     config_schema_version: str
     cli_version_constraint: str
     sdk_version_constraint: str
-    config: dict
+    config: dict[str, Any]
     archived: bool
     referenced_by_agents: bool
+    target_compatibility: list[TargetCompatibility]
     created_at: datetime
     updated_at: datetime
 
@@ -103,7 +113,7 @@ class HarnessProfilesPublic(BaseModel):
 
 
 class HarnessCatalogPublic(BaseModel):
-    harnesses: list[dict]
+    harnesses: list[dict[str, Any]]
 
 
 class EnvironmentCatalogPublic(BaseModel):

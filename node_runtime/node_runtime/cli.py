@@ -18,7 +18,14 @@ from node_runtime.tasks import NodeTaskController
 from node_runtime.runtime_config import RuntimeConfigManager
 from node_runtime.artifacts.controller import ArtifactController
 from node_runtime.artifacts.installer import ArtifactInstaller
+from node_runtime.agent_releases import AgentReleaseController
+from node_runtime.mcp_validation import NodeMcpValidationController
+from node_runtime.secrets import node_secret_fingerprints
 from node_runtime.service import SystemdServiceManager, UnsupportedServiceManager
+from runtime_worker.capabilities import (
+    discover_harness_capabilities,
+    node_agent_version,
+)
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -44,6 +51,7 @@ def install(
     except UnsupportedServiceManager as exc:
         raise typer.BadParameter(str(exc)) from exc
     keypair = generate_keypair()
+    harness_capabilities = discover_harness_capabilities()
     with httpx.Client(timeout=30) as client:
         response = client.post(
             f"{url}/api/v1/node/enroll",
@@ -53,8 +61,9 @@ def install(
                 "hostname": socket.gethostname(),
                 "os_name": platform.system().lower(),
                 "architecture": platform.machine().lower(),
-                "agent_version": "0.1.0",
-                "sdk_version": "0.2.110",
+                "agent_version": node_agent_version(),
+                "sdk_version": harness_capabilities["claude_code"]["sdk_version"],
+                "harness_capabilities": harness_capabilities,
                 "public_key": keypair.public_key,
             },
         )
@@ -96,7 +105,15 @@ def run(state_dir: Path = typer.Option(Path("/var/lib/neomua-node"))) -> None:
     interrupted_task_ids = spool.recover_interrupted_dispatches()
     last_ack, spool_first, spool_last = spool.reconciliation_range()
     route_store = ModelRouteStore(state_dir / "model-routes.json")
-    task_controller = NodeTaskController(identity.node_id, spool, route_store)
+    agent_release_controller = AgentReleaseController(
+        identity.node_id, state_dir / "agent-releases"
+    )
+    task_controller = NodeTaskController(
+        identity.node_id,
+        spool,
+        route_store,
+        release_store=agent_release_controller.store,
+    )
     installer = ArtifactInstaller(
         {key: Path(value) for key, value in config.artifact_roots.items()},
         identity.node_id,
@@ -106,6 +123,8 @@ def run(state_dir: Path = typer.Option(Path("/var/lib/neomua-node"))) -> None:
     artifact_controller = ArtifactController(
         str(config.platform_url), identity.node_id, installer, state_dir / "downloads"
     )
+    secret_index = state_dir / "node-secret-refs.json"
+    node_secret_fingerprints(secret_index)
     connection = NodeConnection(
         str(config.platform_url),
         identity,
@@ -120,5 +139,9 @@ def run(state_dir: Path = typer.Option(Path("/var/lib/neomua-node"))) -> None:
         task_controller=task_controller,
         runtime_config_manager=RuntimeConfigManager(route_store),
         artifact_controller=artifact_controller,
+        harness_capabilities=discover_harness_capabilities(),
+        secret_fingerprints=lambda: node_secret_fingerprints(secret_index),
+        agent_release_controller=agent_release_controller,
+        mcp_validation_controller=NodeMcpValidationController(identity.node_id),
     )
     asyncio.run(connection.run_forever())

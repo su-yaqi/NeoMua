@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, Outlet, useRouterState } from "@tanstack/react-router"
 import AgentList from "@/components/Agents/AgentList"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import useAuth from "@/hooks/useAuth"
@@ -9,6 +9,10 @@ export const Route = createFileRoute("/_layout/system/agents")({
 
 function AgentsPage() {
   const { user } = useAuth()
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  })
+  if (pathname !== "/system/agents") return <Outlet />
   const namespaceId = localStorage.getItem("selected_namespace_id")
   if (!namespaceId)
     return (

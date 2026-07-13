@@ -1,10 +1,14 @@
+import uuid
+
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
 from app import crud
 from app.core.config import settings
 from app.models import NamespaceRole
+from app.runtime.models import RuntimeProfile
 from tests.api.routes.test_namespaces import create_namespace, namespace_headers
+from tests.utils.agent_release import create_active_agent_binding
 from tests.utils.user import authentication_token_from_email, create_random_user
 
 
@@ -51,6 +55,15 @@ def test_developer_can_dispatch_ordinary_but_not_admin_task(
     )
     admin_headers = namespace_headers(superuser_token_headers, namespace.id)
     runtime_id = _platform_runtime(client, admin_headers, monkeypatch)
+    runtime = db.get(RuntimeProfile, uuid.UUID(runtime_id))
+    assert runtime is not None
+    binding = create_active_agent_binding(
+        db,
+        namespace_id=namespace.id,
+        runtime_profile_id=runtime.id,
+        provider_config_id=runtime.provider_config_id,
+        model_id=runtime.model_id,
+    )
     headers = namespace_headers(
         authentication_token_from_email(client=client, email=developer.email, db=db),
         namespace.id,
@@ -60,6 +73,7 @@ def test_developer_can_dispatch_ordinary_but_not_admin_task(
         headers={**headers, "Idempotency-Key": "ordinary-1"},
         json={
             "runtime_profile_id": runtime_id,
+            "runtime_agent_release_id": str(binding.id),
             "prompt": "inspect repository",
             "task_kind": "ordinary",
         },
@@ -71,6 +85,7 @@ def test_developer_can_dispatch_ordinary_but_not_admin_task(
         headers=headers,
         json={
             "runtime_profile_id": runtime_id,
+            "runtime_agent_release_id": str(binding.id),
             "prompt": "rotate credential",
             "task_kind": "admin",
         },
@@ -87,21 +102,42 @@ def test_task_idempotency_key_rejects_different_request(
     namespace = create_namespace(db)
     headers = namespace_headers(superuser_token_headers, namespace.id)
     runtime_id = _platform_runtime(client, headers, monkeypatch)
+    runtime = db.get(RuntimeProfile, uuid.UUID(runtime_id))
+    assert runtime is not None
+    binding = create_active_agent_binding(
+        db,
+        namespace_id=namespace.id,
+        runtime_profile_id=runtime.id,
+        provider_config_id=runtime.provider_config_id,
+        model_id=runtime.model_id,
+    )
     request_headers = {**headers, "Idempotency-Key": "same-key"}
     first = client.post(
         f"{settings.API_V1_STR}/runtime-tasks",
         headers=request_headers,
-        json={"runtime_profile_id": runtime_id, "prompt": "first"},
+        json={
+            "runtime_profile_id": runtime_id,
+            "runtime_agent_release_id": str(binding.id),
+            "prompt": "first",
+        },
     )
     duplicate = client.post(
         f"{settings.API_V1_STR}/runtime-tasks",
         headers=request_headers,
-        json={"runtime_profile_id": runtime_id, "prompt": "first"},
+        json={
+            "runtime_profile_id": runtime_id,
+            "runtime_agent_release_id": str(binding.id),
+            "prompt": "first",
+        },
     )
     conflict = client.post(
         f"{settings.API_V1_STR}/runtime-tasks",
         headers=request_headers,
-        json={"runtime_profile_id": runtime_id, "prompt": "different"},
+        json={
+            "runtime_profile_id": runtime_id,
+            "runtime_agent_release_id": str(binding.id),
+            "prompt": "different",
+        },
     )
     assert duplicate.json()["id"] == first.json()["id"]
     assert conflict.status_code == 409

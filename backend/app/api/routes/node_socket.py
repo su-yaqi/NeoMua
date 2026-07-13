@@ -1,13 +1,42 @@
 import hashlib
 import json
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ValidationError
-from sqlmodel import select
+from sqlmodel import col, select
 
+from app.agent_management.capabilities import (
+    canonical_digest,
+    runtime_capability_fingerprint,
+)
+from app.agent_management.capability_models import (
+    AgentActivation,
+    AgentDeployment,
+    AgentDeploymentStatus,
+    AgentRelease,
+    ApprovalStatus,
+    McpServer,
+    McpServerRevision,
+    McpTargetBinding,
+    McpTargetStatus,
+    McpValidationAttempt,
+    RuntimeAgentRelease,
+    ToolApprovalRequest,
+)
+from app.agent_management.capability_routes import (
+    McpValidationResult,
+    _apply_validation_result,
+)
+from app.agent_management.release_routes import (
+    ApprovalRequestCreate,
+    _recompute_activation,
+    _release_public,
+    request_tool_approval,
+)
 from app.api.deps import SessionDep
 from app.core.config import settings
 from app.llm_provider_service import open_secret_payload
@@ -15,6 +44,7 @@ from app.runtime.artifacts.manifest import DeploymentManifest
 from app.runtime.artifacts.security import issue_artifact_download_token
 from app.runtime.artifacts.service import ArtifactReleaseService
 from app.runtime.artifacts.signing import configured_artifact_signer
+from app.runtime.capabilities import validate_harness_capabilities
 from app.runtime.connections import (
     NodeAuthenticationError,
     authenticate_node_connection,
@@ -89,9 +119,7 @@ async def _send_pending_control(
         session, node_id=node.id, connection_id=connection_id, limit=10
     )
     for task in queued:
-        if not await _connection_is_current(
-            websocket, session, node.id, connection_id
-        ):
+        if not await _connection_is_current(websocket, session, node.id, connection_id):
             return
         runtime = session.get(RuntimeProfile, task.runtime_profile_id)
         if runtime is None:
@@ -113,7 +141,7 @@ async def _send_pending_control(
                 session.commit()
                 continue
             token = issue_gateway_token(
-                task.namespace_id, runtime.id, task.id, runtime.model_id
+                task.namespace_id, runtime.id, task.id, task.snapshot["model_id"]
             )
             route.update(
                 {
@@ -149,9 +177,7 @@ async def _send_pending_control(
         )
     ).all()
     for task in cancelling:
-        if not await _connection_is_current(
-            websocket, session, node.id, connection_id
-        ):
+        if not await _connection_is_current(websocket, session, node.id, connection_id):
             return
         await websocket.send_json(
             _envelope(
@@ -210,9 +236,7 @@ async def _send_pending_artifacts(
     service = ArtifactReleaseService(session)
     deployments = service.reserve_pending_for_node(node.id, connection_id)
     for deployment in deployments:
-        if not await _connection_is_current(
-            websocket, session, node.id, connection_id
-        ):
+        if not await _connection_is_current(websocket, session, node.id, connection_id):
             return
         release = session.get(ArtifactRelease, deployment.release_id)
         artifact = session.get(RuntimeArtifact, deployment.artifact_id)
@@ -247,23 +271,25 @@ async def _send_pending_artifacts(
         try:
             await websocket.send_json(
                 _envelope(
-                "artifact_deploy",
-                node.id,
-                {
-                    "release_id": str(release.id),
-                    "deployment_id": str(deployment.id),
-                    "artifact_id": str(artifact.id),
-                    "logical_target": artifact.logical_target.value,
-                    "manifest": artifact.manifest,
-                    "signature": artifact.signature,
-                    "signing_public_key": artifact.signing_public_key,
-                    "content_sha256": artifact.content_sha256,
-                    "download_path": f"/api/v1/node/artifacts/{deployment.id}/download",
-                    "download_token": token,
-                    "valid_until": release.valid_until.isoformat(),
-                    "deployment_manifest": deployment_manifest.model_dump(mode="json"),
-                    "deployment_signature": signer.sign(deployment_bytes),
-                },
+                    "artifact_deploy",
+                    node.id,
+                    {
+                        "release_id": str(release.id),
+                        "deployment_id": str(deployment.id),
+                        "artifact_id": str(artifact.id),
+                        "logical_target": artifact.logical_target.value,
+                        "manifest": artifact.manifest,
+                        "signature": artifact.signature,
+                        "signing_public_key": artifact.signing_public_key,
+                        "content_sha256": artifact.content_sha256,
+                        "download_path": f"/api/v1/node/artifacts/{deployment.id}/download",
+                        "download_token": token,
+                        "valid_until": release.valid_until.isoformat(),
+                        "deployment_manifest": deployment_manifest.model_dump(
+                            mode="json"
+                        ),
+                        "deployment_signature": signer.sign(deployment_bytes),
+                    },
                 )
             )
         except Exception:
@@ -272,6 +298,205 @@ async def _send_pending_artifacts(
         if not service.mark_dispatched(deployment.id, connection_id):
             await websocket.close(code=4409, reason="connection superseded")
             return
+
+
+async def _send_pending_agent_releases(
+    websocket: WebSocket,
+    session: SessionDep,
+    node: RuntimeNode,
+    connection_id: uuid.UUID,
+) -> None:
+    if node.runtime_profile_id is None or not await _connection_is_current(
+        websocket, session, node.id, connection_id
+    ):
+        return
+    deployments = session.exec(
+        select(AgentDeployment)
+        .where(
+            AgentDeployment.runtime_profile_id == node.runtime_profile_id,
+            AgentDeployment.status == AgentDeploymentStatus.PENDING,
+        )
+        .order_by(col(AgentDeployment.created_at))
+        .with_for_update(skip_locked=True)
+    ).all()
+    now = datetime.now(timezone.utc)
+    runtime = session.get(RuntimeProfile, node.runtime_profile_id)
+    if runtime is None:
+        return
+    for deployment in deployments:
+        if deployment.expires_at and deployment.expires_at <= now:
+            deployment.status = AgentDeploymentStatus.EXPIRED
+            deployment.error = {"code": "deployment_expired_before_dispatch"}
+            session.add(deployment)
+            continue
+        activation = session.get(AgentActivation, deployment.activation_id)
+        release = (
+            session.get(AgentRelease, activation.release_id) if activation else None
+        )
+        if release is None:
+            deployment.status = AgentDeploymentStatus.FAILED
+            deployment.error = {"code": "release_missing"}
+            session.add(deployment)
+            continue
+        capability_inventory = {
+            "runtime_type": "node",
+            "harness_capabilities": node.harness_capabilities,
+            "config": {
+                "allowed_working_roots": runtime.config.get("allowed_working_roots", [])
+            },
+        }
+        fingerprint = canonical_digest(capability_inventory)
+        if deployment.capability_fingerprint != fingerprint:
+            deployment.status = AgentDeploymentStatus.FAILED
+            deployment.error = {"code": "stale_capability_fingerprint"}
+            session.add(deployment)
+            continue
+        deployment.status = AgentDeploymentStatus.DISPATCHED
+        deployment.updated_at = now
+        session.add(deployment)
+        session.commit()
+        try:
+            await websocket.send_json(
+                _envelope(
+                    "agent_release_deploy",
+                    node.id,
+                    {
+                        "deployment_id": str(deployment.id),
+                        "runtime_profile_id": str(node.runtime_profile_id),
+                        "capability_fingerprint": fingerprint,
+                        "capability_inventory": capability_inventory,
+                        "release": _release_public(release),
+                        "resolved_spec": release.resolved_spec,
+                        "materialization": release.manifest["materialization"],
+                    },
+                )
+            )
+        except Exception:
+            deployment.status = AgentDeploymentStatus.PENDING
+            session.add(deployment)
+            session.commit()
+            raise
+    session.commit()
+
+
+async def _send_tool_approval_decisions(
+    websocket: WebSocket,
+    session: SessionDep,
+    node: RuntimeNode,
+    connection_id: uuid.UUID,
+) -> None:
+    if not await _connection_is_current(websocket, session, node.id, connection_id):
+        return
+    approvals = session.exec(
+        select(ToolApprovalRequest)
+        .join(AgentTask, col(ToolApprovalRequest.task_id) == AgentTask.id)
+        .where(
+            AgentTask.target_node_id == node.id,
+            col(ToolApprovalRequest.status).in_(
+                [
+                    ApprovalStatus.APPROVED,
+                    ApprovalStatus.DENIED,
+                    ApprovalStatus.EXPIRED,
+                    ApprovalStatus.CANCELLED,
+                ]
+            ),
+        )
+    ).all()
+    for approval in approvals:
+        client_key = f"{approval.task_id}:{approval.task_revision}:{approval.tool_qualified_name}:{approval.args_digest}"
+        await websocket.send_json(
+            _envelope(
+                "tool_approval_decision",
+                node.id,
+                {
+                    "approval_id": str(approval.id),
+                    "client_approval_key": client_key,
+                    "task_id": str(approval.task_id),
+                    "task_revision": approval.task_revision,
+                    "tool_call_id": approval.tool_call_id,
+                    "args_digest": approval.args_digest,
+                    "status": approval.status.value,
+                },
+            )
+        )
+
+
+async def _send_pending_mcp_validations(
+    websocket: WebSocket,
+    session: SessionDep,
+    node: RuntimeNode,
+    connection_id: uuid.UUID,
+) -> None:
+    if node.runtime_profile_id is None or not await _connection_is_current(
+        websocket, session, node.id, connection_id
+    ):
+        return
+    now = datetime.now(timezone.utc)
+    attempts = session.exec(
+        select(McpValidationAttempt)
+        .join(
+            McpTargetBinding,
+            col(McpValidationAttempt.target_binding_id) == McpTargetBinding.id,
+        )
+        .where(
+            McpTargetBinding.runtime_profile_id == node.runtime_profile_id,
+            McpValidationAttempt.status == McpTargetStatus.PENDING,
+        )
+        .order_by(col(McpValidationAttempt.created_at))
+        .with_for_update(skip_locked=True)
+    ).all()
+    runtime = session.get(RuntimeProfile, node.runtime_profile_id)
+    if runtime is None:
+        return
+    fingerprint = runtime_capability_fingerprint(runtime, node.harness_capabilities)
+    for attempt in attempts:
+        if attempt.expires_at and attempt.expires_at <= now:
+            attempt.status = McpTargetStatus.EXPIRED
+            target = session.get(McpTargetBinding, attempt.target_binding_id)
+            if target:
+                target.status = McpTargetStatus.EXPIRED
+                session.add(target)
+            session.add(attempt)
+            continue
+        claimed_until = attempt.result.get("claimed_until")
+        if (
+            isinstance(claimed_until, str)
+            and datetime.fromisoformat(claimed_until) > now
+        ):
+            continue
+        target = session.get(McpTargetBinding, attempt.target_binding_id)
+        revision = (
+            session.get(McpServerRevision, target.revision_id) if target else None
+        )
+        server = session.get(McpServer, revision.server_id) if revision else None
+        if target is None or revision is None or server is None:
+            continue
+        attempt.result = {"claimed_until": (now + timedelta(seconds=60)).isoformat()}
+        session.add(attempt)
+        session.commit()
+        try:
+            await websocket.send_json(
+                _envelope(
+                    "mcp_validation",
+                    node.id,
+                    {
+                        "attempt_id": str(attempt.id),
+                        "target_binding_id": str(target.id),
+                        "server_slug": server.slug,
+                        "transport": revision.transport.value,
+                        "config": revision.config,
+                        "protocol_version": revision.protocol_version,
+                        "secret_ref": target.secret_ref,
+                        "capability_fingerprint": fingerprint,
+                    },
+                )
+            )
+        except Exception:
+            attempt.result = {}
+            session.add(attempt)
+            session.commit()
+            raise
+    session.commit()
 
 
 async def _connection_is_current(
@@ -350,6 +575,9 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
         )
     await _send_pending_control(websocket, session, node, connection_id)
     await _send_pending_artifacts(websocket, session, node, connection_id)
+    await _send_pending_agent_releases(websocket, session, node, connection_id)
+    await _send_pending_mcp_validations(websocket, session, node, connection_id)
+    await _send_tool_approval_decisions(websocket, session, node, connection_id)
     try:
         while True:
             raw = await websocket.receive_json()
@@ -361,7 +589,9 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                         {"code": "protocol_upgrade_required", "required": "2"},
                     )
                 )
-                await websocket.close(code=4406, reason="node protocol upgrade required")
+                await websocket.close(
+                    code=4406, reason="node protocol upgrade required"
+                )
                 return
             try:
                 message = Envelope.model_validate(raw)
@@ -383,16 +613,88 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                 await websocket.close(code=4403, reason="node scope mismatch")
                 return
             if message.type == "heartbeat":
+                if "harness_capabilities" in message.payload:
+                    try:
+                        current.harness_capabilities = validate_harness_capabilities(
+                            message.payload["harness_capabilities"]
+                        )
+                        if current.runtime_profile_id:
+                            runtime_profile = session.get(
+                                RuntimeProfile, current.runtime_profile_id
+                            )
+                            if runtime_profile is not None:
+                                runtime_profile.harness_capabilities = (
+                                    current.harness_capabilities
+                                )
+                                session.add(runtime_profile)
+                    except ValidationError as exc:
+                        await websocket.send_json(
+                            _envelope(
+                                "error",
+                                node.id,
+                                {
+                                    "code": "invalid_harness_capabilities",
+                                    "detail": str(exc),
+                                },
+                                message.message_id,
+                            )
+                        )
+                        continue
+                if "mcp_secret_fingerprints" in message.payload:
+                    fingerprints = message.payload["mcp_secret_fingerprints"]
+                    if not isinstance(fingerprints, dict) or any(
+                        not isinstance(ref, str)
+                        or not ref
+                        or not isinstance(fingerprint, str)
+                        or re.fullmatch(r"[0-9a-f]{64}", fingerprint) is None
+                        for ref, fingerprint in fingerprints.items()
+                    ):
+                        await websocket.send_json(
+                            _envelope(
+                                "error",
+                                node.id,
+                                {"code": "invalid_mcp_secret_fingerprints"},
+                                message.message_id,
+                            )
+                        )
+                        continue
+                    if current.runtime_profile_id:
+                        targets = session.exec(
+                            select(McpTargetBinding).where(
+                                McpTargetBinding.runtime_profile_id
+                                == current.runtime_profile_id,
+                                col(McpTargetBinding.secret_ref).is_not(None),
+                            )
+                        ).all()
+                        for target in targets:
+                            reported = fingerprints.get(str(target.secret_ref))
+                            previous = target.secret_fingerprint
+                            if reported != previous:
+                                target.secret_fingerprint = reported
+                                if (
+                                    previous is not None
+                                    or target.status == McpTargetStatus.VERIFIED
+                                ):
+                                    target.status = McpTargetStatus.STALE
+                                target.updated_at = datetime.now(timezone.utc)
+                                session.add(target)
                 current.last_seen_at = datetime.now(timezone.utc)
                 session.add(current)
                 session.commit()
                 await websocket.send_json(
                     _envelope("heartbeat_ack", node.id, {}, message.message_id)
                 )
-                await _send_pending_control(
+                await _send_pending_control(websocket, session, current, connection_id)
+                await _send_pending_artifacts(
                     websocket, session, current, connection_id
                 )
-                await _send_pending_artifacts(
+                await _send_pending_agent_releases(
+                    websocket, session, current, connection_id
+                )
+                await _send_pending_mcp_validations(
+                    websocket, session, current, connection_id
+                )
+                await _send_tool_approval_decisions(
                     websocket, session, current, connection_id
                 )
             elif message.type == "reconcile":
@@ -433,6 +735,15 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                         websocket, session, current, connection_id
                     )
                 await _send_pending_artifacts(
+                    websocket, session, current, connection_id
+                )
+                await _send_pending_agent_releases(
+                    websocket, session, current, connection_id
+                )
+                await _send_pending_mcp_validations(
+                    websocket, session, current, connection_id
+                )
+                await _send_tool_approval_decisions(
                     websocket, session, current, connection_id
                 )
             elif message.type == "rotate_credential":
@@ -494,6 +805,42 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                         "credential_rotation_acknowledged",
                         node.id,
                         {},
+                        message.message_id,
+                    )
+                )
+            elif message.type == "tool_approval_request":
+                try:
+                    approval_body = ApprovalRequestCreate.model_validate(
+                        {
+                            key: value
+                            for key, value in message.payload.items()
+                            if key != "client_approval_key"
+                        }
+                    )
+                    approval = request_tool_approval(approval_body, session)
+                except (ValidationError, HTTPException) as exc:
+                    await websocket.send_json(
+                        _envelope(
+                            "error",
+                            node.id,
+                            {
+                                "code": "tool_approval_request_rejected",
+                                "detail": str(exc),
+                            },
+                            message.message_id,
+                        )
+                    )
+                    continue
+                await websocket.send_json(
+                    _envelope(
+                        "tool_approval_request_ack",
+                        node.id,
+                        {
+                            "approval_id": str(approval["id"]),
+                            "client_approval_key": message.payload[
+                                "client_approval_key"
+                            ],
+                        },
                         message.message_id,
                     )
                 )
@@ -727,14 +1074,222 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                         message.message_id,
                     )
                 )
-            elif message.type in {"artifact_applied", "artifact_failed"}:
-                deployment = session.get(
-                    ArtifactDeployment, uuid.UUID(message.payload["deployment_id"])
+            elif message.type == "mcp_validation_result":
+                try:
+                    attempt_id = uuid.UUID(message.payload["attempt_id"])
+                    body = McpValidationResult.model_validate(
+                        {
+                            key: value
+                            for key, value in message.payload.items()
+                            if key != "attempt_id"
+                        }
+                    )
+                except (KeyError, ValueError, ValidationError) as exc:
+                    await websocket.send_json(
+                        _envelope(
+                            "error",
+                            node.id,
+                            {
+                                "code": "invalid_mcp_validation_result",
+                                "detail": str(exc),
+                            },
+                            message.message_id,
+                        )
+                    )
+                    continue
+                attempt = session.exec(
+                    select(McpValidationAttempt)
+                    .where(McpValidationAttempt.id == attempt_id)
+                    .with_for_update()
+                ).first()
+                validation_target = (
+                    session.get(McpTargetBinding, attempt.target_binding_id)
+                    if attempt
+                    else None
+                )
+                mcp_revision = (
+                    session.get(McpServerRevision, validation_target.revision_id)
+                    if validation_target
+                    else None
+                )
+                server = (
+                    session.get(McpServer, mcp_revision.server_id)
+                    if mcp_revision
+                    else None
+                )
+                runtime = (
+                    session.get(RuntimeProfile, validation_target.runtime_profile_id)
+                    if validation_target
+                    else None
+                )
+                if (
+                    attempt is None
+                    or validation_target is None
+                    or server is None
+                    or runtime is None
+                    or validation_target.runtime_profile_id
+                    != current.runtime_profile_id
+                ):
+                    await websocket.send_json(
+                        _envelope(
+                            "error",
+                            node.id,
+                            {"code": "mcp_validation_scope_mismatch"},
+                            message.message_id,
+                        )
+                    )
+                    continue
+                if body.capability_fingerprint != runtime_capability_fingerprint(
+                    runtime, current.harness_capabilities
+                ):
+                    body = McpValidationResult(
+                        status="failed",
+                        capability_fingerprint=body.capability_fingerprint,
+                        error={"code": "stale_capability_fingerprint"},
+                    )
+                try:
+                    _apply_validation_result(
+                        attempt, validation_target, server, body, session
+                    )
+                    session.commit()
+                except HTTPException as exc:
+                    session.rollback()
+                    await websocket.send_json(
+                        _envelope(
+                            "error",
+                            node.id,
+                            {
+                                "code": "mcp_validation_result_rejected",
+                                "detail": exc.detail,
+                            },
+                            message.message_id,
+                        )
+                    )
+                    continue
+                await websocket.send_json(
+                    _envelope(
+                        "mcp_validation_result_ack",
+                        node.id,
+                        {"attempt_id": str(attempt.id), "status": attempt.status.value},
+                        message.message_id,
+                    )
+                )
+            elif message.type == "agent_release_result":
+                try:
+                    deployment_id = uuid.UUID(message.payload["deployment_id"])
+                except (KeyError, ValueError):
+                    await websocket.send_json(
+                        _envelope(
+                            "error",
+                            node.id,
+                            {"code": "invalid_agent_release_result"},
+                            message.message_id,
+                        )
+                    )
+                    continue
+                deployment = session.exec(
+                    select(AgentDeployment)
+                    .where(AgentDeployment.id == deployment_id)
+                    .with_for_update()
+                ).first()
+                activation = (
+                    session.get(AgentActivation, deployment.activation_id)
+                    if deployment
+                    else None
+                )
+                release = (
+                    session.get(AgentRelease, activation.release_id)
+                    if activation
+                    else None
                 )
                 if (
                     deployment is None
-                    or deployment.node_id != current.id
-                    or deployment.status != DeploymentStatus.DISPATCHED
+                    or activation is None
+                    or release is None
+                    or deployment.runtime_profile_id != current.runtime_profile_id
+                    or deployment.status != AgentDeploymentStatus.DISPATCHED
+                ):
+                    await websocket.send_json(
+                        _envelope(
+                            "error",
+                            node.id,
+                            {"code": "agent_deployment_scope_mismatch"},
+                            message.message_id,
+                        )
+                    )
+                    continue
+                if message.payload.get("status") != "applied":
+                    deployment.status = AgentDeploymentStatus.FAILED
+                    deployment.error = message.payload.get("error") or {
+                        "code": "agent_release_apply_failed"
+                    }
+                elif (
+                    message.payload.get("capability_fingerprint")
+                    != deployment.capability_fingerprint
+                ):
+                    deployment.status = AgentDeploymentStatus.FAILED
+                    deployment.error = {"code": "stale_capability_fingerprint"}
+                elif (
+                    message.payload.get("resolved_spec_digest")
+                    != release.resolved_spec_digest
+                    or message.payload.get("materialization_digest")
+                    != release.resolved_spec_digest
+                ):
+                    deployment.status = AgentDeploymentStatus.FAILED
+                    deployment.error = {"code": "release_digest_mismatch"}
+                else:
+                    deployment.status = AgentDeploymentStatus.APPLIED
+                    deployment.applied_digest = release.resolved_spec_digest
+                    agent_binding = session.exec(
+                        select(RuntimeAgentRelease)
+                        .where(
+                            RuntimeAgentRelease.runtime_profile_id
+                            == deployment.runtime_profile_id,
+                            RuntimeAgentRelease.agent_id == release.agent_id,
+                        )
+                        .with_for_update()
+                    ).first()
+                    if agent_binding is None:
+                        agent_binding = RuntimeAgentRelease(
+                            namespace_id=release.namespace_id,
+                            runtime_profile_id=deployment.runtime_profile_id,
+                            agent_id=release.agent_id,
+                            current_release_id=release.id,
+                            applied_digest=release.resolved_spec_digest,
+                            materialization_digest=release.resolved_spec_digest,
+                        )
+                    else:
+                        if agent_binding.current_release_id != release.id:
+                            agent_binding.previous_release_id = (
+                                agent_binding.current_release_id
+                            )
+                        agent_binding.current_release_id = release.id
+                        agent_binding.applied_digest = release.resolved_spec_digest
+                        agent_binding.materialization_digest = (
+                            release.resolved_spec_digest
+                        )
+                        agent_binding.updated_at = datetime.now(timezone.utc)
+                    session.add(agent_binding)
+                deployment.updated_at = datetime.now(timezone.utc)
+                session.add(deployment)
+                _recompute_activation(session, activation)
+                session.commit()
+                await websocket.send_json(
+                    _envelope(
+                        "agent_release_status_ack",
+                        node.id,
+                        {"deployment_id": str(deployment.id)},
+                        message.message_id,
+                    )
+                )
+            elif message.type in {"artifact_applied", "artifact_failed"}:
+                artifact_deployment = session.get(
+                    ArtifactDeployment, uuid.UUID(message.payload["deployment_id"])
+                )
+                if (
+                    artifact_deployment is None
+                    or artifact_deployment.node_id != current.id
+                    or artifact_deployment.status != DeploymentStatus.DISPATCHED
                 ):
                     await websocket.send_json(
                         _envelope(
@@ -745,7 +1300,7 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                         )
                     )
                     continue
-                artifact = session.get(RuntimeArtifact, deployment.artifact_id)
+                artifact = session.get(RuntimeArtifact, artifact_deployment.artifact_id)
                 if artifact is None:
                     continue
                 if message.type == "artifact_applied":
@@ -763,22 +1318,22 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                     installed.previous_artifact_id = installed.current_artifact_id
                     installed.current_artifact_id = artifact.id
                     installed.updated_at = datetime.now(timezone.utc)
-                    deployment.status = DeploymentStatus.APPLIED
-                    deployment.applied_at = datetime.now(timezone.utc)
+                    artifact_deployment.status = DeploymentStatus.APPLIED
+                    artifact_deployment.applied_at = datetime.now(timezone.utc)
                     session.add(installed)
                 else:
-                    deployment.status = DeploymentStatus.FAILED
-                    deployment.error = {
+                    artifact_deployment.status = DeploymentStatus.FAILED
+                    artifact_deployment.error = {
                         "code": message.payload.get("code", "node_apply_failed"),
                         "message": message.payload.get("message"),
                     }
-                session.add(deployment)
+                session.add(artifact_deployment)
                 session.commit()
                 await websocket.send_json(
                     _envelope(
                         "artifact_status_ack",
                         node.id,
-                        {"deployment_id": str(deployment.id)},
+                        {"deployment_id": str(artifact_deployment.id)},
                         message.message_id,
                     )
                 )

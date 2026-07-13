@@ -50,6 +50,10 @@ export default function HarnessProfileSheet({
   const [permissionMode, setPermissionMode] = useState("default")
   const [timeoutSeconds, setTimeoutSeconds] = useState(3600)
   const [allowedEnv, setAllowedEnv] = useState<string[]>([])
+  const [workingDirectoryStrategy, setWorkingDirectoryStrategy] =
+    useState("inherit")
+  const [allowedTools, setAllowedTools] = useState("")
+  const [disallowedTools, setDisallowedTools] = useState("")
 
   useEffect(() => {
     if (profile) {
@@ -68,6 +72,22 @@ export default function HarnessProfileSheet({
         ((profile.config as Record<string, unknown>)
           .allowed_env_names as string[]) ?? [],
       )
+      setWorkingDirectoryStrategy(
+        ((profile.config as Record<string, unknown>)
+          .working_directory_strategy as string) ?? "inherit",
+      )
+      setAllowedTools(
+        (
+          ((profile.config as Record<string, unknown>)
+            .allowed_tools as string[]) ?? []
+        ).join(", "),
+      )
+      setDisallowedTools(
+        (
+          ((profile.config as Record<string, unknown>)
+            .disallowed_tools as string[]) ?? []
+        ).join(", "),
+      )
     } else {
       setName("")
       setCliConstraint(">=1.0.0")
@@ -75,6 +95,9 @@ export default function HarnessProfileSheet({
       setPermissionMode("default")
       setTimeoutSeconds(3600)
       setAllowedEnv([])
+      setWorkingDirectoryStrategy("inherit")
+      setAllowedTools("")
+      setDisallowedTools("")
     }
   }, [profile])
 
@@ -82,6 +105,15 @@ export default function HarnessProfileSheet({
     permission_mode: permissionMode,
     timeout_seconds: timeoutSeconds,
     allowed_env_names: allowedEnv,
+    working_directory_strategy: workingDirectoryStrategy,
+    allowed_tools: allowedTools
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
+    disallowed_tools: disallowedTools
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
   })
 
   const createMutation = useMutation({
@@ -116,6 +148,26 @@ export default function HarnessProfileSheet({
     onError: handleError.bind(showErrorToast),
   })
 
+  const archiveMutation = useMutation({
+    mutationFn: () =>
+      harnessProfilesApi.update(profile!.id, { archived: !profile!.archived }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["harness-profiles"] })
+      onOpenChange(false)
+    },
+    onError: handleError.bind(showErrorToast),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: () => harnessProfilesApi.delete(profile!.id),
+    onSuccess: () => {
+      showSuccessToast("Profile 已删除")
+      queryClient.invalidateQueries({ queryKey: ["harness-profiles"] })
+      onOpenChange(false)
+    },
+    onError: handleError.bind(showErrorToast),
+  })
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="sm:max-w-lg overflow-y-auto">
@@ -129,6 +181,40 @@ export default function HarnessProfileSheet({
               value={name}
               onChange={(e) => setName(e.target.value)}
               disabled={!canManage}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>工作目录策略</Label>
+            <Select
+              value={workingDirectoryStrategy}
+              onValueChange={setWorkingDirectoryStrategy}
+              disabled={!canManage || Boolean(profile?.archived)}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="inherit">继承运行时工作区</SelectItem>
+                <SelectItem value="require_root">要求预登记根目录</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>允许的内置工具</Label>
+            <Input
+              value={allowedTools}
+              onChange={(event) => setAllowedTools(event.target.value)}
+              placeholder="Read, Glob, Grep"
+              disabled={!canManage || Boolean(profile?.archived)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>禁用的内置工具</Label>
+            <Input
+              value={disallowedTools}
+              onChange={(event) => setDisallowedTools(event.target.value)}
+              placeholder="Bash, WebFetch"
+              disabled={!canManage || Boolean(profile?.archived)}
             />
           </div>
           <div className="space-y-2">
@@ -223,7 +309,7 @@ export default function HarnessProfileSheet({
           </div>
         </div>
         <SheetFooter>
-          {canManage && (
+          {canManage && !profile?.archived && (
             <Button
               onClick={() =>
                 profile ? updateMutation.mutate() : createMutation.mutate()
@@ -233,6 +319,32 @@ export default function HarnessProfileSheet({
               }
             >
               {profile ? "保存" : "创建"}
+            </Button>
+          )}
+          {canManage && profile && (
+            <Button
+              variant="outline"
+              onClick={() => archiveMutation.mutate()}
+              disabled={archiveMutation.isPending}
+            >
+              {profile.archived ? "恢复 Profile" : "归档 Profile"}
+            </Button>
+          )}
+          {canManage && profile && !profile.referenced_by_agents && (
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "确认删除这个未被引用的 Profile？此操作不可撤销。",
+                  )
+                ) {
+                  deleteMutation.mutate()
+                }
+              }}
+              disabled={deleteMutation.isPending}
+            >
+              删除 Profile
             </Button>
           )}
         </SheetFooter>

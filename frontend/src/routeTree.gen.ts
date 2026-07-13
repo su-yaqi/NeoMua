@@ -18,17 +18,26 @@ import { Route as LayoutIndexRouteImport } from './routes/_layout/index'
 import { Route as LayoutSettingsRouteImport } from './routes/_layout/settings'
 import { Route as LayoutItemsRouteImport } from './routes/_layout/items'
 import { Route as LayoutAdminRouteImport } from './routes/_layout/admin'
+import { Route as LayoutSystemToolsRouteImport } from './routes/_layout/system.tools'
+import { Route as LayoutSystemSkillsRouteImport } from './routes/_layout/system.skills'
 import { Route as LayoutSystemRuntimesRouteImport } from './routes/_layout/system.runtimes'
+import { Route as LayoutSystemPluginsRouteImport } from './routes/_layout/system.plugins'
 import { Route as LayoutSystemNamespacesRouteImport } from './routes/_layout/system.namespaces'
+import { Route as LayoutSystemMcpServersRouteImport } from './routes/_layout/system.mcp-servers'
 import { Route as LayoutSystemLlmProvidersRouteImport } from './routes/_layout/system.llm-providers'
 import { Route as LayoutSystemHarnessesRouteImport } from './routes/_layout/system.harnesses'
 import { Route as LayoutSystemAgentsRouteImport } from './routes/_layout/system.agents'
+import { Route as LayoutSystemSkillsSkillIdRouteImport } from './routes/_layout/system.skills.$skillId'
 import { Route as LayoutSystemRuntimesArtifactsRouteImport } from './routes/_layout/system.runtimes_.artifacts'
+import { Route as LayoutSystemPluginsPluginIdRouteImport } from './routes/_layout/system.plugins.$pluginId'
+import { Route as LayoutSystemMcpServersMcpServerIdRouteImport } from './routes/_layout/system.mcp-servers.$mcpServerId'
 import { Route as LayoutSystemAgentsAgentIdRouteImport } from './routes/_layout/system.agents.$agentId'
+import { Route as LayoutSystemAgentActivationsActivationIdRouteImport } from './routes/_layout/system.agent-activations.$activationId'
 import { Route as LayoutSystemRuntimesTasksTaskIdRouteImport } from './routes/_layout/system.runtimes_.tasks.$taskId'
 import { Route as LayoutSystemRuntimesReleasesReleaseIdRouteImport } from './routes/_layout/system.runtimes_.releases.$releaseId'
 import { Route as LayoutSystemRuntimesNodesNodeIdRouteImport } from './routes/_layout/system.runtimes_.nodes.$nodeId'
 import { Route as LayoutSystemNamespacesNamespaceIdMembersRouteImport } from './routes/_layout/system.namespaces.$namespaceId.members'
+import { Route as LayoutSystemAgentsAgentIdReleasesReleaseIdRouteImport } from './routes/_layout/system.agents.$agentId.releases.$releaseId'
 
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
@@ -74,14 +83,34 @@ const LayoutAdminRoute = LayoutAdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => LayoutRoute,
 } as any)
+const LayoutSystemToolsRoute = LayoutSystemToolsRouteImport.update({
+  id: '/system/tools',
+  path: '/system/tools',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutSystemSkillsRoute = LayoutSystemSkillsRouteImport.update({
+  id: '/system/skills',
+  path: '/system/skills',
+  getParentRoute: () => LayoutRoute,
+} as any)
 const LayoutSystemRuntimesRoute = LayoutSystemRuntimesRouteImport.update({
   id: '/system/runtimes',
   path: '/system/runtimes',
   getParentRoute: () => LayoutRoute,
 } as any)
+const LayoutSystemPluginsRoute = LayoutSystemPluginsRouteImport.update({
+  id: '/system/plugins',
+  path: '/system/plugins',
+  getParentRoute: () => LayoutRoute,
+} as any)
 const LayoutSystemNamespacesRoute = LayoutSystemNamespacesRouteImport.update({
   id: '/system/namespaces',
   path: '/system/namespaces',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutSystemMcpServersRoute = LayoutSystemMcpServersRouteImport.update({
+  id: '/system/mcp-servers',
+  path: '/system/mcp-servers',
   getParentRoute: () => LayoutRoute,
 } as any)
 const LayoutSystemLlmProvidersRoute =
@@ -100,17 +129,41 @@ const LayoutSystemAgentsRoute = LayoutSystemAgentsRouteImport.update({
   path: '/system/agents',
   getParentRoute: () => LayoutRoute,
 } as any)
+const LayoutSystemSkillsSkillIdRoute =
+  LayoutSystemSkillsSkillIdRouteImport.update({
+    id: '/$skillId',
+    path: '/$skillId',
+    getParentRoute: () => LayoutSystemSkillsRoute,
+  } as any)
 const LayoutSystemRuntimesArtifactsRoute =
   LayoutSystemRuntimesArtifactsRouteImport.update({
     id: '/system/runtimes_/artifacts',
     path: '/system/runtimes/artifacts',
     getParentRoute: () => LayoutRoute,
   } as any)
+const LayoutSystemPluginsPluginIdRoute =
+  LayoutSystemPluginsPluginIdRouteImport.update({
+    id: '/$pluginId',
+    path: '/$pluginId',
+    getParentRoute: () => LayoutSystemPluginsRoute,
+  } as any)
+const LayoutSystemMcpServersMcpServerIdRoute =
+  LayoutSystemMcpServersMcpServerIdRouteImport.update({
+    id: '/$mcpServerId',
+    path: '/$mcpServerId',
+    getParentRoute: () => LayoutSystemMcpServersRoute,
+  } as any)
 const LayoutSystemAgentsAgentIdRoute =
   LayoutSystemAgentsAgentIdRouteImport.update({
     id: '/$agentId',
     path: '/$agentId',
     getParentRoute: () => LayoutSystemAgentsRoute,
+  } as any)
+const LayoutSystemAgentActivationsActivationIdRoute =
+  LayoutSystemAgentActivationsActivationIdRouteImport.update({
+    id: '/system/agent-activations/$activationId',
+    path: '/system/agent-activations/$activationId',
+    getParentRoute: () => LayoutRoute,
   } as any)
 const LayoutSystemRuntimesTasksTaskIdRoute =
   LayoutSystemRuntimesTasksTaskIdRouteImport.update({
@@ -136,6 +189,12 @@ const LayoutSystemNamespacesNamespaceIdMembersRoute =
     path: '/$namespaceId/members',
     getParentRoute: () => LayoutSystemNamespacesRoute,
   } as any)
+const LayoutSystemAgentsAgentIdReleasesReleaseIdRoute =
+  LayoutSystemAgentsAgentIdReleasesReleaseIdRouteImport.update({
+    id: '/releases/$releaseId',
+    path: '/releases/$releaseId',
+    getParentRoute: () => LayoutSystemAgentsAgentIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof LayoutIndexRoute
@@ -149,14 +208,23 @@ export interface FileRoutesByFullPath {
   '/system/agents': typeof LayoutSystemAgentsRouteWithChildren
   '/system/harnesses': typeof LayoutSystemHarnessesRoute
   '/system/llm-providers': typeof LayoutSystemLlmProvidersRoute
+  '/system/mcp-servers': typeof LayoutSystemMcpServersRouteWithChildren
   '/system/namespaces': typeof LayoutSystemNamespacesRouteWithChildren
+  '/system/plugins': typeof LayoutSystemPluginsRouteWithChildren
   '/system/runtimes': typeof LayoutSystemRuntimesRoute
-  '/system/agents/$agentId': typeof LayoutSystemAgentsAgentIdRoute
+  '/system/skills': typeof LayoutSystemSkillsRouteWithChildren
+  '/system/tools': typeof LayoutSystemToolsRoute
+  '/system/agent-activations/$activationId': typeof LayoutSystemAgentActivationsActivationIdRoute
+  '/system/agents/$agentId': typeof LayoutSystemAgentsAgentIdRouteWithChildren
+  '/system/mcp-servers/$mcpServerId': typeof LayoutSystemMcpServersMcpServerIdRoute
+  '/system/plugins/$pluginId': typeof LayoutSystemPluginsPluginIdRoute
   '/system/runtimes/artifacts': typeof LayoutSystemRuntimesArtifactsRoute
+  '/system/skills/$skillId': typeof LayoutSystemSkillsSkillIdRoute
   '/system/namespaces/$namespaceId/members': typeof LayoutSystemNamespacesNamespaceIdMembersRoute
   '/system/runtimes/nodes/$nodeId': typeof LayoutSystemRuntimesNodesNodeIdRoute
   '/system/runtimes/releases/$releaseId': typeof LayoutSystemRuntimesReleasesReleaseIdRoute
   '/system/runtimes/tasks/$taskId': typeof LayoutSystemRuntimesTasksTaskIdRoute
+  '/system/agents/$agentId/releases/$releaseId': typeof LayoutSystemAgentsAgentIdReleasesReleaseIdRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -170,14 +238,23 @@ export interface FileRoutesByTo {
   '/system/agents': typeof LayoutSystemAgentsRouteWithChildren
   '/system/harnesses': typeof LayoutSystemHarnessesRoute
   '/system/llm-providers': typeof LayoutSystemLlmProvidersRoute
+  '/system/mcp-servers': typeof LayoutSystemMcpServersRouteWithChildren
   '/system/namespaces': typeof LayoutSystemNamespacesRouteWithChildren
+  '/system/plugins': typeof LayoutSystemPluginsRouteWithChildren
   '/system/runtimes': typeof LayoutSystemRuntimesRoute
-  '/system/agents/$agentId': typeof LayoutSystemAgentsAgentIdRoute
+  '/system/skills': typeof LayoutSystemSkillsRouteWithChildren
+  '/system/tools': typeof LayoutSystemToolsRoute
+  '/system/agent-activations/$activationId': typeof LayoutSystemAgentActivationsActivationIdRoute
+  '/system/agents/$agentId': typeof LayoutSystemAgentsAgentIdRouteWithChildren
+  '/system/mcp-servers/$mcpServerId': typeof LayoutSystemMcpServersMcpServerIdRoute
+  '/system/plugins/$pluginId': typeof LayoutSystemPluginsPluginIdRoute
   '/system/runtimes/artifacts': typeof LayoutSystemRuntimesArtifactsRoute
+  '/system/skills/$skillId': typeof LayoutSystemSkillsSkillIdRoute
   '/system/namespaces/$namespaceId/members': typeof LayoutSystemNamespacesNamespaceIdMembersRoute
   '/system/runtimes/nodes/$nodeId': typeof LayoutSystemRuntimesNodesNodeIdRoute
   '/system/runtimes/releases/$releaseId': typeof LayoutSystemRuntimesReleasesReleaseIdRoute
   '/system/runtimes/tasks/$taskId': typeof LayoutSystemRuntimesTasksTaskIdRoute
+  '/system/agents/$agentId/releases/$releaseId': typeof LayoutSystemAgentsAgentIdReleasesReleaseIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -193,14 +270,23 @@ export interface FileRoutesById {
   '/_layout/system/agents': typeof LayoutSystemAgentsRouteWithChildren
   '/_layout/system/harnesses': typeof LayoutSystemHarnessesRoute
   '/_layout/system/llm-providers': typeof LayoutSystemLlmProvidersRoute
+  '/_layout/system/mcp-servers': typeof LayoutSystemMcpServersRouteWithChildren
   '/_layout/system/namespaces': typeof LayoutSystemNamespacesRouteWithChildren
+  '/_layout/system/plugins': typeof LayoutSystemPluginsRouteWithChildren
   '/_layout/system/runtimes': typeof LayoutSystemRuntimesRoute
-  '/_layout/system/agents/$agentId': typeof LayoutSystemAgentsAgentIdRoute
+  '/_layout/system/skills': typeof LayoutSystemSkillsRouteWithChildren
+  '/_layout/system/tools': typeof LayoutSystemToolsRoute
+  '/_layout/system/agent-activations/$activationId': typeof LayoutSystemAgentActivationsActivationIdRoute
+  '/_layout/system/agents/$agentId': typeof LayoutSystemAgentsAgentIdRouteWithChildren
+  '/_layout/system/mcp-servers/$mcpServerId': typeof LayoutSystemMcpServersMcpServerIdRoute
+  '/_layout/system/plugins/$pluginId': typeof LayoutSystemPluginsPluginIdRoute
   '/_layout/system/runtimes_/artifacts': typeof LayoutSystemRuntimesArtifactsRoute
+  '/_layout/system/skills/$skillId': typeof LayoutSystemSkillsSkillIdRoute
   '/_layout/system/namespaces/$namespaceId/members': typeof LayoutSystemNamespacesNamespaceIdMembersRoute
   '/_layout/system/runtimes_/nodes/$nodeId': typeof LayoutSystemRuntimesNodesNodeIdRoute
   '/_layout/system/runtimes_/releases/$releaseId': typeof LayoutSystemRuntimesReleasesReleaseIdRoute
   '/_layout/system/runtimes_/tasks/$taskId': typeof LayoutSystemRuntimesTasksTaskIdRoute
+  '/_layout/system/agents/$agentId/releases/$releaseId': typeof LayoutSystemAgentsAgentIdReleasesReleaseIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -216,14 +302,23 @@ export interface FileRouteTypes {
     | '/system/agents'
     | '/system/harnesses'
     | '/system/llm-providers'
+    | '/system/mcp-servers'
     | '/system/namespaces'
+    | '/system/plugins'
     | '/system/runtimes'
+    | '/system/skills'
+    | '/system/tools'
+    | '/system/agent-activations/$activationId'
     | '/system/agents/$agentId'
+    | '/system/mcp-servers/$mcpServerId'
+    | '/system/plugins/$pluginId'
     | '/system/runtimes/artifacts'
+    | '/system/skills/$skillId'
     | '/system/namespaces/$namespaceId/members'
     | '/system/runtimes/nodes/$nodeId'
     | '/system/runtimes/releases/$releaseId'
     | '/system/runtimes/tasks/$taskId'
+    | '/system/agents/$agentId/releases/$releaseId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -237,14 +332,23 @@ export interface FileRouteTypes {
     | '/system/agents'
     | '/system/harnesses'
     | '/system/llm-providers'
+    | '/system/mcp-servers'
     | '/system/namespaces'
+    | '/system/plugins'
     | '/system/runtimes'
+    | '/system/skills'
+    | '/system/tools'
+    | '/system/agent-activations/$activationId'
     | '/system/agents/$agentId'
+    | '/system/mcp-servers/$mcpServerId'
+    | '/system/plugins/$pluginId'
     | '/system/runtimes/artifacts'
+    | '/system/skills/$skillId'
     | '/system/namespaces/$namespaceId/members'
     | '/system/runtimes/nodes/$nodeId'
     | '/system/runtimes/releases/$releaseId'
     | '/system/runtimes/tasks/$taskId'
+    | '/system/agents/$agentId/releases/$releaseId'
   id:
     | '__root__'
     | '/_layout'
@@ -259,14 +363,23 @@ export interface FileRouteTypes {
     | '/_layout/system/agents'
     | '/_layout/system/harnesses'
     | '/_layout/system/llm-providers'
+    | '/_layout/system/mcp-servers'
     | '/_layout/system/namespaces'
+    | '/_layout/system/plugins'
     | '/_layout/system/runtimes'
+    | '/_layout/system/skills'
+    | '/_layout/system/tools'
+    | '/_layout/system/agent-activations/$activationId'
     | '/_layout/system/agents/$agentId'
+    | '/_layout/system/mcp-servers/$mcpServerId'
+    | '/_layout/system/plugins/$pluginId'
     | '/_layout/system/runtimes_/artifacts'
+    | '/_layout/system/skills/$skillId'
     | '/_layout/system/namespaces/$namespaceId/members'
     | '/_layout/system/runtimes_/nodes/$nodeId'
     | '/_layout/system/runtimes_/releases/$releaseId'
     | '/_layout/system/runtimes_/tasks/$taskId'
+    | '/_layout/system/agents/$agentId/releases/$releaseId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -342,6 +455,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutAdminRouteImport
       parentRoute: typeof LayoutRoute
     }
+    '/_layout/system/tools': {
+      id: '/_layout/system/tools'
+      path: '/system/tools'
+      fullPath: '/system/tools'
+      preLoaderRoute: typeof LayoutSystemToolsRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/system/skills': {
+      id: '/_layout/system/skills'
+      path: '/system/skills'
+      fullPath: '/system/skills'
+      preLoaderRoute: typeof LayoutSystemSkillsRouteImport
+      parentRoute: typeof LayoutRoute
+    }
     '/_layout/system/runtimes': {
       id: '/_layout/system/runtimes'
       path: '/system/runtimes'
@@ -349,11 +476,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutSystemRuntimesRouteImport
       parentRoute: typeof LayoutRoute
     }
+    '/_layout/system/plugins': {
+      id: '/_layout/system/plugins'
+      path: '/system/plugins'
+      fullPath: '/system/plugins'
+      preLoaderRoute: typeof LayoutSystemPluginsRouteImport
+      parentRoute: typeof LayoutRoute
+    }
     '/_layout/system/namespaces': {
       id: '/_layout/system/namespaces'
       path: '/system/namespaces'
       fullPath: '/system/namespaces'
       preLoaderRoute: typeof LayoutSystemNamespacesRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/system/mcp-servers': {
+      id: '/_layout/system/mcp-servers'
+      path: '/system/mcp-servers'
+      fullPath: '/system/mcp-servers'
+      preLoaderRoute: typeof LayoutSystemMcpServersRouteImport
       parentRoute: typeof LayoutRoute
     }
     '/_layout/system/llm-providers': {
@@ -377,6 +518,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutSystemAgentsRouteImport
       parentRoute: typeof LayoutRoute
     }
+    '/_layout/system/skills/$skillId': {
+      id: '/_layout/system/skills/$skillId'
+      path: '/$skillId'
+      fullPath: '/system/skills/$skillId'
+      preLoaderRoute: typeof LayoutSystemSkillsSkillIdRouteImport
+      parentRoute: typeof LayoutSystemSkillsRoute
+    }
     '/_layout/system/runtimes_/artifacts': {
       id: '/_layout/system/runtimes_/artifacts'
       path: '/system/runtimes/artifacts'
@@ -384,12 +532,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutSystemRuntimesArtifactsRouteImport
       parentRoute: typeof LayoutRoute
     }
+    '/_layout/system/plugins/$pluginId': {
+      id: '/_layout/system/plugins/$pluginId'
+      path: '/$pluginId'
+      fullPath: '/system/plugins/$pluginId'
+      preLoaderRoute: typeof LayoutSystemPluginsPluginIdRouteImport
+      parentRoute: typeof LayoutSystemPluginsRoute
+    }
+    '/_layout/system/mcp-servers/$mcpServerId': {
+      id: '/_layout/system/mcp-servers/$mcpServerId'
+      path: '/$mcpServerId'
+      fullPath: '/system/mcp-servers/$mcpServerId'
+      preLoaderRoute: typeof LayoutSystemMcpServersMcpServerIdRouteImport
+      parentRoute: typeof LayoutSystemMcpServersRoute
+    }
     '/_layout/system/agents/$agentId': {
       id: '/_layout/system/agents/$agentId'
       path: '/$agentId'
       fullPath: '/system/agents/$agentId'
       preLoaderRoute: typeof LayoutSystemAgentsAgentIdRouteImport
       parentRoute: typeof LayoutSystemAgentsRoute
+    }
+    '/_layout/system/agent-activations/$activationId': {
+      id: '/_layout/system/agent-activations/$activationId'
+      path: '/system/agent-activations/$activationId'
+      fullPath: '/system/agent-activations/$activationId'
+      preLoaderRoute: typeof LayoutSystemAgentActivationsActivationIdRouteImport
+      parentRoute: typeof LayoutRoute
     }
     '/_layout/system/runtimes_/tasks/$taskId': {
       id: '/_layout/system/runtimes_/tasks/$taskId'
@@ -419,19 +588,56 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutSystemNamespacesNamespaceIdMembersRouteImport
       parentRoute: typeof LayoutSystemNamespacesRoute
     }
+    '/_layout/system/agents/$agentId/releases/$releaseId': {
+      id: '/_layout/system/agents/$agentId/releases/$releaseId'
+      path: '/releases/$releaseId'
+      fullPath: '/system/agents/$agentId/releases/$releaseId'
+      preLoaderRoute: typeof LayoutSystemAgentsAgentIdReleasesReleaseIdRouteImport
+      parentRoute: typeof LayoutSystemAgentsAgentIdRoute
+    }
   }
 }
 
+interface LayoutSystemAgentsAgentIdRouteChildren {
+  LayoutSystemAgentsAgentIdReleasesReleaseIdRoute: typeof LayoutSystemAgentsAgentIdReleasesReleaseIdRoute
+}
+
+const LayoutSystemAgentsAgentIdRouteChildren: LayoutSystemAgentsAgentIdRouteChildren =
+  {
+    LayoutSystemAgentsAgentIdReleasesReleaseIdRoute:
+      LayoutSystemAgentsAgentIdReleasesReleaseIdRoute,
+  }
+
+const LayoutSystemAgentsAgentIdRouteWithChildren =
+  LayoutSystemAgentsAgentIdRoute._addFileChildren(
+    LayoutSystemAgentsAgentIdRouteChildren,
+  )
+
 interface LayoutSystemAgentsRouteChildren {
-  LayoutSystemAgentsAgentIdRoute: typeof LayoutSystemAgentsAgentIdRoute
+  LayoutSystemAgentsAgentIdRoute: typeof LayoutSystemAgentsAgentIdRouteWithChildren
 }
 
 const LayoutSystemAgentsRouteChildren: LayoutSystemAgentsRouteChildren = {
-  LayoutSystemAgentsAgentIdRoute: LayoutSystemAgentsAgentIdRoute,
+  LayoutSystemAgentsAgentIdRoute: LayoutSystemAgentsAgentIdRouteWithChildren,
 }
 
 const LayoutSystemAgentsRouteWithChildren =
   LayoutSystemAgentsRoute._addFileChildren(LayoutSystemAgentsRouteChildren)
+
+interface LayoutSystemMcpServersRouteChildren {
+  LayoutSystemMcpServersMcpServerIdRoute: typeof LayoutSystemMcpServersMcpServerIdRoute
+}
+
+const LayoutSystemMcpServersRouteChildren: LayoutSystemMcpServersRouteChildren =
+  {
+    LayoutSystemMcpServersMcpServerIdRoute:
+      LayoutSystemMcpServersMcpServerIdRoute,
+  }
+
+const LayoutSystemMcpServersRouteWithChildren =
+  LayoutSystemMcpServersRoute._addFileChildren(
+    LayoutSystemMcpServersRouteChildren,
+  )
 
 interface LayoutSystemNamespacesRouteChildren {
   LayoutSystemNamespacesNamespaceIdMembersRoute: typeof LayoutSystemNamespacesNamespaceIdMembersRoute
@@ -448,6 +654,28 @@ const LayoutSystemNamespacesRouteWithChildren =
     LayoutSystemNamespacesRouteChildren,
   )
 
+interface LayoutSystemPluginsRouteChildren {
+  LayoutSystemPluginsPluginIdRoute: typeof LayoutSystemPluginsPluginIdRoute
+}
+
+const LayoutSystemPluginsRouteChildren: LayoutSystemPluginsRouteChildren = {
+  LayoutSystemPluginsPluginIdRoute: LayoutSystemPluginsPluginIdRoute,
+}
+
+const LayoutSystemPluginsRouteWithChildren =
+  LayoutSystemPluginsRoute._addFileChildren(LayoutSystemPluginsRouteChildren)
+
+interface LayoutSystemSkillsRouteChildren {
+  LayoutSystemSkillsSkillIdRoute: typeof LayoutSystemSkillsSkillIdRoute
+}
+
+const LayoutSystemSkillsRouteChildren: LayoutSystemSkillsRouteChildren = {
+  LayoutSystemSkillsSkillIdRoute: LayoutSystemSkillsSkillIdRoute,
+}
+
+const LayoutSystemSkillsRouteWithChildren =
+  LayoutSystemSkillsRoute._addFileChildren(LayoutSystemSkillsRouteChildren)
+
 interface LayoutRouteChildren {
   LayoutAdminRoute: typeof LayoutAdminRoute
   LayoutItemsRoute: typeof LayoutItemsRoute
@@ -456,8 +684,13 @@ interface LayoutRouteChildren {
   LayoutSystemAgentsRoute: typeof LayoutSystemAgentsRouteWithChildren
   LayoutSystemHarnessesRoute: typeof LayoutSystemHarnessesRoute
   LayoutSystemLlmProvidersRoute: typeof LayoutSystemLlmProvidersRoute
+  LayoutSystemMcpServersRoute: typeof LayoutSystemMcpServersRouteWithChildren
   LayoutSystemNamespacesRoute: typeof LayoutSystemNamespacesRouteWithChildren
+  LayoutSystemPluginsRoute: typeof LayoutSystemPluginsRouteWithChildren
   LayoutSystemRuntimesRoute: typeof LayoutSystemRuntimesRoute
+  LayoutSystemSkillsRoute: typeof LayoutSystemSkillsRouteWithChildren
+  LayoutSystemToolsRoute: typeof LayoutSystemToolsRoute
+  LayoutSystemAgentActivationsActivationIdRoute: typeof LayoutSystemAgentActivationsActivationIdRoute
   LayoutSystemRuntimesArtifactsRoute: typeof LayoutSystemRuntimesArtifactsRoute
   LayoutSystemRuntimesNodesNodeIdRoute: typeof LayoutSystemRuntimesNodesNodeIdRoute
   LayoutSystemRuntimesReleasesReleaseIdRoute: typeof LayoutSystemRuntimesReleasesReleaseIdRoute
@@ -472,8 +705,14 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutSystemAgentsRoute: LayoutSystemAgentsRouteWithChildren,
   LayoutSystemHarnessesRoute: LayoutSystemHarnessesRoute,
   LayoutSystemLlmProvidersRoute: LayoutSystemLlmProvidersRoute,
+  LayoutSystemMcpServersRoute: LayoutSystemMcpServersRouteWithChildren,
   LayoutSystemNamespacesRoute: LayoutSystemNamespacesRouteWithChildren,
+  LayoutSystemPluginsRoute: LayoutSystemPluginsRouteWithChildren,
   LayoutSystemRuntimesRoute: LayoutSystemRuntimesRoute,
+  LayoutSystemSkillsRoute: LayoutSystemSkillsRouteWithChildren,
+  LayoutSystemToolsRoute: LayoutSystemToolsRoute,
+  LayoutSystemAgentActivationsActivationIdRoute:
+    LayoutSystemAgentActivationsActivationIdRoute,
   LayoutSystemRuntimesArtifactsRoute: LayoutSystemRuntimesArtifactsRoute,
   LayoutSystemRuntimesNodesNodeIdRoute: LayoutSystemRuntimesNodesNodeIdRoute,
   LayoutSystemRuntimesReleasesReleaseIdRoute:

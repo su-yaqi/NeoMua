@@ -11,6 +11,7 @@ NeoMua
 - 提供一个前后端分离、可容器化部署的管理后台基础盘。
 - 支持账号认证、个人设置、平台用户管理和基础业务条目管理。
 - 支持按空间组织用户，并为后续多租户业务扩展预留统一入口。
+- 支持按空间声明、验证、发布并激活不可变 Agent 能力组合，任务只消费目标当前已激活 Release。
 
 ## 技术栈
 | 层次 | 技术选型 |
@@ -31,6 +32,7 @@ NeoMua
 | namespaces | 空间列表、空间 CRUD、空间成员关系与空间上下文选择 |
 | llm_configs | 按空间维护多供应商大模型接入配置、连接校验与模型清单同步 |
 | runtime_management | 空间级平台/节点运行时、Agent 任务、完整事件审计与签名内容分发 |
+| agent_management | Agent/Harness 草稿、Skill/Tool/MCP/Plugin、统一解析、Release/Activation、审批与 Operator CLI |
 
 ## 当前实现状态
 
@@ -41,6 +43,8 @@ NeoMua
 - v0.4 已实现独立 `runtime-worker`、`model-gateway` 与可安装 `node_runtime`，支持真实 Agent 执行、模型转发、节点 WSS 心跳和离线恢复。
 - PostgreSQL 保存用户消息、Agent 消息、工具调用/结果、状态、错误和最终结果；节点使用 SQLite spool 保证断线重放。
 - Agent/Skill/MCP/CLI/工作区内容以不可变 ZIP、双签名清单和短期下载令牌分发，节点独立校验并原子应用。
+- v0.5 已实现声明式 Skill 与 Plugin、不可变 MCP Revision、目标凭证/校验/Tool 快照、canonical ResolvedAgentSpec、签名 Agent Release、逐目标 Activation/Retry/Rollback 和 frozen Task snapshot。
+- `neomua` Operator CLI 使用轮换 refresh session 与系统 Keychain，复用正式 API，支持 dry-run、幂等 mutation、结构化退出码和节点本地 MCP secret 管理。
 
 ## 版本状态
 | 版本 | 状态 | 说明 |
@@ -49,3 +53,4 @@ NeoMua
 | v0.2 | 已完成 | 空间成员管理页、平台用户空间分配收敛与测试链路修正 |
 | v0.3 | 已完成 | 空间级多供应商大模型接入配置、连接校验与模型同步能力 |
 | v0.4 | 已完成 | Agent Runtime、节点守护进程、可靠任务执行与签名内容分发 |
+| v0.5 | 已完成 | 受管 Agent 能力、统一运行时装配、Release/Activation、Tool 审批与 Operator CLI |

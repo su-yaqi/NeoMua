@@ -6,8 +6,9 @@ so the schema-layer invariants are enforced for every write path.
 """
 
 import uuid
-from dataclasses import dataclass
+from copy import deepcopy
 from datetime import datetime, timezone
+from typing import Any, cast
 
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
@@ -15,7 +16,6 @@ from sqlmodel import Session, col, select
 
 from app.agent_management.catalog import (
     Diagnostic,
-    environment_catalog,
     evaluate_version_constraint,
     validate_config,
     validate_harness_type,
@@ -34,7 +34,9 @@ from app.runtime.models import RuntimeNode, RuntimeProfile, RuntimeType
 class DraftConflict(Exception):
     def __init__(self, current_revision: int):
         self.current_revision = current_revision
-        super().__init__(f"draft revision conflict; current revision is {current_revision}")
+        super().__init__(
+            f"draft revision conflict; current revision is {current_revision}"
+        )
 
 
 class ValidationStatus(str):
@@ -49,6 +51,7 @@ class TargetCompatibility(BaseModel):
     runtime_type: str
     cli_version: str | None = None
     sdk_version: str | None = None
+    harness_version: str | None = None
     compatible: bool | None = None
     reason: str | None = None
 
@@ -103,6 +106,46 @@ def create_agent(
     return agent
 
 
+def copy_agent(
+    session: Session,
+    source: AgentDefinition,
+    *,
+    slug: str,
+    name: str,
+    user_id: uuid.UUID,
+) -> AgentDefinition:
+    source_draft = session.exec(
+        select(AgentDraft).where(AgentDraft.agent_id == source.id)
+    ).one()
+    copied = AgentDefinition(
+        namespace_id=source.namespace_id,
+        slug=slug,
+        name=name,
+        description=source.description,
+        status=AgentStatus.ACTIVE,
+        created_by=user_id,
+    )
+    copied_draft = AgentDraft(
+        agent_id=copied.id,
+        revision=1,
+        harness_profile_id=source_draft.harness_profile_id,
+        provider_config_id=source_draft.provider_config_id,
+        model_id=source_draft.model_id,
+        system_prompt=source_draft.system_prompt,
+        config=deepcopy(source_draft.config),
+        validated_revision=None,
+        validation_result=None,
+    )
+    session.add(copied)
+    session.add(copied_draft)
+    try:
+        session.flush()
+    except IntegrityError as exc:
+        session.rollback()
+        raise _slug_conflict_or_reraise(exc) from exc
+    return copied
+
+
 def _slug_conflict_or_reraise(exc: IntegrityError) -> Exception:
     msg = str(exc.orig).lower() if exc.orig else str(exc).lower()
     if "uq_agent_definition_namespace_slug" in msg or "slug" in msg:
@@ -119,7 +162,7 @@ def save_draft(
     provider_config_id: uuid.UUID | None | object = _UNSET,
     model_id: str | None | object = _UNSET,
     system_prompt: str | None | object = _UNSET,
-    config: dict | None | object = _UNSET,
+    config: dict[str, Any] | None | object = _UNSET,
 ) -> AgentDraft:
     """CAS-save a draft. Locks the row; bumps revision on success.
 
@@ -140,20 +183,26 @@ def save_draft(
         raise DraftConflict(draft.revision)
 
     changed = False
-    if harness_profile_id is not _UNSET and harness_profile_id != draft.harness_profile_id:
-        draft.harness_profile_id = harness_profile_id
+    if (
+        harness_profile_id is not _UNSET
+        and harness_profile_id != draft.harness_profile_id
+    ):
+        draft.harness_profile_id = cast(uuid.UUID | None, harness_profile_id)
         changed = True
-    if provider_config_id is not _UNSET and provider_config_id != draft.provider_config_id:
-        draft.provider_config_id = provider_config_id
+    if (
+        provider_config_id is not _UNSET
+        and provider_config_id != draft.provider_config_id
+    ):
+        draft.provider_config_id = cast(uuid.UUID | None, provider_config_id)
         changed = True
     if model_id is not _UNSET and model_id != draft.model_id:
-        draft.model_id = model_id
+        draft.model_id = cast(str | None, model_id)
         changed = True
     if system_prompt is not _UNSET and system_prompt != draft.system_prompt:
-        draft.system_prompt = system_prompt
+        draft.system_prompt = cast(str | None, system_prompt) or ""
         changed = True
     if config is not _UNSET and config != draft.config:
-        draft.config = config
+        draft.config = cast(dict[str, Any] | None, config) or {}
         changed = True
 
     if changed:
@@ -177,15 +226,8 @@ def archive_agent(session: Session, agent: AgentDefinition) -> AgentDefinition:
 
 
 def is_profile_referenced(session: Session, profile_id: uuid.UUID) -> bool:
-    """True if any non-archived agent draft references this profile."""
-    stmt = (
-        select(AgentDraft)
-        .join(AgentDefinition, AgentDraft.agent_id == AgentDefinition.id)
-        .where(
-            AgentDraft.harness_profile_id == profile_id,
-            AgentDefinition.status == AgentStatus.ACTIVE,
-        )
-    )
+    """True if any agent draft references this profile, including archived agents."""
+    stmt = select(AgentDraft).where(AgentDraft.harness_profile_id == profile_id)
     return session.exec(stmt).first() is not None
 
 
@@ -280,7 +322,7 @@ def _validate_harness(
     return diags, profile
 
 
-def _build_target_compatibility(
+def build_target_compatibility(
     session: Session, namespace_id: uuid.UUID, profile: HarnessProfile | None
 ) -> list[TargetCompatibility]:
     if profile is None:
@@ -292,54 +334,35 @@ def _build_target_compatibility(
     for rt in runtimes:
         cli_version: str | None = None
         sdk_version: str | None = None
+        harness_version: str | None = None
+        capability_inventory: dict[str, Any] = rt.harness_capabilities
         if rt.runtime_type == RuntimeType.NODE:
             node = session.exec(
                 select(RuntimeNode).where(
                     RuntimeNode.runtime_profile_id == rt.id,
-                    RuntimeNode.revoked_at.is_(None),  # type: ignore[attr-defined]
+                    col(RuntimeNode.revoked_at).is_(None),
                 )
             ).first()
             if node:
-                cli_version = node.agent_version
-                sdk_version = node.sdk_version
-        else:
-            # Platform runtime: use runtime-worker reported versions from config.
-            cli_version = rt.config.get("reported_cli_version")
-            sdk_version = rt.config.get("reported_sdk_version")
+                capability_inventory = node.harness_capabilities
+
+        claude_capability = capability_inventory.get("claude_code", {})
+        if isinstance(claude_capability, dict):
+            cli_version = claude_capability.get("cli_version")
+            sdk_version = claude_capability.get("sdk_version")
+            harness_version = claude_capability.get("harness_version")
 
         compatible: bool | None
         reason: str | None
-        if cli_version is None and sdk_version is None:
-            # No versions reported at all -> compatibility unknown.
+        if cli_version is None or sdk_version is None or harness_version is None:
             compatible = None
             reason = "unknown"
         else:
-            # Versions were reported: evaluate them against the profile's
-            # version constraints. CLI is checked if reported; SDK is checked
-            # only if reported (a reported SDK with an absent constraint is a
-            # pass). If a constraint exists for a version that was NOT
-            # reported, that check is "unknown" -> treat as not compatible.
-            checks_ok = True
-            # CLI check: a reported CLI version must satisfy the CLI constraint.
-            if cli_version is not None:
-                if not evaluate_version_constraint(
-                    cli_version, profile.cli_version_constraint
-                ):
-                    checks_ok = False
-            else:
-                # CLI version not reported but SDK is. If the profile has a CLI
-                # constraint, we cannot evaluate it -> unknown -> not ok.
-                if profile.cli_version_constraint:
-                    checks_ok = False
-            # SDK check: a reported SDK version must satisfy the SDK constraint.
-            if sdk_version is not None:
-                if not evaluate_version_constraint(
-                    sdk_version, profile.sdk_version_constraint
-                ):
-                    checks_ok = False
-            else:
-                if profile.sdk_version_constraint:
-                    checks_ok = False
+            checks_ok = evaluate_version_constraint(
+                cli_version, profile.cli_version_constraint
+            ) and evaluate_version_constraint(
+                sdk_version, profile.sdk_version_constraint
+            )
             if checks_ok:
                 compatible = True
                 reason = None
@@ -352,6 +375,7 @@ def _build_target_compatibility(
                 runtime_type=rt.runtime_type.value,
                 cli_version=cli_version,
                 sdk_version=sdk_version,
+                harness_version=harness_version,
                 compatible=compatible,
                 reason=reason,
             )
@@ -365,7 +389,8 @@ def validate_draft(
     """Run full draft validation. Persists validated_revision + result on success.
 
     Returns the ValidationResult. Errors block a future publish; warnings do not.
-    Target compatibility 'unknown' is treated as an error (blocks publish).
+    At least one compatible target is required; unknown/incompatible targets
+    remain blocked individually without invalidating compatible targets.
     """
     draft = session.exec(
         select(AgentDraft).where(AgentDraft.agent_id == agent.id).with_for_update()
@@ -380,7 +405,7 @@ def validate_draft(
     errors.extend(harness_errors)
 
     # Config security validation (schema-layer invariants).
-    errors.extend(validate_config(draft.config))
+    errors.extend(validate_config(draft.config, is_profile=False))
 
     if profile is not None:
         errors.extend(validate_config(profile.config, is_profile=True))
@@ -423,28 +448,36 @@ def validate_draft(
             )
             break
 
-    target_compat = _build_target_compatibility(session, namespace_id, profile)
-    # 'unknown' or 'incompatible' targets block publish.
-    for tc in target_compat:
-        if tc.compatible is None:
-            errors.append(
-                Diagnostic(
-                    code="target_version_unknown",
-                    field="target_compatibility",
-                    message=f"runtime {tc.runtime_profile_id} has not reported "
-                    "CLI/SDK versions; compatibility is unknown",
-                )
+    # Capability dependencies are validated by the same deterministic Resolver
+    # used to build an immutable Release. This prevents a draft from being
+    # marked validated while Plugin/Skill/MCP/Tool expansion would fail later.
+    if not errors:
+        from app.agent_management.capabilities import (
+            ClaudeCodeHarnessAdapter,
+            ResolutionError,
+            resolve_agent_spec,
+        )
+
+        try:
+            resolved_spec, _dependency_lock, _components = resolve_agent_spec(
+                session, agent
             )
-        elif tc.compatible is False:
-            errors.append(
-                Diagnostic(
-                    code="target_version_incompatible",
-                    field="target_compatibility",
-                    message=f"runtime {tc.runtime_profile_id} reported CLI/SDK "
-                    "versions that violate the harness profile's version "
-                    "constraints",
-                )
+            errors.extend(ClaudeCodeHarnessAdapter().validate_spec(resolved_spec))
+        except ResolutionError as exc:
+            errors.extend(exc.diagnostics)
+
+    target_compat = build_target_compatibility(session, namespace_id, profile)
+    # Draft validation succeeds when at least one target is compatible. Unknown
+    # and incompatible targets remain explicitly unavailable for target-specific
+    # publication/activation, but do not invalidate other compatible targets.
+    if profile is not None and not any(tc.compatible is True for tc in target_compat):
+        errors.append(
+            Diagnostic(
+                code="no_compatible_runtime_target",
+                field="target_compatibility",
+                message="no runtime target has reported compatible Claude CLI, SDK, and harness versions",
             )
+        )
 
     status = "validated" if not errors else "error"
 
@@ -453,6 +486,9 @@ def validate_draft(
         "status": status,
         "errors": [e.model_dump() for e in errors],
         "warnings": [w.model_dump() for w in warnings],
+        "target_compatibility": [
+            item.model_dump(mode="json") for item in target_compat
+        ],
     }
     draft.updated_at = datetime.now(timezone.utc)
     session.add(draft)
@@ -472,7 +508,12 @@ def draft_validation_status(draft: AgentDraft) -> str:
     if draft.validation_result is None:
         return ValidationStatus.UNVALIDATED
     if draft.validated_revision is None:
-        return ValidationStatus.STALE if draft.validation_result.get("status") == "validated" else ValidationStatus.ERROR
+        return (
+            ValidationStatus.STALE
+            if draft.validation_result.get("status") == "validated"
+            else ValidationStatus.ERROR
+        )
     if draft.validated_revision != draft.revision:
         return ValidationStatus.STALE
-    return draft.validation_result.get("status", ValidationStatus.UNVALIDATED)
+    status = draft.validation_result.get("status", ValidationStatus.UNVALIDATED)
+    return status if isinstance(status, str) else ValidationStatus.UNVALIDATED

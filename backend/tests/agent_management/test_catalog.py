@@ -1,9 +1,4 @@
-import pytest
-from pydantic import ValidationError
-
 from app.agent_management.catalog import (
-    ENV_ALLOWLIST,
-    ENV_DENYLIST,
     MAX_TIMEOUT_SECONDS,
     Diagnostic,
     environment_catalog,
@@ -90,6 +85,40 @@ def test_validate_env_names_rejects_non_allowlisted():
 def test_validate_env_names_accepts_allowlisted():
     diags = validate_env_names(["ANTHROPIC_MODEL"])
     assert diags == []
+
+
+def test_validate_config_rejects_unknown_field():
+    diags = validate_config({"some_flag": "harmless"}, is_profile=True)
+    assert any(d.code == "unknown_config_field" for d in diags)
+
+
+def test_validate_config_rejects_non_string_env_name_without_crashing():
+    diags = validate_config({"allowed_env_names": [123]}, is_profile=True)
+    assert any(d.code == "invalid_env_names" for d in diags)
+
+
+def test_validate_config_rejects_nested_api_token_and_header_values():
+    diags = validate_config(
+        {"unknown": {"api_token": "value", "headers": {"X-Test": "value"}}},
+        is_profile=True,
+    )
+    assert any(d.code == "secret_value_forbidden" for d in diags)
+    assert any(d.code == "header_value_forbidden" for d in diags)
+
+
+def test_validate_config_rejects_shell_string_inside_list():
+    diags = validate_config(
+        {"allowed_tools": ["Read", "ls; rm -rf /"]}, is_profile=True
+    )
+    assert any(d.code == "shell_metachar_forbidden" for d in diags)
+
+
+def test_validate_config_rejects_conflicting_tool_policy():
+    diags = validate_config(
+        {"allowed_tools": ["Read"], "disallowed_tools": ["Read"]},
+        is_profile=True,
+    )
+    assert any(d.code == "tool_policy_conflict" for d in diags)
 
 
 def test_environment_catalog_returns_three_lists():

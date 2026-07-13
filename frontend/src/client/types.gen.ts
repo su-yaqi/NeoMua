@@ -5,6 +5,20 @@ export type ClientOptions = {
 };
 
 /**
+ * ActivationCreate
+ */
+export type ActivationCreate = {
+    /**
+     * Runtime Profile Ids
+     */
+    runtime_profile_ids: Array<string>;
+    /**
+     * Valid For Seconds
+     */
+    valid_for_seconds?: number;
+};
+
+/**
  * AdminUserCreate
  */
 export type AdminUserCreate = {
@@ -65,9 +79,345 @@ export type AdminUserUpdate = {
 };
 
 /**
+ * AgentCopy
+ */
+export type AgentCopy = {
+    /**
+     * Slug
+     */
+    slug: string;
+    /**
+     * Name
+     */
+    name: string;
+};
+
+/**
+ * AgentCreate
+ */
+export type AgentCreate = {
+    /**
+     * Slug
+     */
+    slug: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Description
+     */
+    description?: string | null;
+};
+
+/**
+ * AgentDraftPublic
+ */
+export type AgentDraftPublic = {
+    /**
+     * Agent Id
+     */
+    agent_id: string;
+    /**
+     * Revision
+     */
+    revision: number;
+    /**
+     * Harness Profile Id
+     */
+    harness_profile_id: string | null;
+    /**
+     * Provider Config Id
+     */
+    provider_config_id: string | null;
+    /**
+     * Model Id
+     */
+    model_id: string | null;
+    /**
+     * System Prompt
+     */
+    system_prompt: string;
+    /**
+     * Config
+     */
+    config: {
+        [key: string]: unknown;
+    };
+    /**
+     * Validated Revision
+     */
+    validated_revision: number | null;
+    /**
+     * Validation Result
+     */
+    validation_result: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Validation Status
+     */
+    validation_status: string;
+    /**
+     * Updated At
+     */
+    updated_at: string;
+};
+
+/**
  * AgentEventType
  */
-export type AgentEventType = 'user_message' | 'assistant_message' | 'tool_call' | 'tool_result' | 'status' | 'error' | 'result';
+export type AgentEventType = 'user_message' | 'assistant_message' | 'tool_call' | 'tool_result' | 'status' | 'error' | 'result' | 'approval_requested' | 'approval_resolved' | 'approval_expired';
+
+/**
+ * AgentListItem
+ */
+export type AgentListItem = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Namespace Id
+     */
+    namespace_id: string;
+    /**
+     * Slug
+     */
+    slug: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Description
+     */
+    description: string | null;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Updated At
+     */
+    updated_at: string;
+    /**
+     * Draft Revision
+     */
+    draft_revision: number;
+    /**
+     * Validation Status
+     */
+    validation_status: string;
+    /**
+     * Harness Type
+     */
+    harness_type?: string | null;
+    /**
+     * Model Id
+     */
+    model_id?: string | null;
+};
+
+/**
+ * AgentMcpBindings
+ */
+export type AgentMcpBindings = {
+    /**
+     * Expected Revision
+     */
+    expected_revision: number;
+    /**
+     * Mcp
+     */
+    mcp: Array<McpAgentBinding>;
+};
+
+/**
+ * AgentPluginBinding
+ */
+export type AgentPluginBinding = {
+    /**
+     * Plugin Version Id
+     */
+    plugin_version_id: string;
+};
+
+/**
+ * AgentPluginBindings
+ */
+export type AgentPluginBindings = {
+    /**
+     * Expected Revision
+     */
+    expected_revision: number;
+    /**
+     * Plugins
+     */
+    plugins: Array<AgentPluginBinding>;
+};
+
+/**
+ * AgentPublic
+ */
+export type AgentPublic = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Namespace Id
+     */
+    namespace_id: string;
+    /**
+     * Slug
+     */
+    slug: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Description
+     */
+    description: string | null;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Updated At
+     */
+    updated_at: string;
+};
+
+/**
+ * AgentSkillBinding
+ */
+export type AgentSkillBinding = {
+    /**
+     * Skill Version Id
+     */
+    skill_version_id: string;
+};
+
+/**
+ * AgentSkillBindings
+ */
+export type AgentSkillBindings = {
+    /**
+     * Expected Revision
+     */
+    expected_revision: number;
+    /**
+     * Skills
+     */
+    skills: Array<AgentSkillBinding>;
+};
+
+/**
+ * AgentToolBindings
+ */
+export type AgentToolBindings = {
+    /**
+     * Expected Revision
+     */
+    expected_revision: number;
+    /**
+     * Tools
+     */
+    tools: Array<ToolIntent>;
+};
+
+/**
+ * AgentUpdate
+ */
+export type AgentUpdate = {
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Description
+     */
+    description?: string | null;
+    /**
+     * Status
+     */
+    status?: string | null;
+};
+
+/**
+ * AgentsPublic
+ */
+export type AgentsPublic = {
+    /**
+     * Data
+     */
+    data: Array<AgentListItem>;
+    /**
+     * Count
+     */
+    count: number;
+};
+
+/**
+ * ApprovalDecision
+ */
+export type ApprovalDecision = {
+    /**
+     * Args Digest
+     */
+    args_digest: string;
+    /**
+     * Reason
+     */
+    reason?: string | null;
+};
+
+/**
+ * ApprovalRequestCreate
+ */
+export type ApprovalRequestCreate = {
+    /**
+     * Task Id
+     */
+    task_id: string;
+    /**
+     * Task Revision
+     */
+    task_revision: number;
+    /**
+     * Tool Call Id
+     */
+    tool_call_id: string;
+    /**
+     * Tool Qualified Name
+     */
+    tool_qualified_name: string;
+    /**
+     * Redacted Args
+     */
+    redacted_args: {
+        [key: string]: unknown;
+    };
+    /**
+     * Args Digest
+     */
+    args_digest: string;
+    /**
+     * Expires In Seconds
+     */
+    expires_in_seconds?: number;
+};
 
 /**
  * ArtifactKind
@@ -127,6 +477,20 @@ export type ArtifactsPublic = {
 };
 
 /**
+ * Body_agent-capabilities-upload_skill_version
+ */
+export type BodyAgentCapabilitiesUploadSkillVersion = {
+    /**
+     * Version
+     */
+    version: string;
+    /**
+     * File
+     */
+    file: Blob | File;
+};
+
+/**
  * Body_login-login_access_token
  */
 export type BodyLoginLoginAccessToken = {
@@ -173,6 +537,17 @@ export type BodyRuntimeArtifactsUploadArtifact = {
 };
 
 /**
+ * CapabilityReport
+ */
+export type CapabilityReport = {
+    /**
+     * Worker Id
+     */
+    worker_id: string;
+    harness_capabilities: HarnessCapabilities;
+};
+
+/**
  * ClaimInput
  */
 export type ClaimInput = {
@@ -180,6 +555,44 @@ export type ClaimInput = {
      * Worker Id
      */
     worker_id: string;
+};
+
+/**
+ * CliLogin
+ */
+export type CliLogin = {
+    /**
+     * Email
+     */
+    email: string;
+    /**
+     * Password
+     */
+    password: string;
+    /**
+     * Client Name
+     */
+    client_name?: string;
+};
+
+/**
+ * CliLogout
+ */
+export type CliLogout = {
+    /**
+     * Refresh Token
+     */
+    refresh_token: string;
+};
+
+/**
+ * CliRefresh
+ */
+export type CliRefresh = {
+    /**
+     * Refresh Token
+     */
+    refresh_token: string;
 };
 
 /**
@@ -216,9 +629,69 @@ export type DeploymentPublic = {
 };
 
 /**
+ * DeploymentResult
+ */
+export type DeploymentResult = {
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Resolved Spec Digest
+     */
+    resolved_spec_digest: string;
+    /**
+     * Materialization Digest
+     */
+    materialization_digest: string;
+    /**
+     * Capability Fingerprint
+     */
+    capability_fingerprint: string;
+    /**
+     * Error
+     */
+    error?: {
+        [key: string]: unknown;
+    } | null;
+};
+
+/**
  * DeploymentStatus
  */
 export type DeploymentStatus = 'pending' | 'dispatched' | 'applied' | 'failed' | 'expired';
+
+/**
+ * DraftSave
+ */
+export type DraftSave = {
+    /**
+     * Expected Revision
+     */
+    expected_revision: number;
+    /**
+     * Harness Profile Id
+     */
+    harness_profile_id?: string | null;
+    /**
+     * Provider Config Id
+     */
+    provider_config_id?: string | null;
+    /**
+     * Model Id
+     */
+    model_id?: string | null;
+    /**
+     * System Prompt
+     */
+    system_prompt?: string | null;
+    /**
+     * Config
+     */
+    config?: {
+        [key: string]: unknown;
+    } | null;
+};
 
 /**
  * EnrollmentTokenCreated
@@ -272,6 +745,24 @@ export type EnrollmentTokensPublic = {
      * Count
      */
     count: number;
+};
+
+/**
+ * EnvironmentCatalogPublic
+ */
+export type EnvironmentCatalogPublic = {
+    /**
+     * Allowlist
+     */
+    allowlist: Array<string>;
+    /**
+     * Reserved
+     */
+    reserved: Array<string>;
+    /**
+     * Denylist
+     */
+    denylist: Array<string>;
 };
 
 /**
@@ -330,6 +821,221 @@ export type HttpValidationError = {
      * Detail
      */
     detail?: Array<ValidationError>;
+};
+
+/**
+ * HarnessCapabilities
+ */
+export type HarnessCapabilities = {
+    claude_code: HarnessCapability;
+    /**
+     * Mcp Executables
+     */
+    mcp_executables?: Array<string> | null;
+};
+
+/**
+ * HarnessCapability
+ */
+export type HarnessCapability = {
+    /**
+     * Cli Version
+     */
+    cli_version: string;
+    /**
+     * Sdk Version
+     */
+    sdk_version: string;
+    /**
+     * Harness Version
+     */
+    harness_version: string;
+    /**
+     * Builtin Tools
+     */
+    builtin_tools?: Array<string> | null;
+};
+
+/**
+ * HarnessCatalogPublic
+ */
+export type HarnessCatalogPublic = {
+    /**
+     * Harnesses
+     */
+    harnesses: Array<{
+        [key: string]: unknown;
+    }>;
+};
+
+/**
+ * HarnessProfileCreate
+ */
+export type HarnessProfileCreate = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Harness Type
+     */
+    harness_type?: string;
+    /**
+     * Config Schema Version
+     */
+    config_schema_version?: string;
+    /**
+     * Cli Version Constraint
+     */
+    cli_version_constraint?: string;
+    /**
+     * Sdk Version Constraint
+     */
+    sdk_version_constraint?: string;
+    /**
+     * Config
+     */
+    config?: {
+        [key: string]: unknown;
+    };
+};
+
+/**
+ * HarnessProfilePublic
+ */
+export type HarnessProfilePublic = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Namespace Id
+     */
+    namespace_id: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Harness Type
+     */
+    harness_type: string;
+    /**
+     * Config Schema Version
+     */
+    config_schema_version: string;
+    /**
+     * Cli Version Constraint
+     */
+    cli_version_constraint: string;
+    /**
+     * Sdk Version Constraint
+     */
+    sdk_version_constraint: string;
+    /**
+     * Config
+     */
+    config: {
+        [key: string]: unknown;
+    };
+    /**
+     * Archived
+     */
+    archived: boolean;
+    /**
+     * Referenced By Agents
+     */
+    referenced_by_agents: boolean;
+    /**
+     * Target Compatibility
+     */
+    target_compatibility: Array<TargetCompatibility>;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Updated At
+     */
+    updated_at: string;
+};
+
+/**
+ * HarnessProfileUpdate
+ */
+export type HarnessProfileUpdate = {
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Cli Version Constraint
+     */
+    cli_version_constraint?: string | null;
+    /**
+     * Sdk Version Constraint
+     */
+    sdk_version_constraint?: string | null;
+    /**
+     * Config
+     */
+    config?: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Archived
+     */
+    archived?: boolean | null;
+};
+
+/**
+ * HarnessProfilesPublic
+ */
+export type HarnessProfilesPublic = {
+    /**
+     * Data
+     */
+    data: Array<HarnessProfilePublic>;
+    /**
+     * Count
+     */
+    count: number;
+};
+
+/**
+ * IdentityCreate
+ */
+export type IdentityCreate = {
+    /**
+     * Slug
+     */
+    slug: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Description
+     */
+    description?: string | null;
+};
+
+/**
+ * IdentityUpdate
+ */
+export type IdentityUpdate = {
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Description
+     */
+    description?: string | null;
+    /**
+     * Archived
+     */
+    archived?: boolean | null;
 };
 
 /**
@@ -733,6 +1439,98 @@ export type LlmProviderSyncModelsRequest = {
 export type LogicalTarget = 'agents' | 'skills' | 'mcp' | 'cli' | 'workspace';
 
 /**
+ * McpAgentBinding
+ */
+export type McpAgentBinding = {
+    /**
+     * Revision Id
+     */
+    revision_id: string;
+    /**
+     * Allowed Tools
+     */
+    allowed_tools?: Array<string>;
+};
+
+/**
+ * McpRevisionCreate
+ */
+export type McpRevisionCreate = {
+    transport: McpTransport;
+    /**
+     * Config
+     */
+    config: {
+        [key: string]: unknown;
+    };
+    /**
+     * Protocol Version
+     */
+    protocol_version?: string;
+};
+
+/**
+ * McpSecretWrite
+ */
+export type McpSecretWrite = {
+    /**
+     * Secret Inputs
+     */
+    secret_inputs: {
+        [key: string]: string;
+    };
+};
+
+/**
+ * McpTargetCreate
+ */
+export type McpTargetCreate = {
+    /**
+     * Runtime Profile Id
+     */
+    runtime_profile_id: string;
+    /**
+     * Secret Ref
+     */
+    secret_ref?: string | null;
+};
+
+/**
+ * McpTransport
+ */
+export type McpTransport = 'stdio' | 'streamable_http' | 'sse';
+
+/**
+ * McpValidationResult
+ */
+export type McpValidationResult = {
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Capability Fingerprint
+     */
+    capability_fingerprint: string;
+    /**
+     * Secret Fingerprint
+     */
+    secret_fingerprint?: string | null;
+    /**
+     * Tools
+     */
+    tools?: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Error
+     */
+    error?: {
+        [key: string]: unknown;
+    } | null;
+};
+
+/**
  * Message
  */
 export type Message = {
@@ -933,6 +1731,7 @@ export type NodeEnrollInput = {
      * Sdk Version
      */
     sdk_version?: string | null;
+    harness_capabilities: HarnessCapabilities;
     /**
      * Public Key
      */
@@ -993,6 +1792,12 @@ export type NodePublic = {
      * Sdk Version
      */
     sdk_version: string | null;
+    /**
+     * Harness Capabilities
+     */
+    harness_capabilities: {
+        [key: string]: unknown;
+    };
     /**
      * Online
      */
@@ -1122,6 +1927,12 @@ export type PlatformRuntimePublic = {
      * Compatibility Verified
      */
     compatibility_verified: boolean;
+    /**
+     * Harness Capabilities
+     */
+    harness_capabilities: {
+        [key: string]: unknown;
+    };
 };
 
 /**
@@ -1148,6 +1959,50 @@ export type PlatformRuntimeUpsert = {
     secret_inputs?: {
         [key: string]: string;
     } | null;
+};
+
+/**
+ * PluginDraftSave
+ */
+export type PluginDraftSave = {
+    /**
+     * Expected Revision
+     */
+    expected_revision: number;
+    /**
+     * Harness Type
+     */
+    harness_type?: string;
+    /**
+     * Adapter Schema Version
+     */
+    adapter_schema_version?: string;
+    /**
+     * Adapter Config
+     */
+    adapter_config?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Components
+     */
+    components?: Array<{
+        [key: string]: unknown;
+    }>;
+};
+
+/**
+ * PluginVersionCreate
+ */
+export type PluginVersionCreate = {
+    /**
+     * Draft Revision
+     */
+    draft_revision: number;
+    /**
+     * Version
+     */
+    version: string;
 };
 
 /**
@@ -1201,24 +2056,6 @@ export type ProviderModelSyncStatus = 'active' | 'stale' | 'sync_failed';
 export type ProviderValidationStatus = 'unverified' | 'success' | 'failed' | 'unsupported';
 
 /**
- * ReleaseCreate
- */
-export type ReleaseCreate = {
-    /**
-     * Artifact Id
-     */
-    artifact_id: string;
-    /**
-     * Node Ids
-     */
-    node_ids: Array<string>;
-    /**
-     * Valid For Seconds
-     */
-    valid_for_seconds?: number;
-};
-
-/**
  * ReleasePublic
  */
 export type ReleasePublic = {
@@ -1250,6 +2087,16 @@ export type ReleasePublic = {
 export type RuntimeRouteMode = 'platform_gateway' | 'direct_anthropic';
 
 /**
+ * SessionCreate
+ */
+export type SessionCreate = {
+    /**
+     * Runtime Agent Release Id
+     */
+    runtime_agent_release_id: string;
+};
+
+/**
  * SessionPublic
  */
 export type SessionPublic = {
@@ -1268,9 +2115,59 @@ export type SessionPublic = {
 };
 
 /**
+ * SkillInvokeInput
+ */
+export type SkillInvokeInput = {
+    /**
+     * Arguments
+     */
+    arguments?: {
+        [key: string]: unknown;
+    };
+};
+
+/**
+ * TargetCompatibility
+ */
+export type TargetCompatibility = {
+    /**
+     * Runtime Profile Id
+     */
+    runtime_profile_id: string;
+    /**
+     * Runtime Type
+     */
+    runtime_type: string;
+    /**
+     * Cli Version
+     */
+    cli_version?: string | null;
+    /**
+     * Sdk Version
+     */
+    sdk_version?: string | null;
+    /**
+     * Harness Version
+     */
+    harness_version?: string | null;
+    /**
+     * Compatible
+     */
+    compatible?: boolean | null;
+    /**
+     * Reason
+     */
+    reason?: string | null;
+};
+
+/**
  * TaskCreate
  */
 export type TaskCreate = {
+    /**
+     * Runtime Agent Release Id
+     */
+    runtime_agent_release_id: string;
     /**
      * Runtime Profile Id
      */
@@ -1298,7 +2195,7 @@ export type TaskKind = 'ordinary' | 'admin';
 /**
  * TaskStatus
  */
-export type TaskStatus = 'queued' | 'dispatched' | 'running' | 'cancelling' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted' | 'rejected';
+export type TaskStatus = 'queued' | 'dispatched' | 'running' | 'awaiting_approval' | 'cancelling' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted' | 'rejected';
 
 /**
  * TasksPublic
@@ -1327,6 +2224,22 @@ export type Token = {
      */
     token_type?: string;
 };
+
+/**
+ * ToolIntent
+ */
+export type ToolIntent = {
+    /**
+     * Tool Key
+     */
+    tool_key: string;
+    policy: ToolPolicy;
+};
+
+/**
+ * ToolPolicy
+ */
+export type ToolPolicy = 'inherit' | 'allow' | 'deny' | 'disabled' | 'require_approval';
 
 /**
  * UpdatePassword
@@ -1514,6 +2427,20 @@ export type ValidationError = {
 };
 
 /**
+ * ReleaseCreate
+ */
+export type AppAgentManagementReleaseRoutesReleaseCreate = {
+    /**
+     * Draft Revision
+     */
+    draft_revision: number;
+    /**
+     * Version
+     */
+    version: string;
+};
+
+/**
  * TaskPublic
  */
 export type AppApiRoutesAgentTasksTaskPublic = {
@@ -1559,6 +2486,24 @@ export type AppApiRoutesAgentTasksTaskPublic = {
      * Updated At
      */
     updated_at: string;
+};
+
+/**
+ * ReleaseCreate
+ */
+export type AppApiRoutesRuntimeArtifactsReleaseCreate = {
+    /**
+     * Artifact Id
+     */
+    artifact_id: string;
+    /**
+     * Node Ids
+     */
+    node_ids: Array<string>;
+    /**
+     * Valid For Seconds
+     */
+    valid_for_seconds?: number;
 };
 
 /**
@@ -1695,6 +2640,51 @@ export type RuntimeTasksReadTaskResponses = {
 };
 
 export type RuntimeTasksReadTaskResponse = RuntimeTasksReadTaskResponses[keyof RuntimeTasksReadTaskResponses];
+
+export type RuntimeTasksReadTaskEventsData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Task Id
+         */
+        task_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/runtime-tasks/{task_id}/events';
+};
+
+export type RuntimeTasksReadTaskEventsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeTasksReadTaskEventsError = RuntimeTasksReadTaskEventsErrors[keyof RuntimeTasksReadTaskEventsErrors];
+
+export type RuntimeTasksReadTaskEventsResponses = {
+    /**
+     * Response Runtime-Tasks-Read Task Events
+     *
+     * Successful Response
+     */
+    200: Array<{
+        [key: string]: unknown;
+    }>;
+};
+
+export type RuntimeTasksReadTaskEventsResponse = RuntimeTasksReadTaskEventsResponses[keyof RuntimeTasksReadTaskEventsResponses];
 
 export type RuntimeTasksCancelTaskData = {
     body?: never;
@@ -3193,7 +4183,7 @@ export type RuntimesValidatePlatformRuntimeResponses = {
 export type RuntimesValidatePlatformRuntimeResponse = RuntimesValidatePlatformRuntimeResponses[keyof RuntimesValidatePlatformRuntimeResponses];
 
 export type RuntimesCreatePlatformSessionData = {
-    body?: never;
+    body: SessionCreate;
     headers?: {
         /**
          * X-Namespace-Id
@@ -3268,6 +4258,51 @@ export type RuntimesCreateSessionMessageResponses = {
 };
 
 export type RuntimesCreateSessionMessageResponse = RuntimesCreateSessionMessageResponses[keyof RuntimesCreateSessionMessageResponses];
+
+export type RuntimesInvokeSessionSkillData = {
+    body: SkillInvokeInput;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+        /**
+         * Skill Slug
+         */
+        skill_slug: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/runtimes/sessions/{session_id}/skills/{skill_slug}/invoke';
+};
+
+export type RuntimesInvokeSessionSkillErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimesInvokeSessionSkillError = RuntimesInvokeSessionSkillErrors[keyof RuntimesInvokeSessionSkillErrors];
+
+export type RuntimesInvokeSessionSkillResponses = {
+    /**
+     * Successful Response
+     */
+    202: AppApiRoutesRuntimesTaskPublic;
+};
+
+export type RuntimesInvokeSessionSkillResponse = RuntimesInvokeSessionSkillResponses[keyof RuntimesInvokeSessionSkillResponses];
 
 export type RuntimesReadTaskData = {
     body?: never;
@@ -3479,6 +4514,41 @@ export type RuntimeInternalSigningProbeResponses = {
 };
 
 export type RuntimeInternalSigningProbeResponse = RuntimeInternalSigningProbeResponses[keyof RuntimeInternalSigningProbeResponses];
+
+export type RuntimeInternalReportPlatformCapabilitiesData = {
+    body: CapabilityReport;
+    headers?: {
+        /**
+         * X-Runtime-Token
+         */
+        'X-Runtime-Token'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/internal/runtime/capabilities';
+};
+
+export type RuntimeInternalReportPlatformCapabilitiesErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeInternalReportPlatformCapabilitiesError = RuntimeInternalReportPlatformCapabilitiesErrors[keyof RuntimeInternalReportPlatformCapabilitiesErrors];
+
+export type RuntimeInternalReportPlatformCapabilitiesResponses = {
+    /**
+     * Response Runtime-Internal-Report Platform Capabilities
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: number;
+    };
+};
+
+export type RuntimeInternalReportPlatformCapabilitiesResponse = RuntimeInternalReportPlatformCapabilitiesResponses[keyof RuntimeInternalReportPlatformCapabilitiesResponses];
 
 export type RuntimeInternalAppendEventsData = {
     body: EventBatch;
@@ -3757,7 +4827,7 @@ export type RuntimeArtifactsReadArtifactResponses = {
 export type RuntimeArtifactsReadArtifactResponse = RuntimeArtifactsReadArtifactResponses[keyof RuntimeArtifactsReadArtifactResponses];
 
 export type RuntimeArtifactsCreateReleaseData = {
-    body: ReleaseCreate;
+    body: AppApiRoutesRuntimeArtifactsReleaseCreate;
     headers?: {
         /**
          * X-Namespace-Id
@@ -4244,6 +5314,3476 @@ export type NodeEnrollmentEnrollNodeResponses = {
 };
 
 export type NodeEnrollmentEnrollNodeResponse = NodeEnrollmentEnrollNodeResponses[keyof NodeEnrollmentEnrollNodeResponses];
+
+export type AgentManagementListAgentsData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/agents';
+};
+
+export type AgentManagementListAgentsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentManagementListAgentsError = AgentManagementListAgentsErrors[keyof AgentManagementListAgentsErrors];
+
+export type AgentManagementListAgentsResponses = {
+    /**
+     * Successful Response
+     */
+    200: AgentsPublic;
+};
+
+export type AgentManagementListAgentsResponse = AgentManagementListAgentsResponses[keyof AgentManagementListAgentsResponses];
+
+export type AgentManagementCreateAgentEndpointData = {
+    body: AgentCreate;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/agents';
+};
+
+export type AgentManagementCreateAgentEndpointErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentManagementCreateAgentEndpointError = AgentManagementCreateAgentEndpointErrors[keyof AgentManagementCreateAgentEndpointErrors];
+
+export type AgentManagementCreateAgentEndpointResponses = {
+    /**
+     * Successful Response
+     */
+    201: AgentPublic;
+};
+
+export type AgentManagementCreateAgentEndpointResponse = AgentManagementCreateAgentEndpointResponses[keyof AgentManagementCreateAgentEndpointResponses];
+
+export type AgentManagementCopyAgentEndpointData = {
+    body: AgentCopy;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Agent Id
+         */
+        agent_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/agents/{agent_id}/copy';
+};
+
+export type AgentManagementCopyAgentEndpointErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentManagementCopyAgentEndpointError = AgentManagementCopyAgentEndpointErrors[keyof AgentManagementCopyAgentEndpointErrors];
+
+export type AgentManagementCopyAgentEndpointResponses = {
+    /**
+     * Successful Response
+     */
+    201: AgentPublic;
+};
+
+export type AgentManagementCopyAgentEndpointResponse = AgentManagementCopyAgentEndpointResponses[keyof AgentManagementCopyAgentEndpointResponses];
+
+export type AgentManagementDeleteAgentData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Agent Id
+         */
+        agent_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/agents/{agent_id}';
+};
+
+export type AgentManagementDeleteAgentErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentManagementDeleteAgentError = AgentManagementDeleteAgentErrors[keyof AgentManagementDeleteAgentErrors];
+
+export type AgentManagementDeleteAgentResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type AgentManagementDeleteAgentResponse = AgentManagementDeleteAgentResponses[keyof AgentManagementDeleteAgentResponses];
+
+export type AgentManagementReadAgentData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Agent Id
+         */
+        agent_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/agents/{agent_id}';
+};
+
+export type AgentManagementReadAgentErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentManagementReadAgentError = AgentManagementReadAgentErrors[keyof AgentManagementReadAgentErrors];
+
+export type AgentManagementReadAgentResponses = {
+    /**
+     * Successful Response
+     */
+    200: AgentPublic;
+};
+
+export type AgentManagementReadAgentResponse = AgentManagementReadAgentResponses[keyof AgentManagementReadAgentResponses];
+
+export type AgentManagementUpdateAgentData = {
+    body: AgentUpdate;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Agent Id
+         */
+        agent_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/agents/{agent_id}';
+};
+
+export type AgentManagementUpdateAgentErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentManagementUpdateAgentError = AgentManagementUpdateAgentErrors[keyof AgentManagementUpdateAgentErrors];
+
+export type AgentManagementUpdateAgentResponses = {
+    /**
+     * Successful Response
+     */
+    200: AgentPublic;
+};
+
+export type AgentManagementUpdateAgentResponse = AgentManagementUpdateAgentResponses[keyof AgentManagementUpdateAgentResponses];
+
+export type AgentManagementReadDraftData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Agent Id
+         */
+        agent_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/agents/{agent_id}/draft';
+};
+
+export type AgentManagementReadDraftErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentManagementReadDraftError = AgentManagementReadDraftErrors[keyof AgentManagementReadDraftErrors];
+
+export type AgentManagementReadDraftResponses = {
+    /**
+     * Successful Response
+     */
+    200: AgentDraftPublic;
+};
+
+export type AgentManagementReadDraftResponse = AgentManagementReadDraftResponses[keyof AgentManagementReadDraftResponses];
+
+export type AgentManagementSaveDraftEndpointData = {
+    body: DraftSave;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Agent Id
+         */
+        agent_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/agents/{agent_id}/draft';
+};
+
+export type AgentManagementSaveDraftEndpointErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentManagementSaveDraftEndpointError = AgentManagementSaveDraftEndpointErrors[keyof AgentManagementSaveDraftEndpointErrors];
+
+export type AgentManagementSaveDraftEndpointResponses = {
+    /**
+     * Successful Response
+     */
+    200: AgentDraftPublic;
+};
+
+export type AgentManagementSaveDraftEndpointResponse = AgentManagementSaveDraftEndpointResponses[keyof AgentManagementSaveDraftEndpointResponses];
+
+export type AgentManagementValidateDraftEndpointData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Agent Id
+         */
+        agent_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/agents/{agent_id}/draft/validate';
+};
+
+export type AgentManagementValidateDraftEndpointErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentManagementValidateDraftEndpointError = AgentManagementValidateDraftEndpointErrors[keyof AgentManagementValidateDraftEndpointErrors];
+
+export type AgentManagementValidateDraftEndpointResponses = {
+    /**
+     * Response Agent-Management-Validate Draft Endpoint
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentManagementValidateDraftEndpointResponse = AgentManagementValidateDraftEndpointResponses[keyof AgentManagementValidateDraftEndpointResponses];
+
+export type AgentManagementListProfilesData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/harness-profiles';
+};
+
+export type AgentManagementListProfilesErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentManagementListProfilesError = AgentManagementListProfilesErrors[keyof AgentManagementListProfilesErrors];
+
+export type AgentManagementListProfilesResponses = {
+    /**
+     * Successful Response
+     */
+    200: HarnessProfilesPublic;
+};
+
+export type AgentManagementListProfilesResponse = AgentManagementListProfilesResponses[keyof AgentManagementListProfilesResponses];
+
+export type AgentManagementCreateProfileData = {
+    body: HarnessProfileCreate;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/harness-profiles';
+};
+
+export type AgentManagementCreateProfileErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentManagementCreateProfileError = AgentManagementCreateProfileErrors[keyof AgentManagementCreateProfileErrors];
+
+export type AgentManagementCreateProfileResponses = {
+    /**
+     * Successful Response
+     */
+    201: HarnessProfilePublic;
+};
+
+export type AgentManagementCreateProfileResponse = AgentManagementCreateProfileResponses[keyof AgentManagementCreateProfileResponses];
+
+export type AgentManagementDeleteProfileData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Profile Id
+         */
+        profile_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/harness-profiles/{profile_id}';
+};
+
+export type AgentManagementDeleteProfileErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentManagementDeleteProfileError = AgentManagementDeleteProfileErrors[keyof AgentManagementDeleteProfileErrors];
+
+export type AgentManagementDeleteProfileResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type AgentManagementDeleteProfileResponse = AgentManagementDeleteProfileResponses[keyof AgentManagementDeleteProfileResponses];
+
+export type AgentManagementReadProfileData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Profile Id
+         */
+        profile_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/harness-profiles/{profile_id}';
+};
+
+export type AgentManagementReadProfileErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentManagementReadProfileError = AgentManagementReadProfileErrors[keyof AgentManagementReadProfileErrors];
+
+export type AgentManagementReadProfileResponses = {
+    /**
+     * Successful Response
+     */
+    200: HarnessProfilePublic;
+};
+
+export type AgentManagementReadProfileResponse = AgentManagementReadProfileResponses[keyof AgentManagementReadProfileResponses];
+
+export type AgentManagementUpdateProfileData = {
+    body: HarnessProfileUpdate;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Profile Id
+         */
+        profile_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/harness-profiles/{profile_id}';
+};
+
+export type AgentManagementUpdateProfileErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentManagementUpdateProfileError = AgentManagementUpdateProfileErrors[keyof AgentManagementUpdateProfileErrors];
+
+export type AgentManagementUpdateProfileResponses = {
+    /**
+     * Successful Response
+     */
+    200: HarnessProfilePublic;
+};
+
+export type AgentManagementUpdateProfileResponse = AgentManagementUpdateProfileResponses[keyof AgentManagementUpdateProfileResponses];
+
+export type AgentManagementHarnessCatalogData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/harnesses/catalog';
+};
+
+export type AgentManagementHarnessCatalogErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentManagementHarnessCatalogError = AgentManagementHarnessCatalogErrors[keyof AgentManagementHarnessCatalogErrors];
+
+export type AgentManagementHarnessCatalogResponses = {
+    /**
+     * Successful Response
+     */
+    200: HarnessCatalogPublic;
+};
+
+export type AgentManagementHarnessCatalogResponse = AgentManagementHarnessCatalogResponses[keyof AgentManagementHarnessCatalogResponses];
+
+export type AgentManagementEnvCatalogData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/harnesses/environment-catalog';
+};
+
+export type AgentManagementEnvCatalogErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentManagementEnvCatalogError = AgentManagementEnvCatalogErrors[keyof AgentManagementEnvCatalogErrors];
+
+export type AgentManagementEnvCatalogResponses = {
+    /**
+     * Successful Response
+     */
+    200: EnvironmentCatalogPublic;
+};
+
+export type AgentManagementEnvCatalogResponse = AgentManagementEnvCatalogResponses[keyof AgentManagementEnvCatalogResponses];
+
+export type AgentCapabilitiesGetAgentCapabilitiesData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Agent Id
+         */
+        agent_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/agents/{agent_id}/draft/capabilities';
+};
+
+export type AgentCapabilitiesGetAgentCapabilitiesErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesGetAgentCapabilitiesError = AgentCapabilitiesGetAgentCapabilitiesErrors[keyof AgentCapabilitiesGetAgentCapabilitiesErrors];
+
+export type AgentCapabilitiesGetAgentCapabilitiesResponses = {
+    /**
+     * Response Agent-Capabilities-Get Agent Capabilities
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesGetAgentCapabilitiesResponse = AgentCapabilitiesGetAgentCapabilitiesResponses[keyof AgentCapabilitiesGetAgentCapabilitiesResponses];
+
+export type AgentCapabilitiesListSkillsData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/skills';
+};
+
+export type AgentCapabilitiesListSkillsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesListSkillsError = AgentCapabilitiesListSkillsErrors[keyof AgentCapabilitiesListSkillsErrors];
+
+export type AgentCapabilitiesListSkillsResponses = {
+    /**
+     * Response Agent-Capabilities-List Skills
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesListSkillsResponse = AgentCapabilitiesListSkillsResponses[keyof AgentCapabilitiesListSkillsResponses];
+
+export type AgentCapabilitiesCreateSkillData = {
+    body: IdentityCreate;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/skills';
+};
+
+export type AgentCapabilitiesCreateSkillErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesCreateSkillError = AgentCapabilitiesCreateSkillErrors[keyof AgentCapabilitiesCreateSkillErrors];
+
+export type AgentCapabilitiesCreateSkillResponses = {
+    /**
+     * Response Agent-Capabilities-Create Skill
+     *
+     * Successful Response
+     */
+    201: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesCreateSkillResponse = AgentCapabilitiesCreateSkillResponses[keyof AgentCapabilitiesCreateSkillResponses];
+
+export type AgentCapabilitiesDeleteSkillData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Skill Id
+         */
+        skill_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/skills/{skill_id}';
+};
+
+export type AgentCapabilitiesDeleteSkillErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesDeleteSkillError = AgentCapabilitiesDeleteSkillErrors[keyof AgentCapabilitiesDeleteSkillErrors];
+
+export type AgentCapabilitiesDeleteSkillResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type AgentCapabilitiesDeleteSkillResponse = AgentCapabilitiesDeleteSkillResponses[keyof AgentCapabilitiesDeleteSkillResponses];
+
+export type AgentCapabilitiesGetSkillData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Skill Id
+         */
+        skill_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/skills/{skill_id}';
+};
+
+export type AgentCapabilitiesGetSkillErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesGetSkillError = AgentCapabilitiesGetSkillErrors[keyof AgentCapabilitiesGetSkillErrors];
+
+export type AgentCapabilitiesGetSkillResponses = {
+    /**
+     * Response Agent-Capabilities-Get Skill
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesGetSkillResponse = AgentCapabilitiesGetSkillResponses[keyof AgentCapabilitiesGetSkillResponses];
+
+export type AgentCapabilitiesUpdateSkillData = {
+    body: IdentityUpdate;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Skill Id
+         */
+        skill_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/skills/{skill_id}';
+};
+
+export type AgentCapabilitiesUpdateSkillErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesUpdateSkillError = AgentCapabilitiesUpdateSkillErrors[keyof AgentCapabilitiesUpdateSkillErrors];
+
+export type AgentCapabilitiesUpdateSkillResponses = {
+    /**
+     * Response Agent-Capabilities-Update Skill
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesUpdateSkillResponse = AgentCapabilitiesUpdateSkillResponses[keyof AgentCapabilitiesUpdateSkillResponses];
+
+export type AgentCapabilitiesListSkillVersionsData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Skill Id
+         */
+        skill_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/skills/{skill_id}/versions';
+};
+
+export type AgentCapabilitiesListSkillVersionsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesListSkillVersionsError = AgentCapabilitiesListSkillVersionsErrors[keyof AgentCapabilitiesListSkillVersionsErrors];
+
+export type AgentCapabilitiesListSkillVersionsResponses = {
+    /**
+     * Response Agent-Capabilities-List Skill Versions
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesListSkillVersionsResponse = AgentCapabilitiesListSkillVersionsResponses[keyof AgentCapabilitiesListSkillVersionsResponses];
+
+export type AgentCapabilitiesUploadSkillVersionData = {
+    body: BodyAgentCapabilitiesUploadSkillVersion;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Skill Id
+         */
+        skill_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/skills/{skill_id}/versions';
+};
+
+export type AgentCapabilitiesUploadSkillVersionErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesUploadSkillVersionError = AgentCapabilitiesUploadSkillVersionErrors[keyof AgentCapabilitiesUploadSkillVersionErrors];
+
+export type AgentCapabilitiesUploadSkillVersionResponses = {
+    /**
+     * Response Agent-Capabilities-Upload Skill Version
+     *
+     * Successful Response
+     */
+    201: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesUploadSkillVersionResponse = AgentCapabilitiesUploadSkillVersionResponses[keyof AgentCapabilitiesUploadSkillVersionResponses];
+
+export type AgentCapabilitiesGetSkillVersionData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Skill Id
+         */
+        skill_id: string;
+        /**
+         * Version
+         */
+        version: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/skills/{skill_id}/versions/{version}';
+};
+
+export type AgentCapabilitiesGetSkillVersionErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesGetSkillVersionError = AgentCapabilitiesGetSkillVersionErrors[keyof AgentCapabilitiesGetSkillVersionErrors];
+
+export type AgentCapabilitiesGetSkillVersionResponses = {
+    /**
+     * Response Agent-Capabilities-Get Skill Version
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesGetSkillVersionResponse = AgentCapabilitiesGetSkillVersionResponses[keyof AgentCapabilitiesGetSkillVersionResponses];
+
+export type AgentCapabilitiesDeprecateSkillVersionData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Skill Id
+         */
+        skill_id: string;
+        /**
+         * Version
+         */
+        version: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/skills/{skill_id}/versions/{version}/deprecate';
+};
+
+export type AgentCapabilitiesDeprecateSkillVersionErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesDeprecateSkillVersionError = AgentCapabilitiesDeprecateSkillVersionErrors[keyof AgentCapabilitiesDeprecateSkillVersionErrors];
+
+export type AgentCapabilitiesDeprecateSkillVersionResponses = {
+    /**
+     * Response Agent-Capabilities-Deprecate Skill Version
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesDeprecateSkillVersionResponse = AgentCapabilitiesDeprecateSkillVersionResponses[keyof AgentCapabilitiesDeprecateSkillVersionResponses];
+
+export type AgentCapabilitiesToolCatalogData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/tools/catalog';
+};
+
+export type AgentCapabilitiesToolCatalogErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesToolCatalogError = AgentCapabilitiesToolCatalogErrors[keyof AgentCapabilitiesToolCatalogErrors];
+
+export type AgentCapabilitiesToolCatalogResponses = {
+    /**
+     * Response Agent-Capabilities-Tool Catalog
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesToolCatalogResponse = AgentCapabilitiesToolCatalogResponses[keyof AgentCapabilitiesToolCatalogResponses];
+
+export type AgentCapabilitiesSetNamespaceToolPolicyData = {
+    body: ToolIntent;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Tool Key
+         */
+        tool_key: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/tools/{tool_key}/namespace-policy';
+};
+
+export type AgentCapabilitiesSetNamespaceToolPolicyErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesSetNamespaceToolPolicyError = AgentCapabilitiesSetNamespaceToolPolicyErrors[keyof AgentCapabilitiesSetNamespaceToolPolicyErrors];
+
+export type AgentCapabilitiesSetNamespaceToolPolicyResponses = {
+    /**
+     * Response Agent-Capabilities-Set Namespace Tool Policy
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesSetNamespaceToolPolicyResponse = AgentCapabilitiesSetNamespaceToolPolicyResponses[keyof AgentCapabilitiesSetNamespaceToolPolicyResponses];
+
+export type AgentCapabilitiesSetAgentSkillsData = {
+    body: AgentSkillBindings;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Agent Id
+         */
+        agent_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/agents/{agent_id}/draft/skills';
+};
+
+export type AgentCapabilitiesSetAgentSkillsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesSetAgentSkillsError = AgentCapabilitiesSetAgentSkillsErrors[keyof AgentCapabilitiesSetAgentSkillsErrors];
+
+export type AgentCapabilitiesSetAgentSkillsResponses = {
+    /**
+     * Response Agent-Capabilities-Set Agent Skills
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesSetAgentSkillsResponse = AgentCapabilitiesSetAgentSkillsResponses[keyof AgentCapabilitiesSetAgentSkillsResponses];
+
+export type AgentCapabilitiesSetAgentToolsData = {
+    body: AgentToolBindings;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Agent Id
+         */
+        agent_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/agents/{agent_id}/draft/tools';
+};
+
+export type AgentCapabilitiesSetAgentToolsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesSetAgentToolsError = AgentCapabilitiesSetAgentToolsErrors[keyof AgentCapabilitiesSetAgentToolsErrors];
+
+export type AgentCapabilitiesSetAgentToolsResponses = {
+    /**
+     * Response Agent-Capabilities-Set Agent Tools
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesSetAgentToolsResponse = AgentCapabilitiesSetAgentToolsResponses[keyof AgentCapabilitiesSetAgentToolsResponses];
+
+export type AgentCapabilitiesListMcpServersData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/mcp-servers';
+};
+
+export type AgentCapabilitiesListMcpServersErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesListMcpServersError = AgentCapabilitiesListMcpServersErrors[keyof AgentCapabilitiesListMcpServersErrors];
+
+export type AgentCapabilitiesListMcpServersResponses = {
+    /**
+     * Response Agent-Capabilities-List Mcp Servers
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesListMcpServersResponse = AgentCapabilitiesListMcpServersResponses[keyof AgentCapabilitiesListMcpServersResponses];
+
+export type AgentCapabilitiesCreateMcpServerData = {
+    body: IdentityCreate;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/mcp-servers';
+};
+
+export type AgentCapabilitiesCreateMcpServerErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesCreateMcpServerError = AgentCapabilitiesCreateMcpServerErrors[keyof AgentCapabilitiesCreateMcpServerErrors];
+
+export type AgentCapabilitiesCreateMcpServerResponses = {
+    /**
+     * Response Agent-Capabilities-Create Mcp Server
+     *
+     * Successful Response
+     */
+    201: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesCreateMcpServerResponse = AgentCapabilitiesCreateMcpServerResponses[keyof AgentCapabilitiesCreateMcpServerResponses];
+
+export type AgentCapabilitiesDeleteMcpServerData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Server Id
+         */
+        server_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/mcp-servers/{server_id}';
+};
+
+export type AgentCapabilitiesDeleteMcpServerErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesDeleteMcpServerError = AgentCapabilitiesDeleteMcpServerErrors[keyof AgentCapabilitiesDeleteMcpServerErrors];
+
+export type AgentCapabilitiesDeleteMcpServerResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type AgentCapabilitiesDeleteMcpServerResponse = AgentCapabilitiesDeleteMcpServerResponses[keyof AgentCapabilitiesDeleteMcpServerResponses];
+
+export type AgentCapabilitiesGetMcpServerData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Server Id
+         */
+        server_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/mcp-servers/{server_id}';
+};
+
+export type AgentCapabilitiesGetMcpServerErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesGetMcpServerError = AgentCapabilitiesGetMcpServerErrors[keyof AgentCapabilitiesGetMcpServerErrors];
+
+export type AgentCapabilitiesGetMcpServerResponses = {
+    /**
+     * Response Agent-Capabilities-Get Mcp Server
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesGetMcpServerResponse = AgentCapabilitiesGetMcpServerResponses[keyof AgentCapabilitiesGetMcpServerResponses];
+
+export type AgentCapabilitiesUpdateMcpServerData = {
+    body: IdentityUpdate;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Server Id
+         */
+        server_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/mcp-servers/{server_id}';
+};
+
+export type AgentCapabilitiesUpdateMcpServerErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesUpdateMcpServerError = AgentCapabilitiesUpdateMcpServerErrors[keyof AgentCapabilitiesUpdateMcpServerErrors];
+
+export type AgentCapabilitiesUpdateMcpServerResponses = {
+    /**
+     * Response Agent-Capabilities-Update Mcp Server
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesUpdateMcpServerResponse = AgentCapabilitiesUpdateMcpServerResponses[keyof AgentCapabilitiesUpdateMcpServerResponses];
+
+export type AgentCapabilitiesListMcpRevisionsData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Server Id
+         */
+        server_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/mcp-servers/{server_id}/revisions';
+};
+
+export type AgentCapabilitiesListMcpRevisionsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesListMcpRevisionsError = AgentCapabilitiesListMcpRevisionsErrors[keyof AgentCapabilitiesListMcpRevisionsErrors];
+
+export type AgentCapabilitiesListMcpRevisionsResponses = {
+    /**
+     * Response Agent-Capabilities-List Mcp Revisions
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesListMcpRevisionsResponse = AgentCapabilitiesListMcpRevisionsResponses[keyof AgentCapabilitiesListMcpRevisionsResponses];
+
+export type AgentCapabilitiesCreateMcpRevisionData = {
+    body: McpRevisionCreate;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Server Id
+         */
+        server_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/mcp-servers/{server_id}/revisions';
+};
+
+export type AgentCapabilitiesCreateMcpRevisionErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesCreateMcpRevisionError = AgentCapabilitiesCreateMcpRevisionErrors[keyof AgentCapabilitiesCreateMcpRevisionErrors];
+
+export type AgentCapabilitiesCreateMcpRevisionResponses = {
+    /**
+     * Response Agent-Capabilities-Create Mcp Revision
+     *
+     * Successful Response
+     */
+    201: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesCreateMcpRevisionResponse = AgentCapabilitiesCreateMcpRevisionResponses[keyof AgentCapabilitiesCreateMcpRevisionResponses];
+
+export type AgentCapabilitiesGetMcpRevisionData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Server Id
+         */
+        server_id: string;
+        /**
+         * Revision
+         */
+        revision: number;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/mcp-servers/{server_id}/revisions/{revision}';
+};
+
+export type AgentCapabilitiesGetMcpRevisionErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesGetMcpRevisionError = AgentCapabilitiesGetMcpRevisionErrors[keyof AgentCapabilitiesGetMcpRevisionErrors];
+
+export type AgentCapabilitiesGetMcpRevisionResponses = {
+    /**
+     * Response Agent-Capabilities-Get Mcp Revision
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesGetMcpRevisionResponse = AgentCapabilitiesGetMcpRevisionResponses[keyof AgentCapabilitiesGetMcpRevisionResponses];
+
+export type AgentCapabilitiesCreateMcpTargetData = {
+    body: McpTargetCreate;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Revision Id
+         */
+        revision_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/mcp-revisions/{revision_id}/targets';
+};
+
+export type AgentCapabilitiesCreateMcpTargetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesCreateMcpTargetError = AgentCapabilitiesCreateMcpTargetErrors[keyof AgentCapabilitiesCreateMcpTargetErrors];
+
+export type AgentCapabilitiesCreateMcpTargetResponses = {
+    /**
+     * Response Agent-Capabilities-Create Mcp Target
+     *
+     * Successful Response
+     */
+    201: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesCreateMcpTargetResponse = AgentCapabilitiesCreateMcpTargetResponses[keyof AgentCapabilitiesCreateMcpTargetResponses];
+
+export type AgentCapabilitiesPutMcpSecretData = {
+    body: McpSecretWrite;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Target Id
+         */
+        target_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/mcp-targets/{target_id}/secret';
+};
+
+export type AgentCapabilitiesPutMcpSecretErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesPutMcpSecretError = AgentCapabilitiesPutMcpSecretErrors[keyof AgentCapabilitiesPutMcpSecretErrors];
+
+export type AgentCapabilitiesPutMcpSecretResponses = {
+    /**
+     * Response Agent-Capabilities-Put Mcp Secret
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesPutMcpSecretResponse = AgentCapabilitiesPutMcpSecretResponses[keyof AgentCapabilitiesPutMcpSecretResponses];
+
+export type AgentCapabilitiesValidateMcpTargetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Target Id
+         */
+        target_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/mcp-targets/{target_id}/validate';
+};
+
+export type AgentCapabilitiesValidateMcpTargetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesValidateMcpTargetError = AgentCapabilitiesValidateMcpTargetErrors[keyof AgentCapabilitiesValidateMcpTargetErrors];
+
+export type AgentCapabilitiesValidateMcpTargetResponses = {
+    /**
+     * Response Agent-Capabilities-Validate Mcp Target
+     *
+     * Successful Response
+     */
+    202: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesValidateMcpTargetResponse = AgentCapabilitiesValidateMcpTargetResponses[keyof AgentCapabilitiesValidateMcpTargetResponses];
+
+export type AgentCapabilitiesListMcpValidationsData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Target Id
+         */
+        target_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/mcp-targets/{target_id}/validations';
+};
+
+export type AgentCapabilitiesListMcpValidationsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesListMcpValidationsError = AgentCapabilitiesListMcpValidationsErrors[keyof AgentCapabilitiesListMcpValidationsErrors];
+
+export type AgentCapabilitiesListMcpValidationsResponses = {
+    /**
+     * Response Agent-Capabilities-List Mcp Validations
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesListMcpValidationsResponse = AgentCapabilitiesListMcpValidationsResponses[keyof AgentCapabilitiesListMcpValidationsResponses];
+
+export type AgentCapabilitiesGetMcpRuntimeData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Target Id
+         */
+        target_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/mcp-targets/{target_id}/runtime';
+};
+
+export type AgentCapabilitiesGetMcpRuntimeErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesGetMcpRuntimeError = AgentCapabilitiesGetMcpRuntimeErrors[keyof AgentCapabilitiesGetMcpRuntimeErrors];
+
+export type AgentCapabilitiesGetMcpRuntimeResponses = {
+    /**
+     * Response Agent-Capabilities-Get Mcp Runtime
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesGetMcpRuntimeResponse = AgentCapabilitiesGetMcpRuntimeResponses[keyof AgentCapabilitiesGetMcpRuntimeResponses];
+
+export type AgentCapabilitiesRestartMcpRuntimeData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Target Id
+         */
+        target_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/mcp-targets/{target_id}/runtime/restart';
+};
+
+export type AgentCapabilitiesRestartMcpRuntimeErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesRestartMcpRuntimeError = AgentCapabilitiesRestartMcpRuntimeErrors[keyof AgentCapabilitiesRestartMcpRuntimeErrors];
+
+export type AgentCapabilitiesRestartMcpRuntimeResponses = {
+    /**
+     * Response Agent-Capabilities-Restart Mcp Runtime
+     *
+     * Successful Response
+     */
+    202: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesRestartMcpRuntimeResponse = AgentCapabilitiesRestartMcpRuntimeResponses[keyof AgentCapabilitiesRestartMcpRuntimeResponses];
+
+export type AgentCapabilitiesSetAgentMcpData = {
+    body: AgentMcpBindings;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Agent Id
+         */
+        agent_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/agents/{agent_id}/draft/mcp';
+};
+
+export type AgentCapabilitiesSetAgentMcpErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesSetAgentMcpError = AgentCapabilitiesSetAgentMcpErrors[keyof AgentCapabilitiesSetAgentMcpErrors];
+
+export type AgentCapabilitiesSetAgentMcpResponses = {
+    /**
+     * Response Agent-Capabilities-Set Agent Mcp
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesSetAgentMcpResponse = AgentCapabilitiesSetAgentMcpResponses[keyof AgentCapabilitiesSetAgentMcpResponses];
+
+export type AgentCapabilitiesListPluginsData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/plugins';
+};
+
+export type AgentCapabilitiesListPluginsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesListPluginsError = AgentCapabilitiesListPluginsErrors[keyof AgentCapabilitiesListPluginsErrors];
+
+export type AgentCapabilitiesListPluginsResponses = {
+    /**
+     * Response Agent-Capabilities-List Plugins
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesListPluginsResponse = AgentCapabilitiesListPluginsResponses[keyof AgentCapabilitiesListPluginsResponses];
+
+export type AgentCapabilitiesCreatePluginData = {
+    body: IdentityCreate;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/plugins';
+};
+
+export type AgentCapabilitiesCreatePluginErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesCreatePluginError = AgentCapabilitiesCreatePluginErrors[keyof AgentCapabilitiesCreatePluginErrors];
+
+export type AgentCapabilitiesCreatePluginResponses = {
+    /**
+     * Response Agent-Capabilities-Create Plugin
+     *
+     * Successful Response
+     */
+    201: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesCreatePluginResponse = AgentCapabilitiesCreatePluginResponses[keyof AgentCapabilitiesCreatePluginResponses];
+
+export type AgentCapabilitiesGetPluginData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Plugin Id
+         */
+        plugin_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/plugins/{plugin_id}';
+};
+
+export type AgentCapabilitiesGetPluginErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesGetPluginError = AgentCapabilitiesGetPluginErrors[keyof AgentCapabilitiesGetPluginErrors];
+
+export type AgentCapabilitiesGetPluginResponses = {
+    /**
+     * Response Agent-Capabilities-Get Plugin
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesGetPluginResponse = AgentCapabilitiesGetPluginResponses[keyof AgentCapabilitiesGetPluginResponses];
+
+export type AgentCapabilitiesUpdatePluginData = {
+    body: IdentityUpdate;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Plugin Id
+         */
+        plugin_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/plugins/{plugin_id}';
+};
+
+export type AgentCapabilitiesUpdatePluginErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesUpdatePluginError = AgentCapabilitiesUpdatePluginErrors[keyof AgentCapabilitiesUpdatePluginErrors];
+
+export type AgentCapabilitiesUpdatePluginResponses = {
+    /**
+     * Response Agent-Capabilities-Update Plugin
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesUpdatePluginResponse = AgentCapabilitiesUpdatePluginResponses[keyof AgentCapabilitiesUpdatePluginResponses];
+
+export type AgentCapabilitiesGetPluginDraftData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Plugin Id
+         */
+        plugin_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/plugins/{plugin_id}/draft';
+};
+
+export type AgentCapabilitiesGetPluginDraftErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesGetPluginDraftError = AgentCapabilitiesGetPluginDraftErrors[keyof AgentCapabilitiesGetPluginDraftErrors];
+
+export type AgentCapabilitiesGetPluginDraftResponses = {
+    /**
+     * Response Agent-Capabilities-Get Plugin Draft
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesGetPluginDraftResponse = AgentCapabilitiesGetPluginDraftResponses[keyof AgentCapabilitiesGetPluginDraftResponses];
+
+export type AgentCapabilitiesSavePluginDraftData = {
+    body: PluginDraftSave;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Plugin Id
+         */
+        plugin_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/plugins/{plugin_id}/draft';
+};
+
+export type AgentCapabilitiesSavePluginDraftErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesSavePluginDraftError = AgentCapabilitiesSavePluginDraftErrors[keyof AgentCapabilitiesSavePluginDraftErrors];
+
+export type AgentCapabilitiesSavePluginDraftResponses = {
+    /**
+     * Response Agent-Capabilities-Save Plugin Draft
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesSavePluginDraftResponse = AgentCapabilitiesSavePluginDraftResponses[keyof AgentCapabilitiesSavePluginDraftResponses];
+
+export type AgentCapabilitiesValidatePluginDraftData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Plugin Id
+         */
+        plugin_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/plugins/{plugin_id}/draft/validate';
+};
+
+export type AgentCapabilitiesValidatePluginDraftErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesValidatePluginDraftError = AgentCapabilitiesValidatePluginDraftErrors[keyof AgentCapabilitiesValidatePluginDraftErrors];
+
+export type AgentCapabilitiesValidatePluginDraftResponses = {
+    /**
+     * Response Agent-Capabilities-Validate Plugin Draft
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesValidatePluginDraftResponse = AgentCapabilitiesValidatePluginDraftResponses[keyof AgentCapabilitiesValidatePluginDraftResponses];
+
+export type AgentCapabilitiesListPluginVersionsData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Plugin Id
+         */
+        plugin_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/plugins/{plugin_id}/versions';
+};
+
+export type AgentCapabilitiesListPluginVersionsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesListPluginVersionsError = AgentCapabilitiesListPluginVersionsErrors[keyof AgentCapabilitiesListPluginVersionsErrors];
+
+export type AgentCapabilitiesListPluginVersionsResponses = {
+    /**
+     * Response Agent-Capabilities-List Plugin Versions
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesListPluginVersionsResponse = AgentCapabilitiesListPluginVersionsResponses[keyof AgentCapabilitiesListPluginVersionsResponses];
+
+export type AgentCapabilitiesCreatePluginVersionData = {
+    body: PluginVersionCreate;
+    headers?: {
+        /**
+         * Idempotency-Key
+         */
+        'Idempotency-Key'?: string | null;
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Plugin Id
+         */
+        plugin_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/plugins/{plugin_id}/versions';
+};
+
+export type AgentCapabilitiesCreatePluginVersionErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesCreatePluginVersionError = AgentCapabilitiesCreatePluginVersionErrors[keyof AgentCapabilitiesCreatePluginVersionErrors];
+
+export type AgentCapabilitiesCreatePluginVersionResponses = {
+    /**
+     * Response Agent-Capabilities-Create Plugin Version
+     *
+     * Successful Response
+     */
+    201: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesCreatePluginVersionResponse = AgentCapabilitiesCreatePluginVersionResponses[keyof AgentCapabilitiesCreatePluginVersionResponses];
+
+export type AgentCapabilitiesGetPluginVersionData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Plugin Id
+         */
+        plugin_id: string;
+        /**
+         * Version
+         */
+        version: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/plugins/{plugin_id}/versions/{version}';
+};
+
+export type AgentCapabilitiesGetPluginVersionErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesGetPluginVersionError = AgentCapabilitiesGetPluginVersionErrors[keyof AgentCapabilitiesGetPluginVersionErrors];
+
+export type AgentCapabilitiesGetPluginVersionResponses = {
+    /**
+     * Response Agent-Capabilities-Get Plugin Version
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesGetPluginVersionResponse = AgentCapabilitiesGetPluginVersionResponses[keyof AgentCapabilitiesGetPluginVersionResponses];
+
+export type AgentCapabilitiesDeprecatePluginVersionData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Plugin Id
+         */
+        plugin_id: string;
+        /**
+         * Version
+         */
+        version: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/plugins/{plugin_id}/versions/{version}/deprecate';
+};
+
+export type AgentCapabilitiesDeprecatePluginVersionErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesDeprecatePluginVersionError = AgentCapabilitiesDeprecatePluginVersionErrors[keyof AgentCapabilitiesDeprecatePluginVersionErrors];
+
+export type AgentCapabilitiesDeprecatePluginVersionResponses = {
+    /**
+     * Response Agent-Capabilities-Deprecate Plugin Version
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesDeprecatePluginVersionResponse = AgentCapabilitiesDeprecatePluginVersionResponses[keyof AgentCapabilitiesDeprecatePluginVersionResponses];
+
+export type AgentCapabilitiesSetAgentPluginsData = {
+    body: AgentPluginBindings;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Agent Id
+         */
+        agent_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/agents/{agent_id}/draft/plugins';
+};
+
+export type AgentCapabilitiesSetAgentPluginsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesSetAgentPluginsError = AgentCapabilitiesSetAgentPluginsErrors[keyof AgentCapabilitiesSetAgentPluginsErrors];
+
+export type AgentCapabilitiesSetAgentPluginsResponses = {
+    /**
+     * Response Agent-Capabilities-Set Agent Plugins
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesSetAgentPluginsResponse = AgentCapabilitiesSetAgentPluginsResponses[keyof AgentCapabilitiesSetAgentPluginsResponses];
+
+export type NodeMcpNodeMcpValidationResultData = {
+    body: McpValidationResult;
+    headers?: {
+        /**
+         * X-Runtime-Token
+         */
+        'X-Runtime-Token'?: string | null;
+    };
+    path: {
+        /**
+         * Attempt Id
+         */
+        attempt_id: string;
+    };
+    query?: never;
+    url: '/api/v1/node/mcp-validations/{attempt_id}/result';
+};
+
+export type NodeMcpNodeMcpValidationResultErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type NodeMcpNodeMcpValidationResultError = NodeMcpNodeMcpValidationResultErrors[keyof NodeMcpNodeMcpValidationResultErrors];
+
+export type NodeMcpNodeMcpValidationResultResponses = {
+    /**
+     * Response Node-Mcp-Node Mcp Validation Result
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type NodeMcpNodeMcpValidationResultResponse = NodeMcpNodeMcpValidationResultResponses[keyof NodeMcpNodeMcpValidationResultResponses];
+
+export type InternalMcpClaimPlatformMcpValidationData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Runtime-Token
+         */
+        'X-Runtime-Token'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/internal/runtime/mcp-validations/claim';
+};
+
+export type InternalMcpClaimPlatformMcpValidationErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type InternalMcpClaimPlatformMcpValidationError = InternalMcpClaimPlatformMcpValidationErrors[keyof InternalMcpClaimPlatformMcpValidationErrors];
+
+export type InternalMcpClaimPlatformMcpValidationResponses = {
+    /**
+     * Response Internal-Mcp-Claim Platform Mcp Validation
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    } | null;
+};
+
+export type InternalMcpClaimPlatformMcpValidationResponse = InternalMcpClaimPlatformMcpValidationResponses[keyof InternalMcpClaimPlatformMcpValidationResponses];
+
+export type InternalMcpReportPlatformMcpValidationData = {
+    body: McpValidationResult;
+    headers?: {
+        /**
+         * X-Runtime-Token
+         */
+        'X-Runtime-Token'?: string | null;
+    };
+    path: {
+        /**
+         * Attempt Id
+         */
+        attempt_id: string;
+    };
+    query?: never;
+    url: '/api/v1/internal/runtime/mcp-validations/{attempt_id}/result';
+};
+
+export type InternalMcpReportPlatformMcpValidationErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type InternalMcpReportPlatformMcpValidationError = InternalMcpReportPlatformMcpValidationErrors[keyof InternalMcpReportPlatformMcpValidationErrors];
+
+export type InternalMcpReportPlatformMcpValidationResponses = {
+    /**
+     * Response Internal-Mcp-Report Platform Mcp Validation
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type InternalMcpReportPlatformMcpValidationResponse = InternalMcpReportPlatformMcpValidationResponses[keyof InternalMcpReportPlatformMcpValidationResponses];
+
+export type AgentReleasesListAgentReleasesData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Agent Id
+         */
+        agent_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/agents/{agent_id}/releases';
+};
+
+export type AgentReleasesListAgentReleasesErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentReleasesListAgentReleasesError = AgentReleasesListAgentReleasesErrors[keyof AgentReleasesListAgentReleasesErrors];
+
+export type AgentReleasesListAgentReleasesResponses = {
+    /**
+     * Response Agent-Releases-List Agent Releases
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentReleasesListAgentReleasesResponse = AgentReleasesListAgentReleasesResponses[keyof AgentReleasesListAgentReleasesResponses];
+
+export type AgentReleasesCreateAgentReleaseData = {
+    body: AppAgentManagementReleaseRoutesReleaseCreate;
+    headers?: {
+        /**
+         * Idempotency-Key
+         */
+        'Idempotency-Key'?: string | null;
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Agent Id
+         */
+        agent_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/agents/{agent_id}/releases';
+};
+
+export type AgentReleasesCreateAgentReleaseErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentReleasesCreateAgentReleaseError = AgentReleasesCreateAgentReleaseErrors[keyof AgentReleasesCreateAgentReleaseErrors];
+
+export type AgentReleasesCreateAgentReleaseResponses = {
+    /**
+     * Response Agent-Releases-Create Agent Release
+     *
+     * Successful Response
+     */
+    201: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentReleasesCreateAgentReleaseResponse = AgentReleasesCreateAgentReleaseResponses[keyof AgentReleasesCreateAgentReleaseResponses];
+
+export type AgentReleasesGetAgentReleaseData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Release Id
+         */
+        release_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/agent-releases/{release_id}';
+};
+
+export type AgentReleasesGetAgentReleaseErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentReleasesGetAgentReleaseError = AgentReleasesGetAgentReleaseErrors[keyof AgentReleasesGetAgentReleaseErrors];
+
+export type AgentReleasesGetAgentReleaseResponses = {
+    /**
+     * Response Agent-Releases-Get Agent Release
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentReleasesGetAgentReleaseResponse = AgentReleasesGetAgentReleaseResponses[keyof AgentReleasesGetAgentReleaseResponses];
+
+export type AgentReleasesGetResolvedSpecData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Release Id
+         */
+        release_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/agent-releases/{release_id}/resolved-spec';
+};
+
+export type AgentReleasesGetResolvedSpecErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentReleasesGetResolvedSpecError = AgentReleasesGetResolvedSpecErrors[keyof AgentReleasesGetResolvedSpecErrors];
+
+export type AgentReleasesGetResolvedSpecResponses = {
+    /**
+     * Response Agent-Releases-Get Resolved Spec
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentReleasesGetResolvedSpecResponse = AgentReleasesGetResolvedSpecResponses[keyof AgentReleasesGetResolvedSpecResponses];
+
+export type AgentReleasesPrecheckActivationData = {
+    body: ActivationCreate;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Release Id
+         */
+        release_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/agent-releases/{release_id}/activations/precheck';
+};
+
+export type AgentReleasesPrecheckActivationErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentReleasesPrecheckActivationError = AgentReleasesPrecheckActivationErrors[keyof AgentReleasesPrecheckActivationErrors];
+
+export type AgentReleasesPrecheckActivationResponses = {
+    /**
+     * Response Agent-Releases-Precheck Activation
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentReleasesPrecheckActivationResponse = AgentReleasesPrecheckActivationResponses[keyof AgentReleasesPrecheckActivationResponses];
+
+export type AgentReleasesActivateReleaseData = {
+    body: ActivationCreate;
+    headers?: {
+        /**
+         * Idempotency-Key
+         */
+        'Idempotency-Key'?: string | null;
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Release Id
+         */
+        release_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/agent-releases/{release_id}/activations';
+};
+
+export type AgentReleasesActivateReleaseErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentReleasesActivateReleaseError = AgentReleasesActivateReleaseErrors[keyof AgentReleasesActivateReleaseErrors];
+
+export type AgentReleasesActivateReleaseResponses = {
+    /**
+     * Response Agent-Releases-Activate Release
+     *
+     * Successful Response
+     */
+    202: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentReleasesActivateReleaseResponse = AgentReleasesActivateReleaseResponses[keyof AgentReleasesActivateReleaseResponses];
+
+export type AgentReleasesGetActivationData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Activation Id
+         */
+        activation_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/agent-activations/{activation_id}';
+};
+
+export type AgentReleasesGetActivationErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentReleasesGetActivationError = AgentReleasesGetActivationErrors[keyof AgentReleasesGetActivationErrors];
+
+export type AgentReleasesGetActivationResponses = {
+    /**
+     * Response Agent-Releases-Get Activation
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentReleasesGetActivationResponse = AgentReleasesGetActivationResponses[keyof AgentReleasesGetActivationResponses];
+
+export type AgentReleasesRetryDeploymentData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Deployment Id
+         */
+        deployment_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/agent-deployments/{deployment_id}/retry';
+};
+
+export type AgentReleasesRetryDeploymentErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentReleasesRetryDeploymentError = AgentReleasesRetryDeploymentErrors[keyof AgentReleasesRetryDeploymentErrors];
+
+export type AgentReleasesRetryDeploymentResponses = {
+    /**
+     * Response Agent-Releases-Retry Deployment
+     *
+     * Successful Response
+     */
+    202: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentReleasesRetryDeploymentResponse = AgentReleasesRetryDeploymentResponses[keyof AgentReleasesRetryDeploymentResponses];
+
+export type AgentReleasesRollbackDeploymentData = {
+    body?: never;
+    headers?: {
+        /**
+         * Idempotency-Key
+         */
+        'Idempotency-Key'?: string | null;
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Deployment Id
+         */
+        deployment_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/agent-deployments/{deployment_id}/rollback';
+};
+
+export type AgentReleasesRollbackDeploymentErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentReleasesRollbackDeploymentError = AgentReleasesRollbackDeploymentErrors[keyof AgentReleasesRollbackDeploymentErrors];
+
+export type AgentReleasesRollbackDeploymentResponses = {
+    /**
+     * Response Agent-Releases-Rollback Deployment
+     *
+     * Successful Response
+     */
+    202: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentReleasesRollbackDeploymentResponse = AgentReleasesRollbackDeploymentResponses[keyof AgentReleasesRollbackDeploymentResponses];
+
+export type AgentReleasesRuntimeAgentsData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/runtime-agents';
+};
+
+export type AgentReleasesRuntimeAgentsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentReleasesRuntimeAgentsError = AgentReleasesRuntimeAgentsErrors[keyof AgentReleasesRuntimeAgentsErrors];
+
+export type AgentReleasesRuntimeAgentsResponses = {
+    /**
+     * Response Agent-Releases-Runtime Agents
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentReleasesRuntimeAgentsResponse = AgentReleasesRuntimeAgentsResponses[keyof AgentReleasesRuntimeAgentsResponses];
+
+export type AgentReleasesRuntimeAgentData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Binding Id
+         */
+        binding_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/runtime-agents/{binding_id}';
+};
+
+export type AgentReleasesRuntimeAgentErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentReleasesRuntimeAgentError = AgentReleasesRuntimeAgentErrors[keyof AgentReleasesRuntimeAgentErrors];
+
+export type AgentReleasesRuntimeAgentResponses = {
+    /**
+     * Response Agent-Releases-Runtime Agent
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentReleasesRuntimeAgentResponse = AgentReleasesRuntimeAgentResponses[keyof AgentReleasesRuntimeAgentResponses];
+
+export type AgentReleasesListTaskApprovalsData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Task Id
+         */
+        task_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/runtime-tasks/{task_id}/approvals';
+};
+
+export type AgentReleasesListTaskApprovalsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentReleasesListTaskApprovalsError = AgentReleasesListTaskApprovalsErrors[keyof AgentReleasesListTaskApprovalsErrors];
+
+export type AgentReleasesListTaskApprovalsResponses = {
+    /**
+     * Response Agent-Releases-List Task Approvals
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentReleasesListTaskApprovalsResponse = AgentReleasesListTaskApprovalsResponses[keyof AgentReleasesListTaskApprovalsResponses];
+
+export type AgentReleasesApproveToolData = {
+    body: ApprovalDecision;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Approval Id
+         */
+        approval_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/tool-approvals/{approval_id}/approve';
+};
+
+export type AgentReleasesApproveToolErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentReleasesApproveToolError = AgentReleasesApproveToolErrors[keyof AgentReleasesApproveToolErrors];
+
+export type AgentReleasesApproveToolResponses = {
+    /**
+     * Response Agent-Releases-Approve Tool
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentReleasesApproveToolResponse = AgentReleasesApproveToolResponses[keyof AgentReleasesApproveToolResponses];
+
+export type AgentReleasesDenyToolData = {
+    body: ApprovalDecision;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Approval Id
+         */
+        approval_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/tool-approvals/{approval_id}/deny';
+};
+
+export type AgentReleasesDenyToolErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentReleasesDenyToolError = AgentReleasesDenyToolErrors[keyof AgentReleasesDenyToolErrors];
+
+export type AgentReleasesDenyToolResponses = {
+    /**
+     * Response Agent-Releases-Deny Tool
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentReleasesDenyToolResponse = AgentReleasesDenyToolResponses[keyof AgentReleasesDenyToolResponses];
+
+export type InternalAgentReleasesClaimAgentDeploymentData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Runtime-Token
+         */
+        'X-Runtime-Token'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/internal/runtime/agent-deployments/claim';
+};
+
+export type InternalAgentReleasesClaimAgentDeploymentErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type InternalAgentReleasesClaimAgentDeploymentError = InternalAgentReleasesClaimAgentDeploymentErrors[keyof InternalAgentReleasesClaimAgentDeploymentErrors];
+
+export type InternalAgentReleasesClaimAgentDeploymentResponses = {
+    /**
+     * Response Internal-Agent-Releases-Claim Agent Deployment
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    } | null;
+};
+
+export type InternalAgentReleasesClaimAgentDeploymentResponse = InternalAgentReleasesClaimAgentDeploymentResponses[keyof InternalAgentReleasesClaimAgentDeploymentResponses];
+
+export type InternalAgentReleasesReportAgentDeploymentData = {
+    body: DeploymentResult;
+    headers?: {
+        /**
+         * X-Runtime-Token
+         */
+        'X-Runtime-Token'?: string | null;
+    };
+    path: {
+        /**
+         * Deployment Id
+         */
+        deployment_id: string;
+    };
+    query?: never;
+    url: '/api/v1/internal/runtime/agent-deployments/{deployment_id}/result';
+};
+
+export type InternalAgentReleasesReportAgentDeploymentErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type InternalAgentReleasesReportAgentDeploymentError = InternalAgentReleasesReportAgentDeploymentErrors[keyof InternalAgentReleasesReportAgentDeploymentErrors];
+
+export type InternalAgentReleasesReportAgentDeploymentResponses = {
+    /**
+     * Response Internal-Agent-Releases-Report Agent Deployment
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type InternalAgentReleasesReportAgentDeploymentResponse = InternalAgentReleasesReportAgentDeploymentResponses[keyof InternalAgentReleasesReportAgentDeploymentResponses];
+
+export type InternalAgentReleasesRequestToolApprovalData = {
+    body: ApprovalRequestCreate;
+    headers?: {
+        /**
+         * X-Runtime-Token
+         */
+        'X-Runtime-Token'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/internal/runtime/tool-approvals';
+};
+
+export type InternalAgentReleasesRequestToolApprovalErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type InternalAgentReleasesRequestToolApprovalError = InternalAgentReleasesRequestToolApprovalErrors[keyof InternalAgentReleasesRequestToolApprovalErrors];
+
+export type InternalAgentReleasesRequestToolApprovalResponses = {
+    /**
+     * Response Internal-Agent-Releases-Request Tool Approval
+     *
+     * Successful Response
+     */
+    201: {
+        [key: string]: unknown;
+    };
+};
+
+export type InternalAgentReleasesRequestToolApprovalResponse = InternalAgentReleasesRequestToolApprovalResponses[keyof InternalAgentReleasesRequestToolApprovalResponses];
+
+export type InternalAgentReleasesInternalToolApprovalStatusData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Runtime-Token
+         */
+        'X-Runtime-Token'?: string | null;
+    };
+    path: {
+        /**
+         * Approval Id
+         */
+        approval_id: string;
+    };
+    query?: never;
+    url: '/api/v1/internal/runtime/tool-approvals/{approval_id}';
+};
+
+export type InternalAgentReleasesInternalToolApprovalStatusErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type InternalAgentReleasesInternalToolApprovalStatusError = InternalAgentReleasesInternalToolApprovalStatusErrors[keyof InternalAgentReleasesInternalToolApprovalStatusErrors];
+
+export type InternalAgentReleasesInternalToolApprovalStatusResponses = {
+    /**
+     * Response Internal-Agent-Releases-Internal Tool Approval Status
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type InternalAgentReleasesInternalToolApprovalStatusResponse = InternalAgentReleasesInternalToolApprovalStatusResponses[keyof InternalAgentReleasesInternalToolApprovalStatusResponses];
+
+export type OperatorCliCliLoginData = {
+    body: CliLogin;
+    path?: never;
+    query?: never;
+    url: '/api/v1/cli/login';
+};
+
+export type OperatorCliCliLoginErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type OperatorCliCliLoginError = OperatorCliCliLoginErrors[keyof OperatorCliCliLoginErrors];
+
+export type OperatorCliCliLoginResponses = {
+    /**
+     * Response Operator-Cli-Cli Login
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type OperatorCliCliLoginResponse = OperatorCliCliLoginResponses[keyof OperatorCliCliLoginResponses];
+
+export type OperatorCliCliRefreshData = {
+    body: CliRefresh;
+    path?: never;
+    query?: never;
+    url: '/api/v1/cli/refresh';
+};
+
+export type OperatorCliCliRefreshErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type OperatorCliCliRefreshError = OperatorCliCliRefreshErrors[keyof OperatorCliCliRefreshErrors];
+
+export type OperatorCliCliRefreshResponses = {
+    /**
+     * Response Operator-Cli-Cli Refresh
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type OperatorCliCliRefreshResponse = OperatorCliCliRefreshResponses[keyof OperatorCliCliRefreshResponses];
+
+export type OperatorCliCliLogoutData = {
+    body: CliLogout;
+    path?: never;
+    query?: never;
+    url: '/api/v1/cli/logout';
+};
+
+export type OperatorCliCliLogoutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type OperatorCliCliLogoutError = OperatorCliCliLogoutErrors[keyof OperatorCliCliLogoutErrors];
+
+export type OperatorCliCliLogoutResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type OperatorCliCliLogoutResponse = OperatorCliCliLogoutResponses[keyof OperatorCliCliLogoutResponses];
+
+export type OperatorCliCapabilitiesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/capabilities';
+};
+
+export type OperatorCliCapabilitiesErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type OperatorCliCapabilitiesError = OperatorCliCapabilitiesErrors[keyof OperatorCliCapabilitiesErrors];
+
+export type OperatorCliCapabilitiesResponses = {
+    /**
+     * Response Operator-Cli-Capabilities
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type OperatorCliCapabilitiesResponse = OperatorCliCapabilitiesResponses[keyof OperatorCliCapabilitiesResponses];
 
 export type PrivateCreateUserData = {
     body: PrivateUserCreate;

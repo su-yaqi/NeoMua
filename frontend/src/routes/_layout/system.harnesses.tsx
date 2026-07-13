@@ -75,6 +75,7 @@ function HarnessesPage() {
                   <TableHead>SDK 约束</TableHead>
                   <TableHead>引用</TableHead>
                   <TableHead>状态</TableHead>
+                  <TableHead>目标兼容性</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -94,6 +95,11 @@ function HarnessesPage() {
                     </TableCell>
                     <TableCell>
                       {p.referenced_by_agents ? "被引用" : "—"}
+                    </TableCell>
+                    <TableCell>
+                      {p.target_compatibility.length === 0
+                        ? "无目标"
+                        : `${p.target_compatibility.filter((target) => target.compatible === true).length} 可用 / ${p.target_compatibility.filter((target) => target.compatible === null).length} unknown`}
                     </TableCell>
                     <TableCell>
                       {p.archived ? (

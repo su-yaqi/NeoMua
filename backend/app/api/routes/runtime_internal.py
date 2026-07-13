@@ -7,10 +7,17 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 from sqlmodel import col, select
 
+from app.agent_management.capability_models import (
+    AgentRelease,
+    McpPlatformSecret,
+    McpTargetBinding,
+    McpTargetStatus,
+)
 from app.api.deps import SessionDep
 from app.core.config import settings
 from app.llm_provider_service import open_secret_payload
 from app.models import LlmProviderConfig
+from app.runtime.capabilities import HarnessCapabilities
 from app.runtime.gateway import UnsupportedGatewayProvider, gateway_provider_kind
 from app.runtime.models import (
     AgentEventType,
@@ -57,6 +64,11 @@ class LeaseInput(BaseModel):
     revision: int
 
 
+class CapabilityReport(BaseModel):
+    worker_id: str
+    harness_capabilities: HarnessCapabilities
+
+
 @router.get("/signing-probe")
 def signing_probe() -> dict[str, str]:
     now = datetime.now(timezone.utc)
@@ -71,6 +83,25 @@ def signing_probe() -> dict[str, str]:
             algorithm="HS256",
         )
     }
+
+
+@router.post("/capabilities")
+def report_platform_capabilities(
+    body: CapabilityReport, session: SessionDep
+) -> dict[str, int]:
+    runtimes = session.exec(
+        select(RuntimeProfile).where(
+            RuntimeProfile.runtime_type == RuntimeType.PLATFORM
+        )
+    ).all()
+    capabilities = body.harness_capabilities.model_dump(exclude_none=True)
+    now = datetime.now(timezone.utc)
+    for runtime in runtimes:
+        runtime.harness_capabilities = capabilities
+        runtime.updated_at = now
+        session.add(runtime)
+    session.commit()
+    return {"updated": len(runtimes)}
 
 
 @router.post("/events")
@@ -110,6 +141,56 @@ def claim_platform_task(body: ClaimInput, session: SessionDep) -> dict[str, Any]
     runtime = session.get(RuntimeProfile, task.runtime_profile_id)
     if runtime is None:
         raise HTTPException(409, "Runtime is unavailable")
+    release = (
+        session.get(AgentRelease, task.agent_release_id)
+        if task.agent_release_id
+        else None
+    )
+    if release is None or task.resolved_spec_digest != release.resolved_spec_digest:
+        task.status = TaskStatus.REJECTED
+        task.final_result = {"code": "release_not_active"}
+        task.completed_at = datetime.now(timezone.utc)
+        session.add(task)
+        session.commit()
+        raise HTTPException(409, "release_not_active")
+    mcp_runtime_configs: list[dict[str, Any]] = []
+    for server in task.snapshot.get("mcp_servers", []):
+        binding = session.exec(
+            select(McpTargetBinding).where(
+                McpTargetBinding.revision_id == uuid.UUID(server["revision_id"]),
+                McpTargetBinding.runtime_profile_id == runtime.id,
+                McpTargetBinding.status == McpTargetStatus.VERIFIED,
+            )
+        ).first()
+        mcp_secret = (
+            session.exec(
+                select(McpPlatformSecret).where(
+                    McpPlatformSecret.target_binding_id == binding.id
+                )
+            ).first()
+            if binding
+            else None
+        )
+        if (
+            binding is None
+            or mcp_secret is None
+            or binding.tool_digest not in server.get("tool_digests", [])
+        ):
+            task.status = TaskStatus.REJECTED
+            task.final_result = {
+                "code": "mcp_target_not_ready",
+                "server": server.get("slug"),
+            }
+            task.completed_at = datetime.now(timezone.utc)
+            session.add(task)
+            session.commit()
+            raise HTTPException(409, "mcp_target_not_ready")
+        mcp_runtime_configs.append(
+            {
+                **server,
+                "secret_inputs": open_secret_payload(mcp_secret.secret_ciphertext),
+            }
+        )
     env: dict[str, str]
     if runtime.route_mode == RuntimeRouteMode.DIRECT_ANTHROPIC:
         secret = session.exec(
@@ -129,7 +210,7 @@ def claim_platform_task(body: ClaimInput, session: SessionDep) -> dict[str, Any]
         }
     else:
         gateway_token = issue_gateway_token(
-            task.namespace_id, runtime.id, task.id, runtime.model_id
+            task.namespace_id, runtime.id, task.id, task.snapshot["model_id"]
         )
         env = {
             "ANTHROPIC_BASE_URL": (
@@ -155,15 +236,26 @@ def claim_platform_task(body: ClaimInput, session: SessionDep) -> dict[str, Any]
     return {
         "task_id": str(task.id),
         "revision": task.revision,
+        "release_binding": {
+            "agent_id": str(release.agent_id),
+            "release_id": str(release.id),
+            "resolved_spec_digest": release.resolved_spec_digest,
+            "skill_slugs": [
+                item["slug"] for item in release.resolved_spec.get("skills", [])
+            ],
+        },
+        "mcp_runtime_configs": mcp_runtime_configs,
         "command": {
             "prompt": task.prompt,
             "model": task.snapshot.get("model_id", runtime.model_id),
+            "system_prompt": task.snapshot.get("system_prompt"),
             "permission_mode": task.snapshot.get(
                 "permission_mode", runtime.permission_mode
             ),
             "tools": task.snapshot.get("tools", []),
             "allowed_tools": task.snapshot.get("allowed_tools", []),
             "disallowed_tools": task.snapshot.get("disallowed_tools", []),
+            "require_approval_tools": task.snapshot.get("require_approval_tools", []),
             "cwd": task.snapshot.get("working_directory"),
             "env": env,
             "sdk_session_id": agent_session.sdk_session_id if agent_session else None,

@@ -23,6 +23,24 @@ function RuntimeTaskPage() {
     queryFn: () => tenantApi.readRuntimeTask(taskId),
     refetchInterval: 3000,
   })
+  const approvals = useQuery({
+    queryKey: ["task-approvals", taskId],
+    queryFn: () => tenantApi.readTaskApprovals(taskId),
+    refetchInterval: 2000,
+  })
+  const decide = useMutation({
+    mutationFn: ({
+      id,
+      decision,
+      digest,
+    }: {
+      id: string
+      decision: "approve" | "deny"
+      digest: string
+    }) => tenantApi.decideToolApproval(id, decision, digest),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["task-approvals", taskId] }),
+  })
   useEffect(() => {
     const controller = new AbortController()
     tenantApi
@@ -58,9 +76,12 @@ function RuntimeTaskPage() {
   const retryable = ["failed", "interrupted", "rejected", "cancelled"].includes(
     task.data?.status ?? "",
   )
-  const cancellable = ["queued", "dispatched", "running"].includes(
-    task.data?.status ?? "",
-  )
+  const cancellable = [
+    "queued",
+    "dispatched",
+    "running",
+    "awaiting_approval",
+  ].includes(task.data?.status ?? "")
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -93,6 +114,51 @@ function RuntimeTaskPage() {
           </details>
         </CardContent>
       </Card>
+      {((approvals.data?.data ?? []) as Array<Record<string, unknown>>).map(
+        (approval) => (
+          <Card key={String(approval.id)}>
+            <CardHeader>
+              <CardTitle>
+                Tool 审批：{String(approval.tool_qualified_name)}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <p>状态：{String(approval.status)}</p>
+              <pre className="overflow-auto rounded bg-muted p-2 text-xs">
+                {JSON.stringify(approval.redacted_args, null, 2)}
+              </pre>
+              <code className="text-xs">{String(approval.args_digest)}</code>
+              {approval.status === "pending" && (
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() =>
+                      decide.mutate({
+                        id: String(approval.id),
+                        decision: "approve",
+                        digest: String(approval.args_digest),
+                      })
+                    }
+                  >
+                    批准一次
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={() =>
+                      decide.mutate({
+                        id: String(approval.id),
+                        decision: "deny",
+                        digest: String(approval.args_digest),
+                      })
+                    }
+                  >
+                    拒绝
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        ),
+      )}
       <TaskEventTimeline events={events} />
     </div>
   )
