@@ -166,12 +166,14 @@ Package 源码仍在 NeoMua Git 仓库；数据库只保存发布后 canonical M
 
 ## 7. 验收标准
 
-- [ ] v0.6 没有拖拽设计器、在线代码编辑或可执行 Package 上传入口。
-- [ ] 每个 Package 位于统一目录，包含 Manifest、节点、Validator、前端、Schema 和测试。
-- [ ] 节点统一使用 `run(context)`；不存在首次执行与更新两套必需接口。
-- [ ] DAG 有限无环，未知节点类型、确认模式或未定义跳转均阻断发布。
-- [ ] 声明准入/准出的节点必须有对应代码 Validator，不能用提示词代替。
-- [ ] 模板版本不可变，新任务使用启用版本，既有任务不被升级影响。
-- [ ] 每个模板拥有独立应用页面并复用公共能力，不加载远程 JavaScript。
-- [ ] Runtime 按节点、任务、项目优先级解析；不兼容时阻断而非自动替换。
-- [ ] 构建、测试、Schema、DAG 或摘要校验失败时不能注册模板版本。
+- [x] v0.6 没有拖拽设计器、在线代码编辑或可执行 Package 上传入口。
+- [x] 每个 Package 位于统一目录，包含 Manifest、节点、Validator、前端、Schema 和测试。
+- [x] 节点统一使用 `run(context)`；不存在首次执行与更新两套必需接口。
+- [x] DAG 有限无环，未知节点类型、确认模式或未定义跳转均阻断发布。
+- [x] 声明准入/准出的节点必须有对应代码 Validator，不能用提示词代替。
+- [x] 模板版本不可变，新任务使用启用版本，既有任务不被升级影响。
+- [x] 每个模板拥有独立应用页面并复用公共能力，不加载远程 JavaScript。
+- [x] Runtime 按节点、任务、项目优先级解析；不兼容时阻断而非自动替换。
+- [x] 构建、测试、Schema、DAG 或摘要校验失败时不能注册模板版本。
+
+验收证据：`backend/tests/workflow_management/test_package_and_engine.py` 与 `workflow_apps/project_delivery/tests/test_package.py` 覆盖 Package 摘要、DAG、Validator/Handler 和固定版本执行；`frontend/tests/v06-workflow.spec.ts` 覆盖精确组件及未知组件阻断；开发库同时保留 1.0.2/1.0.3 且 1.0.3 前端摘要与数据库一致。

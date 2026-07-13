@@ -43,6 +43,7 @@ from app.conversation_management.models import (
     ConversationAgent,
     ConversationAttachment,
     ConversationContextSnapshot,
+    ConversationEvent,
     ConversationMessage,
 )
 from app.core.config import settings
@@ -68,6 +69,7 @@ from app.runtime.models import (
     NodeEnrollmentToken,
     NodeHandshakeNonce,
     RuntimeArtifact,
+    RuntimeJob,
     RuntimeNode,
     RuntimeNodeArtifact,
     RuntimeProfile,
@@ -76,6 +78,7 @@ from app.runtime.models import (
 from app.workflow_management.models import (
     NamespaceWorkflowEnablement,
     WorkflowArtifact,
+    WorkflowAttachment,
     WorkflowConfirmation,
     WorkflowEvent,
     WorkflowGateResult,
@@ -103,6 +106,7 @@ def isolate_runtime_data(db: Session) -> Generator[None, None, None]:
     def clean() -> None:
         db.rollback()
         db.execute(delete(WorkflowArtifact))
+        db.execute(delete(WorkflowAttachment))
         db.execute(delete(WorkflowConfirmation))
         db.execute(delete(WorkflowGateResult))
         db.execute(delete(WorkflowNodeExecution))
@@ -114,6 +118,7 @@ def isolate_runtime_data(db: Session) -> Generator[None, None, None]:
         db.execute(delete(NamespaceWorkflowEnablement))
         db.execute(delete(AgentDelegation))
         db.execute(delete(ConversationAttachment))
+        db.execute(delete(ConversationEvent))
         db.execute(delete(ConversationMessage))
         db.execute(update(Conversation).values(current_context_snapshot_id=None))
         db.execute(delete(ConversationContextSnapshot))
@@ -122,6 +127,7 @@ def isolate_runtime_data(db: Session) -> Generator[None, None, None]:
         db.execute(delete(ProjectSpecBinding))
         db.execute(delete(ProjectSpecLocation))
         db.execute(delete(ProjectRepository))
+        db.execute(delete(RuntimeJob))
         db.execute(delete(ProjectMember))
         db.execute(delete(Project))
         db.execute(delete(SpecStandardVersion))

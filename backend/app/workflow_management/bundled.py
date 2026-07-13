@@ -10,6 +10,14 @@ def workflow_apps_root() -> Path:
     return Path(__file__).resolve().parents[3] / "workflow_apps"
 
 
+def bundled_package_root(slug: str) -> Path:
+    for manifest_path in sorted(workflow_apps_root().glob("*/manifest.json")):
+        raw = json.loads(manifest_path.read_text())
+        if raw.get("slug") == slug:
+            return manifest_path.parent
+    raise RuntimeError(f"Bundled Workflow Package is missing: {slug}")
+
+
 def _load_module(path: Path) -> ModuleType:
     module_name = "neomua_workflow_" + "_".join(path.with_suffix("").parts[-5:])
     if module_name in sys.modules:

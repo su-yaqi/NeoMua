@@ -5,7 +5,13 @@ from datetime import datetime, timezone
 from sqlalchemy import text
 from sqlmodel import Session, col, select
 
+from app.conversation_management.models import Conversation, ConversationStatus
+from app.conversation_management.service import reconcile_agent_messages
 from app.core.db import engine
+from app.runtime.jobs import (
+    expire_runtime_job_leases,
+    expire_runtime_job_reservations,
+)
 from app.runtime.models import (
     ArtifactDeployment,
     ArtifactRelease,
@@ -13,6 +19,8 @@ from app.runtime.models import (
     NodeCredential,
 )
 from app.runtime.repository import expire_dispatch_reservations, expire_task_leases
+from app.workflow_management.engine import reconcile_instance
+from app.workflow_management.models import WorkflowInstance, WorkflowInstanceStatus
 
 logger = logging.getLogger(__name__)
 _MAINTENANCE_LOCK_ID = 0x4E454F4D5541
@@ -21,15 +29,21 @@ _MAINTENANCE_LOCK_ID = 0x4E454F4D5541
 def run_maintenance_once(*, now: datetime | None = None) -> bool:
     current = now or datetime.now(timezone.utc)
     with Session(engine) as session:
-        acquired = session.connection().execute(
-            text("SELECT pg_try_advisory_xact_lock(:lock_id)"),
-            {"lock_id": _MAINTENANCE_LOCK_ID},
-        ).scalar_one()
+        acquired = (
+            session.connection()
+            .execute(
+                text("SELECT pg_try_advisory_xact_lock(:lock_id)"),
+                {"lock_id": _MAINTENANCE_LOCK_ID},
+            )
+            .scalar_one()
+        )
         if not acquired:
             session.rollback()
             return False
         expire_dispatch_reservations(session, now=current)
         expire_task_leases(session, now=current)
+        expire_runtime_job_reservations(session, now=current)
+        expire_runtime_job_leases(session, now=current)
 
         deployments = session.exec(
             select(ArtifactDeployment)
@@ -74,6 +88,35 @@ def run_maintenance_once(*, now: datetime | None = None) -> bool:
         for credential in credentials:
             credential.revoked_at = current
             session.add(credential)
+
+        conversations = session.exec(
+            select(Conversation)
+            .where(Conversation.status == ConversationStatus.ACTIVE)
+            .order_by(col(Conversation.updated_at))
+            .limit(200)
+            .with_for_update(skip_locked=True)
+        ).all()
+        for conversation in conversations:
+            reconcile_agent_messages(session, conversation)
+
+        workflow_instances = session.exec(
+            select(WorkflowInstance)
+            .where(
+                col(WorkflowInstance.status).in_(
+                    [
+                        WorkflowInstanceStatus.PENDING,
+                        WorkflowInstanceStatus.RUNNING,
+                        WorkflowInstanceStatus.WAITING,
+                        WorkflowInstanceStatus.BLOCKED,
+                    ]
+                )
+            )
+            .order_by(col(WorkflowInstance.updated_at))
+            .limit(200)
+            .with_for_update(skip_locked=True)
+        ).all()
+        for instance in workflow_instances:
+            reconcile_instance(session, instance)
         session.commit()
         return True
 

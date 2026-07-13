@@ -135,6 +135,7 @@ services:
       - "5173"
     volumes:
       - ./frontend:/app/frontend
+      - ./workflow_apps:/app/workflow_apps:ro
       - frontend-dev-node-modules:/app/frontend/node_modules
     ports:
       - "5173:5173"

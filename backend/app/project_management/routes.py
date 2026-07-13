@@ -1,3 +1,5 @@
+import hashlib
+import json
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -42,12 +44,15 @@ from app.project_management.schemas import (
     SpecVersionDeprecate,
 )
 from app.project_management.service import (
+    build_spec_diff_preview,
     can_manage_namespace,
+    canonical_spec_manifest_digest,
     get_project,
     get_repository,
     get_spec_location,
     normalize_spec_path,
     project_public,
+    reconcile_repository_validation,
     require_active_project,
     require_project_member,
     require_standard_visible,
@@ -55,8 +60,11 @@ from app.project_management.service import (
     utcnow,
     validate_member_ids,
     validate_runtime,
+    validate_spec_standard_manifest,
+    verified_repository_runtime_proof,
 )
-from app.runtime.models import RuntimeProfile
+from app.runtime.jobs import enqueue_runtime_job
+from app.runtime.models import RuntimeJob, RuntimeJobKind, RuntimeProfile
 
 router = APIRouter(tags=["projects"])
 
@@ -209,6 +217,13 @@ def list_repositories(
     rows = session.exec(
         select(ProjectRepository).where(ProjectRepository.project_id == project_id)
     ).all()
+    changed = False
+    for row in rows:
+        changed = reconcile_repository_validation(session, row) or changed
+    if changed:
+        session.commit()
+        for row in rows:
+            session.refresh(row)
     return {"data": rows, "count": len(rows)}
 
 
@@ -269,7 +284,9 @@ def delete_repository(
     return Response(status_code=204)
 
 
-@router.post("/projects/{project_id}/repositories/{repository_id}/validate")
+@router.post(
+    "/projects/{project_id}/repositories/{repository_id}/validate", status_code=202
+)
 def validate_repository_access(
     project_id: uuid.UUID,
     repository_id: uuid.UUID,
@@ -280,6 +297,8 @@ def validate_repository_access(
 ) -> ProjectRepository:
     _manager_project(session, project_id, namespace_id)
     repository = get_repository(session, repository_id, project_id)
+    if reconcile_repository_validation(session, repository):
+        session.commit()
     runtime = validate_runtime(session, namespace_id, body.runtime_id)
     assert isinstance(runtime, RuntimeProfile)
     workspaces = runtime.config.get("repository_workspaces", {})
@@ -287,25 +306,60 @@ def validate_repository_access(
     if (
         not isinstance(proof, dict)
         or not proof.get("workspace_ref")
-        or not proof.get("commit")
+        or not (proof.get("workspace_path") or proof.get("path"))
     ):
         repository.status = RepositoryStatus.UNAVAILABLE
         repository.validation_error = {
             "code": "runtime_repository_proof_missing",
             "runtime_id": str(runtime.id),
-            "message": "Runtime has no verified workspace proof for this repository",
+            "message": "Runtime has no configured workspace path for this repository",
         }
         session.add(repository)
         session.commit()
         session.refresh(repository)
         return repository
-    repository.runtime_workspace_refs = {
-        **repository.runtime_workspace_refs,
-        str(runtime.id): proof["workspace_ref"],
+    locations = session.exec(
+        select(ProjectSpecLocation).where(
+            ProjectSpecLocation.repository_id == repository.id
+        )
+    ).all()
+    payload = {
+        "repository_id": str(repository.id),
+        "remote_url": repository.remote_url,
+        "default_branch": repository.default_branch,
+        "workspace_ref": str(proof["workspace_ref"]),
+        "workspace_path": str(proof.get("workspace_path") or proof.get("path")),
+        "allowed_roots": runtime.config.get("allowed_working_roots", []),
+        "spec_locations": [
+            {
+                "id": str(location.id),
+                "path": location.path,
+                "location_type": location.location_type.value,
+            }
+            for location in locations
+        ],
     }
-    repository.validated_commit = str(proof["commit"])
-    repository.status = RepositoryStatus.AVAILABLE
-    repository.validation_error = None
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode()
+    ).hexdigest()
+    job = enqueue_runtime_job(
+        session,
+        namespace_id=namespace_id,
+        runtime_id=runtime.id,
+        kind=RuntimeJobKind.REPOSITORY_PROBE,
+        payload=payload,
+        idempotency_key=f"repository:{repository.id}:validation:{fingerprint}",
+    )
+    repository.validation_job_id = job.id
+    repository.status = RepositoryStatus.UNVALIDATED
+    repository.validation_error = {
+        "code": "runtime_repository_validation_pending",
+        "runtime_id": str(runtime.id),
+        "runtime_job_id": str(job.id),
+    }
+    repository.validated_commit = None
     repository.updated_at = utcnow()
     session.add(repository)
     session.commit()
@@ -487,6 +541,17 @@ def publish_standard_version(
         session, namespace_id, current_user
     ):
         raise HTTPException(403, "Namespace admin or developer privilege required")
+    validate_spec_standard_manifest(body.manifest)
+    computed_digest = canonical_spec_manifest_digest(body.manifest)
+    if computed_digest != body.content_digest:
+        raise HTTPException(
+            409,
+            {
+                "code": "spec_manifest_digest_mismatch",
+                "expected": computed_digest,
+                "received": body.content_digest,
+            },
+        )
     version = SpecStandardVersion(
         standard_id=standard.id, created_by=current_user.id, **body.model_dump()
     )
@@ -589,16 +654,23 @@ def preview_spec_diff(
         raise HTTPException(
             409, "Repository must have current Runtime validation proof"
         )
-    preview = {
-        "mode": "read_only_preview",
-        "repository_id": str(repository.id),
-        "validated_commit": repository.validated_commit,
-        "path": location.path,
-        "standard_version_id": str(version.id),
-        "standard_content_digest": version.content_digest,
-        "required_files": version.manifest.get("required_files", []),
-        "message": "No Git content was modified; apply changes through an explicit Workflow node",
-    }
+    if repository.validation_job_id is None:
+        raise HTTPException(409, "Repository has no current Runtime validation job")
+    validation_job = session.get(RuntimeJob, repository.validation_job_id)
+    if validation_job is None:
+        raise HTTPException(409, "Repository Runtime validation job is unavailable")
+    proof = verified_repository_runtime_proof(
+        session, repository, validation_job.runtime_profile_id
+    )
+    if proof is None:
+        raise HTTPException(409, "Repository Runtime validation proof is unavailable")
+    preview = build_spec_diff_preview(
+        location=location,
+        repository=repository,
+        version=version,
+        runtime_id=validation_job.runtime_profile_id,
+        proof=proof,
+    )
     binding.diff_preview = preview
     binding.updated_at = datetime.now(timezone.utc)
     session.add(binding)

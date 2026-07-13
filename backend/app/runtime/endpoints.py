@@ -36,6 +36,4 @@ def canonical_endpoint(value: str) -> str:
     default_port = 80 if parsed.scheme.lower() == "http" else 443
     netloc = host if port in {None, default_port} else f"{host}:{port}"
     path = parsed.path.rstrip("/")
-    return urlunsplit(
-        SplitResult(parsed.scheme.lower(), netloc, path, "", "")
-    )
+    return urlunsplit(SplitResult(parsed.scheme.lower(), netloc, path, "", ""))

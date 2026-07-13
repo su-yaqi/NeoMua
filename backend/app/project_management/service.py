@@ -1,3 +1,6 @@
+import difflib
+import hashlib
+import json
 import posixpath
 import uuid
 from datetime import datetime, timezone
@@ -13,12 +16,21 @@ from app.project_management.models import (
     Project,
     ProjectMember,
     ProjectRepository,
+    ProjectSpecBinding,
     ProjectSpecLocation,
+    RepositoryStatus,
+    SpecBindingStatus,
+    SpecLocationStatus,
     SpecScopeType,
     SpecStandard,
     SpecStandardVersion,
 )
-from app.runtime.models import RuntimeProfile
+from app.runtime.models import (
+    RuntimeJob,
+    RuntimeJobKind,
+    RuntimeJobStatus,
+    RuntimeProfile,
+)
 
 
 def utcnow() -> datetime:
@@ -110,6 +122,233 @@ def get_repository(
     if repository is None or repository.project_id != project_id:
         raise HTTPException(404, "Project repository not found")
     return repository
+
+
+def verified_repository_runtime_proof(
+    session: Session,
+    repository: ProjectRepository,
+    runtime_id: uuid.UUID,
+) -> dict[str, Any] | None:
+    proof = repository.runtime_workspace_refs.get(str(runtime_id))
+    if not isinstance(proof, dict) or not proof.get("runtime_job_id"):
+        return None
+    try:
+        job_id = uuid.UUID(str(proof["runtime_job_id"]))
+    except (TypeError, ValueError):
+        return None
+    job = session.get(RuntimeJob, job_id)
+    if (
+        job is None
+        or job.kind != RuntimeJobKind.REPOSITORY_PROBE
+        or job.status != RuntimeJobStatus.SUCCEEDED
+        or job.runtime_profile_id != runtime_id
+        or not isinstance(job.result, dict)
+        or job.result.get("commit") != repository.validated_commit
+        or proof.get("commit") != repository.validated_commit
+        or proof.get("workspace_ref") != job.result.get("workspace_ref")
+        or proof.get("remote_url") != job.result.get("remote_url")
+    ):
+        return None
+    return proof
+
+
+def validate_spec_standard_manifest(manifest: dict[str, Any]) -> None:
+    required_files = manifest.get("required_files", [])
+    templates = manifest.get("templates", {})
+    if not isinstance(required_files, list) or any(
+        not isinstance(path, str) for path in required_files
+    ):
+        raise HTTPException(422, "Spec manifest required_files must be strings")
+    if not isinstance(templates, dict) or any(
+        not isinstance(path, str) or not isinstance(content, str)
+        for path, content in templates.items()
+    ):
+        raise HTTPException(422, "Spec manifest templates must map paths to text")
+    for path in [*required_files, *templates]:
+        normalize_spec_path(path)
+
+
+def canonical_spec_manifest_digest(manifest: dict[str, Any]) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode()
+    ).hexdigest()
+
+
+def build_spec_diff_preview(
+    *,
+    location: ProjectSpecLocation,
+    repository: ProjectRepository,
+    version: SpecStandardVersion,
+    runtime_id: uuid.UUID,
+    proof: dict[str, Any],
+) -> dict[str, Any]:
+    validate_spec_standard_manifest(version.manifest)
+    proof_location = next(
+        (
+            item
+            for item in proof.get("spec_locations", [])
+            if str(item.get("spec_location_id")) == str(location.id)
+        ),
+        None,
+    )
+    if not isinstance(proof_location, dict):
+        raise HTTPException(409, "Runtime proof has no content for this Spec location")
+    actual_files = {
+        str(item["path"]): item
+        for item in proof_location.get("files", [])
+        if isinstance(item, dict)
+        and isinstance(item.get("path"), str)
+        and isinstance(item.get("content"), str)
+    }
+    templates = dict(version.manifest.get("templates", {}))
+    required = set(version.manifest.get("required_files", []))
+    target_paths = sorted(required | set(templates))
+    files: list[dict[str, Any]] = []
+    counts = {"add": 0, "modify": 0, "unchanged": 0, "missing_template": 0}
+    for relative_path in target_paths:
+        repository_path = (
+            location.path
+            if location.location_type.value == "file"
+            else f"{location.path.rstrip('/')}/{relative_path}"
+        )
+        actual = actual_files.get(repository_path)
+        expected_content = templates.get(relative_path)
+        actual_content = str(actual["content"]) if actual else None
+        if expected_content is None:
+            action = "unchanged" if actual is not None else "missing_template"
+        elif actual_content is None:
+            action = "add"
+        elif actual_content == expected_content:
+            action = "unchanged"
+        else:
+            action = "modify"
+        counts[action] += 1
+        patch = ""
+        if expected_content is not None and action in {"add", "modify"}:
+            patch = "".join(
+                difflib.unified_diff(
+                    (actual_content or "").splitlines(keepends=True),
+                    expected_content.splitlines(keepends=True),
+                    fromfile=(
+                        f"a/{repository_path}" if actual is not None else "/dev/null"
+                    ),
+                    tofile=f"b/{repository_path}",
+                )
+            )
+        files.append(
+            {
+                "path": repository_path,
+                "template_path": relative_path,
+                "required": relative_path in required,
+                "action": action,
+                "actual_digest": actual.get("content_digest") if actual else None,
+                "expected_digest": (
+                    hashlib.sha256(expected_content.encode()).hexdigest()
+                    if expected_content is not None
+                    else None
+                ),
+                "patch": patch,
+            }
+        )
+    return {
+        "mode": "read_only_preview",
+        "repository_id": str(repository.id),
+        "runtime_id": str(runtime_id),
+        "runtime_job_id": proof["runtime_job_id"],
+        "validated_commit": repository.validated_commit,
+        "path": location.path,
+        "standard_version_id": str(version.id),
+        "standard_content_digest": version.content_digest,
+        "summary": counts,
+        "files": files,
+        "has_conflicts": counts["missing_template"] > 0,
+        "message": "No Git content was modified; apply changes through an explicit Workflow node",
+    }
+
+
+def reconcile_repository_validation(
+    session: Session, repository: ProjectRepository
+) -> bool:
+    if repository.validation_job_id is None:
+        return False
+    job = session.get(RuntimeJob, repository.validation_job_id)
+    if job is None:
+        repository.status = RepositoryStatus.UNAVAILABLE
+        repository.validation_error = {"code": "repository_validation_job_missing"}
+        session.add(repository)
+        return True
+    if job.status in {
+        RuntimeJobStatus.QUEUED,
+        RuntimeJobStatus.DISPATCHED,
+        RuntimeJobStatus.RUNNING,
+    }:
+        return False
+    locations = session.exec(
+        select(ProjectSpecLocation).where(
+            ProjectSpecLocation.repository_id == repository.id
+        )
+    ).all()
+    if job.status != RuntimeJobStatus.SUCCEEDED or not isinstance(job.result, dict):
+        repository.status = RepositoryStatus.UNAVAILABLE
+        repository.validation_error = job.error or {
+            "code": "repository_validation_failed"
+        }
+        for location in locations:
+            location.status = SpecLocationStatus.UNAVAILABLE
+            location.updated_at = utcnow()
+            session.add(location)
+        session.add(repository)
+        return True
+    result = job.result
+    runtime_id = str(job.runtime_profile_id)
+    repository.runtime_workspace_refs = {
+        **repository.runtime_workspace_refs,
+        runtime_id: {
+            "workspace_ref": result["workspace_ref"],
+            "commit": result["commit"],
+            "remote_url": result["remote_url"],
+            "spec_locations": result.get("spec_locations", []),
+            "verified_at": (job.completed_at or utcnow()).isoformat(),
+            "runtime_job_id": str(job.id),
+        },
+    }
+    repository.validated_commit = str(result["commit"])
+    repository.status = RepositoryStatus.AVAILABLE
+    repository.validation_error = None
+    repository.updated_at = utcnow()
+    spec_by_id = {
+        str(item["spec_location_id"]): item for item in result.get("spec_locations", [])
+    }
+    for location in locations:
+        location.status = (
+            SpecLocationStatus.VALID
+            if str(location.id) in spec_by_id
+            else SpecLocationStatus.UNAVAILABLE
+        )
+        location.updated_at = utcnow()
+        session.add(location)
+        binding = session.exec(
+            select(ProjectSpecBinding).where(
+                ProjectSpecBinding.spec_location_id == location.id
+            )
+        ).first()
+        if binding is not None:
+            binding.status = (
+                SpecBindingStatus.VALID
+                if location.status == SpecLocationStatus.VALID
+                else SpecBindingStatus.PENDING
+            )
+            binding.validated_commit = (
+                repository.validated_commit
+                if binding.status == SpecBindingStatus.VALID
+                else None
+            )
+            binding.updated_at = utcnow()
+            session.add(binding)
+    session.add(repository)
+    return True
 
 
 def get_spec_location(

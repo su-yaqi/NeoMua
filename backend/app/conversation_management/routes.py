@@ -1,13 +1,12 @@
-import hashlib
+import asyncio
 import json
-import os
-import tempfile
 import uuid
-from pathlib import Path
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, or_, select
 
@@ -19,15 +18,14 @@ from app.conversation_management.models import (
     AgentDelegation,
     AttachmentScanStatus,
     Conversation,
-    ConversationAgent,
     ConversationAgentRole,
     ConversationAttachment,
     ConversationContextSnapshot,
+    ConversationEvent,
     ConversationMessage,
     ConversationMode,
     ConversationStatus,
     ConversationVisibility,
-    DelegationStatus,
     MessageAuthorType,
     MessageStatus,
     MessageTargetType,
@@ -38,10 +36,11 @@ from app.conversation_management.schemas import (
     ConversationDerive,
     ConversationMessageCreate,
     ConversationUpdate,
-    DelegationCreate,
 )
 from app.conversation_management.service import (
     add_conversation_agent,
+    append_conversation_event,
+    append_message_event,
     canonical_digest,
     conversation_public,
     create_agent_task,
@@ -60,14 +59,9 @@ from app.project_management.models import Project, ProjectMember, ProjectStatus
 from app.project_management.service import require_project_member
 from app.runtime.models import RuntimeProfile
 from app.runtime.security import issue_gateway_token
+from app.text_attachments import TEXT_ATTACHMENT_MAX_BYTES, store_text_attachment
 
 router = APIRouter(tags=["conversations"])
-ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024
-ATTACHMENT_TYPES = {
-    "text/plain": {".txt"},
-    "text/markdown": {".md", ".markdown"},
-    "application/json": {".json"},
-}
 
 
 def _require_idempotency(value: str | None) -> str:
@@ -108,10 +102,10 @@ def _attachment_public(value: ConversationAttachment) -> dict[str, Any]:
 def _attachment_text(value: ConversationAttachment) -> str:
     source = artifact_storage().open(value.storage_ref)
     try:
-        content = source.read(ATTACHMENT_MAX_BYTES + 1)
+        content = source.read(TEXT_ATTACHMENT_MAX_BYTES + 1)
     finally:
         source.close()
-    if len(content) > ATTACHMENT_MAX_BYTES:
+    if len(content) > TEXT_ATTACHMENT_MAX_BYTES:
         raise HTTPException(409, "Stored attachment exceeds its verified size")
     try:
         return content.decode("utf-8")
@@ -368,7 +362,7 @@ def create_conversation(
                     current_user.id,
                 )
         if project is not None:
-            create_context_snapshot(session, conversation, current_user.id, [])
+            create_context_snapshot(session, conversation, current_user.id)
         session.commit()
     except HTTPException:
         session.rollback()
@@ -400,7 +394,8 @@ def read_conversation(
         session, conversation_id, namespace_id, current_user
     )
     if conversation.mode == ConversationMode.AGENT:
-        reconcile_agent_messages(session, conversation)
+        if reconcile_agent_messages(session, conversation):
+            session.commit()
     return conversation_public(session, conversation)
 
 
@@ -424,6 +419,12 @@ def update_conversation(
     if body.archived:
         conversation.status = ConversationStatus.ARCHIVED
         conversation.archived_at = utcnow()
+        append_conversation_event(
+            session,
+            conversation.id,
+            "conversation_archived",
+            {"status": ConversationStatus.ARCHIVED.value},
+        )
     conversation.updated_at = utcnow()
     session.add(conversation)
     session.commit()
@@ -460,98 +461,24 @@ async def upload_attachment(
     conversation = require_conversation_access(
         session, conversation_id, namespace_id, current_user, participate=True
     )
-    filename = file.filename or ""
-    if (
-        not filename
-        or len(filename) > 255
-        or filename != Path(filename).name
-        or "/" in filename
-        or "\\" in filename
-    ):
-        raise HTTPException(422, "Attachment filename must be a plain basename")
-    content_type = (file.content_type or "").split(";", 1)[0].strip().lower()
-    suffix = Path(filename).suffix.lower()
-    if (
-        content_type not in ATTACHMENT_TYPES
-        or suffix not in ATTACHMENT_TYPES[content_type]
-    ):
-        raise HTTPException(
-            415,
-            {
-                "code": "attachment_type_not_allowed",
-                "allowed": {
-                    value: sorted(extensions)
-                    for value, extensions in ATTACHMENT_TYPES.items()
-                },
-            },
+    stored = await store_text_attachment(file, storage_prefix="conversations")
+    existing = session.exec(
+        select(ConversationAttachment).where(
+            ConversationAttachment.conversation_id == conversation.id,
+            ConversationAttachment.content_digest == stored["content_digest"],
         )
-    temp_root = Path(settings.ARTIFACT_TEMP_DIR or tempfile.gettempdir())
-    temp_root.mkdir(parents=True, exist_ok=True, mode=0o700)
-    descriptor, name = tempfile.mkstemp(prefix="neomua-attachment-", dir=temp_root)
-    temporary = Path(name)
-    digest = hashlib.sha256()
-    size = 0
-    try:
-        with os.fdopen(descriptor, "wb") as target:
-            while chunk := await file.read(1024 * 1024):
-                size += len(chunk)
-                if size > ATTACHMENT_MAX_BYTES:
-                    raise HTTPException(413, "Attachment exceeds the 5 MiB limit")
-                digest.update(chunk)
-                target.write(chunk)
-            target.flush()
-            os.fsync(target.fileno())
-        raw = temporary.read_bytes()
-        try:
-            decoded = raw.decode("utf-8")
-        except UnicodeDecodeError as exc:
-            raise HTTPException(422, "Attachment must be valid UTF-8 text") from exc
-        if "\x00" in decoded or any(
-            ord(char) < 32 and char not in {"\t", "\n", "\r"} for char in decoded
-        ):
-            raise HTTPException(422, "Attachment contains unsafe control bytes")
-        if content_type == "application/json":
-            try:
-                json.loads(decoded)
-            except json.JSONDecodeError as exc:
-                raise HTTPException(422, "JSON attachment is invalid") from exc
-        content_digest = digest.hexdigest()
-        existing = session.exec(
-            select(ConversationAttachment).where(
-                ConversationAttachment.conversation_id == conversation.id,
-                ConversationAttachment.content_digest == content_digest,
-            )
-        ).first()
-        if existing:
-            return _attachment_public(existing)
-        storage_ref = f"conversations/sha256/{content_digest[:2]}/{content_digest}"
-        artifact_storage().put_once(storage_ref, temporary)
-        attachment = ConversationAttachment(
-            conversation_id=conversation.id,
-            filename=filename,
-            content_type=content_type,
-            size=size,
-            content_digest=content_digest,
-            storage_ref=storage_ref,
-            scan_status=AttachmentScanStatus.CLEAN,
-            scan_details={
-                "scanner": "strict-text-v1",
-                "checks": [
-                    "size",
-                    "mime_extension_allowlist",
-                    "utf8",
-                    "control_bytes",
-                    *(["json_parse"] if content_type == "application/json" else []),
-                ],
-            },
-        )
-        session.add(attachment)
-        session.commit()
-        session.refresh(attachment)
-        return _attachment_public(attachment)
-    finally:
-        temporary.unlink(missing_ok=True)
-        await file.close()
+    ).first()
+    if existing:
+        return _attachment_public(existing)
+    attachment = ConversationAttachment(
+        conversation_id=conversation.id,
+        **stored,
+        scan_status=AttachmentScanStatus.CLEAN,
+    )
+    session.add(attachment)
+    session.commit()
+    session.refresh(attachment)
+    return _attachment_public(attachment)
 
 
 def _chat_history(
@@ -601,14 +528,17 @@ def _chat_history(
             ConversationContextSnapshot, conversation.current_context_snapshot_id
         )
         if snapshot:
-            summaries = [
-                str(item.get("summary"))
+            materialized = [
+                (f"--- {item['path']} @ {item['blob_digest']} ---\n{item['content']}")
                 for item in snapshot.content_refs
-                if item.get("summary")
+                if item.get("path")
+                and item.get("blob_digest")
+                and isinstance(item.get("content"), str)
             ]
             system = (
                 "Use only the following immutable project context snapshot. "
-                f"Snapshot digest: {snapshot.content_digest}. " + "\n".join(summaries)
+                f"Snapshot digest: {snapshot.content_digest}.\n"
+                + "\n".join(materialized)
             )
     return messages, system
 
@@ -680,6 +610,7 @@ async def _execute_chat_message(
         }
         assistant.completed_at = utcnow()
     session.add(assistant)
+    append_message_event(session, assistant, "message_updated")
     conversation.updated_at = utcnow()
     session.add(conversation)
     session.commit()
@@ -778,6 +709,9 @@ async def create_message(
             idempotency_key=f"chat-reply:{key}",
         )
         session.add(response_message)
+        session.flush()
+        append_message_event(session, user_message, "message_created")
+        append_message_event(session, response_message, "message_created")
         session.commit()
         await _execute_chat_message(session, locked, response_message)
     else:
@@ -797,6 +731,7 @@ async def create_message(
             "attachment_ids": [str(value.id) for value in attachments],
         }
         session.add(user_message)
+        append_message_event(session, user_message, "message_created")
         conversation.updated_at = utcnow()
         session.add(conversation)
         session.commit()
@@ -819,7 +754,8 @@ def list_messages(
         session, conversation_id, namespace_id, current_user
     )
     if conversation.mode == ConversationMode.AGENT:
-        reconcile_agent_messages(session, conversation)
+        if reconcile_agent_messages(session, conversation):
+            session.commit()
     rows = session.exec(
         select(ConversationMessage)
         .where(
@@ -832,6 +768,81 @@ def list_messages(
     return {"data": rows, "count": len(rows)}
 
 
+@router.get("/conversations/{conversation_id}/events", response_model=None)
+async def list_conversation_events(
+    conversation_id: uuid.UUID,
+    request: Request,
+    session: SessionDep,
+    current_user: CurrentUser,
+    after_sequence: int = 0,
+    accept: str | None = Header(default=None, alias="Accept"),
+    last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
+    namespace_id: uuid.UUID = Depends(require_namespace_member),
+) -> dict[str, Any] | StreamingResponse:
+    conversation = require_conversation_access(
+        session, conversation_id, namespace_id, current_user
+    )
+    if accept and "text/event-stream" in accept:
+        try:
+            cursor = (
+                max(after_sequence, int(last_event_id))
+                if last_event_id
+                else after_sequence
+            )
+        except ValueError as exc:
+            raise HTTPException(400, "Last-Event-ID must be an integer") from exc
+
+        async def generate() -> AsyncIterator[str]:
+            nonlocal cursor
+            while not await request.is_disconnected():
+                session.expire_all()
+                current = session.get(Conversation, conversation.id)
+                if current is None:
+                    break
+                if current.mode == ConversationMode.AGENT and reconcile_agent_messages(
+                    session, current
+                ):
+                    session.commit()
+                events = session.exec(
+                    select(ConversationEvent)
+                    .where(
+                        ConversationEvent.conversation_id == current.id,
+                        ConversationEvent.sequence > cursor,
+                    )
+                    .order_by(col(ConversationEvent.sequence))
+                    .limit(200)
+                ).all()
+                for event in events:
+                    cursor = event.sequence
+                    data = json.dumps(event.model_dump(mode="json"), ensure_ascii=False)
+                    yield (
+                        f"id: {event.sequence}\n"
+                        f"event: {event.event_type}\n"
+                        f"data: {data}\n\n"
+                    )
+                if current.status == ConversationStatus.ARCHIVED and not events:
+                    break
+                if not events:
+                    yield ": keepalive\n\n"
+                await asyncio.sleep(0.5)
+
+        return StreamingResponse(generate(), media_type="text/event-stream")
+    if conversation.mode == ConversationMode.AGENT and reconcile_agent_messages(
+        session, conversation
+    ):
+        session.commit()
+    rows = session.exec(
+        select(ConversationEvent)
+        .where(
+            ConversationEvent.conversation_id == conversation.id,
+            ConversationEvent.sequence > after_sequence,
+        )
+        .order_by(col(ConversationEvent.sequence))
+        .limit(200)
+    ).all()
+    return {"data": rows, "count": len(rows)}
+
+
 @router.get("/conversations/{conversation_id}/delegations")
 def list_delegations(
     conversation_id: uuid.UUID,
@@ -839,7 +850,11 @@ def list_delegations(
     current_user: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_member),
 ) -> dict[str, Any]:
-    require_conversation_access(session, conversation_id, namespace_id, current_user)
+    conversation = require_conversation_access(
+        session, conversation_id, namespace_id, current_user
+    )
+    if reconcile_agent_messages(session, conversation):
+        session.commit()
     rows = session.exec(
         select(AgentDelegation)
         .where(AgentDelegation.conversation_id == conversation_id)
@@ -848,81 +863,10 @@ def list_delegations(
     return {"data": rows, "count": len(rows)}
 
 
-@router.post("/conversations/{conversation_id}/delegations", status_code=202)
-def create_delegation(
-    conversation_id: uuid.UUID,
-    body: DelegationCreate,
-    session: SessionDep,
-    current_user: CurrentUser,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-    namespace_id: uuid.UUID = Depends(require_namespace_member),
-) -> AgentDelegation:
-    key = _require_idempotency(idempotency_key)
-    conversation = require_conversation_access(
-        session, conversation_id, namespace_id, current_user, participate=True
-    )
-    if conversation.mode != ConversationMode.AGENT:
-        raise HTTPException(409, "Delegation is only available in Agent conversations")
-    source = session.get(ConversationAgent, body.source_conversation_agent_id)
-    target = session.get(ConversationAgent, body.target_conversation_agent_id)
-    message = session.get(ConversationMessage, body.source_message_id)
-    if (
-        source is None
-        or target is None
-        or message is None
-        or source.conversation_id != conversation.id
-        or target.conversation_id != conversation.id
-        or message.conversation_id != conversation.id
-        or source.role != ConversationAgentRole.MAIN
-        or target.role != ConversationAgentRole.COLLABORATOR
-    ):
-        raise HTTPException(422, "Delegation must stay within the fixed roundtable")
-    existing = session.exec(
-        select(AgentDelegation).where(
-            AgentDelegation.conversation_id == conversation.id,
-            AgentDelegation.idempotency_key == key,
-        )
-    ).first()
-    if existing:
-        return existing
-    synthetic_message = ConversationMessage(
-        conversation_id=conversation.id,
-        sequence=next_message_sequence(session, conversation.id),
-        author_type=MessageAuthorType.AGENT,
-        author_id=source.id,
-        target_type=MessageTargetType.AGENT,
-        target_agent_id=target.id,
-        context_snapshot_id=conversation.current_context_snapshot_id,
-        payload={"content": body.content, "delegated": True},
-        status=MessageStatus.RUNNING,
-        idempotency_key=f"delegation-message:{key}",
-    )
-    session.add(synthetic_message)
-    session.flush()
-    task = create_agent_task(
-        session, conversation, target, synthetic_message, body.content
-    )
-    synthetic_message.task_id = task.id
-    delegation = AgentDelegation(
-        conversation_id=conversation.id,
-        source_message_id=message.id,
-        source_agent_id=source.id,
-        target_agent_id=target.id,
-        input_payload={"content": body.content},
-        task_id=task.id,
-        status=DelegationStatus.RUNNING,
-        idempotency_key=key,
-    )
-    session.add_all([synthetic_message, delegation])
-    session.commit()
-    session.refresh(delegation)
-    return delegation
-
-
 @router.post("/conversations/{conversation_id}/context-snapshots", status_code=201)
 def refresh_context_snapshot(
     conversation_id: uuid.UUID,
-    body: ContextRefresh,
+    _body: ContextRefresh,
     session: SessionDep,
     current_user: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_member),
@@ -934,7 +878,6 @@ def refresh_context_snapshot(
         session,
         conversation,
         current_user.id,
-        [item.model_dump(mode="json") for item in body.content_refs],
     )
     session.commit()
     session.refresh(snapshot)
@@ -1001,7 +944,7 @@ def derive_conversation(
     try:
         session.flush()
         if source.project_id:
-            create_context_snapshot(session, derived, current_user.id, [])
+            create_context_snapshot(session, derived, current_user.id)
         session.commit()
     except IntegrityError as exc:
         session.rollback()

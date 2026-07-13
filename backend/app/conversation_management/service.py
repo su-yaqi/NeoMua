@@ -15,6 +15,7 @@ from app.conversation_management.models import (
     ConversationAgent,
     ConversationAgentRole,
     ConversationContextSnapshot,
+    ConversationEvent,
     ConversationMessage,
     ConversationStatus,
     ConversationVisibility,
@@ -35,7 +36,7 @@ from app.project_management.models import (
     SpecStandard,
     SpecStandardVersion,
 )
-from app.project_management.service import normalize_spec_path
+from app.project_management.service import verified_repository_runtime_proof
 from app.runtime.models import (
     AgentSession,
     AgentTask,
@@ -207,7 +208,6 @@ def create_context_snapshot(
     session: Session,
     conversation: Conversation,
     user_id: uuid.UUID,
-    content_refs: list[dict[str, Any]],
 ) -> ConversationContextSnapshot:
     if conversation.project_id is None:
         raise HTTPException(409, "Conversation has no project context")
@@ -218,31 +218,25 @@ def create_context_snapshot(
     ).all()
     if not repositories:
         raise HTTPException(409, "Project has no repository context")
-    unavailable = [
-        str(repository.id)
-        for repository in repositories
-        if repository.status != RepositoryStatus.AVAILABLE
-        or not repository.validated_commit
-    ]
+    runtime_key = str(conversation.runtime_id)
+    unavailable = []
+    runtime_proofs: dict[uuid.UUID, dict[str, Any]] = {}
+    for repository in repositories:
+        proof = verified_repository_runtime_proof(
+            session, repository, conversation.runtime_id
+        )
+        if (
+            repository.status != RepositoryStatus.AVAILABLE
+            or not repository.validated_commit
+            or proof is None
+        ):
+            unavailable.append(str(repository.id))
+        else:
+            runtime_proofs[repository.id] = proof
     if unavailable:
         raise HTTPException(
             409,
             {"code": "project_repository_unavailable", "repository_ids": unavailable},
-        )
-    repository_ids = {repository.id for repository in repositories}
-    safe_content_refs: list[dict[str, Any]] = []
-    for item in content_refs:
-        repository_id = uuid.UUID(str(item["repository_id"]))
-        if repository_id not in repository_ids:
-            raise HTTPException(
-                422, "Content reference repository is outside the project"
-            )
-        safe_content_refs.append(
-            {
-                **item,
-                "repository_id": str(repository_id),
-                "path": normalize_spec_path(str(item["path"])),
-            }
         )
     repository_refs = [
         {
@@ -250,6 +244,9 @@ def create_context_snapshot(
             "remote_url": repository.remote_url,
             "purpose": repository.purpose,
             "commit": repository.validated_commit,
+            "runtime_id": runtime_key,
+            "workspace_ref": runtime_proofs[repository.id]["workspace_ref"],
+            "runtime_job_id": runtime_proofs[repository.id]["runtime_job_id"],
         }
         for repository in repositories
     ]
@@ -259,13 +256,18 @@ def create_context_snapshot(
         )
     ).all()
     spec_refs: list[dict[str, Any]] = []
+    safe_content_refs: list[dict[str, Any]] = []
     for location in locations:
         binding = session.exec(
             select(ProjectSpecBinding).where(
                 ProjectSpecBinding.spec_location_id == location.id
             )
         ).first()
-        if binding is None:
+        if (
+            binding is None
+            or location.status.value != "valid"
+            or binding.status.value != "valid"
+        ):
             raise HTTPException(
                 409,
                 {
@@ -292,6 +294,31 @@ def create_context_snapshot(
                 "standard_content_digest": version.content_digest,
             }
         )
+        proof_locations = {
+            str(item["spec_location_id"]): item
+            for item in runtime_proofs[repository.id].get("spec_locations", [])
+        }
+        proof_location = proof_locations.get(str(location.id))
+        if proof_location is None:
+            raise HTTPException(
+                409,
+                {
+                    "code": "spec_runtime_proof_missing",
+                    "spec_location_id": str(location.id),
+                    "runtime_id": runtime_key,
+                },
+            )
+        for file in proof_location.get("files", []):
+            safe_content_refs.append(
+                {
+                    "repository_id": str(repository.id),
+                    "spec_location_id": str(location.id),
+                    "path": file["path"],
+                    "blob_digest": file["content_digest"],
+                    "size": file["size"],
+                    "content": file["content"],
+                }
+            )
     latest = session.exec(
         select(func.max(ConversationContextSnapshot.revision)).where(
             ConversationContextSnapshot.conversation_id == conversation.id
@@ -328,6 +355,53 @@ def next_message_sequence(session: Session, conversation_id: uuid.UUID) -> int:
         )
     ).one()
     return int(latest or 0) + 1
+
+
+def append_conversation_event(
+    session: Session,
+    conversation_id: uuid.UUID,
+    event_type: str,
+    payload: dict[str, Any],
+) -> ConversationEvent:
+    conversation = session.exec(
+        select(Conversation).where(Conversation.id == conversation_id).with_for_update()
+    ).one()
+    latest = session.exec(
+        select(func.max(ConversationEvent.sequence)).where(
+            ConversationEvent.conversation_id == conversation.id
+        )
+    ).one()
+    event = ConversationEvent(
+        conversation_id=conversation.id,
+        sequence=int(latest or 0) + 1,
+        event_type=event_type,
+        payload=payload,
+    )
+    session.add(event)
+    session.flush()
+    return event
+
+
+def append_message_event(
+    session: Session, message: ConversationMessage, event_type: str
+) -> ConversationEvent:
+    return append_conversation_event(
+        session,
+        message.conversation_id,
+        event_type,
+        {
+            "message_id": str(message.id),
+            "message_sequence": message.sequence,
+            "status": message.status.value,
+            "author_type": message.author_type.value,
+            "target_type": message.target_type.value,
+            "target_agent_id": (
+                str(message.target_agent_id) if message.target_agent_id else None
+            ),
+            "task_id": str(message.task_id) if message.task_id else None,
+            "error": message.error,
+        },
+    )
 
 
 def target_participants(
@@ -399,12 +473,94 @@ def create_agent_task(
             raise HTTPException(409, "Target node Runtime is unavailable")
         node_id = node.id
     resolved_spec = release.resolved_spec
+    effective_prompt = prompt
+    if user_message.context_snapshot_id is not None:
+        snapshot = session.get(
+            ConversationContextSnapshot, user_message.context_snapshot_id
+        )
+        if snapshot is None:
+            raise HTTPException(409, "Conversation context snapshot is unavailable")
+        materialized = [
+            (f"--- {item['path']} @ {item['blob_digest']} ---\n{item['content']}")
+            for item in snapshot.content_refs
+            if item.get("path")
+            and item.get("blob_digest")
+            and isinstance(item.get("content"), str)
+        ]
+        effective_prompt = (
+            "以下内容来自已由目标 Runtime 校验并固定的项目上下文快照。"
+            f"快照摘要：{snapshot.content_digest}\n"
+            + "\n".join(materialized)
+            + f"\n\n当前消息：\n{prompt}"
+        )
+    system_prompt = resolved_spec["system_prompt"]
+    roundtable_participants: list[dict[str, str]] = []
+    if participant.role == ConversationAgentRole.MAIN:
+        collaborators = session.exec(
+            select(ConversationAgent).where(
+                ConversationAgent.conversation_id == conversation.id,
+                ConversationAgent.role == ConversationAgentRole.COLLABORATOR,
+            )
+        ).all()
+        roundtable_participants = [
+            {
+                "conversation_agent_id": str(item.id),
+                "agent_id": str(item.agent_id),
+                "agent_release_id": str(item.agent_release_id),
+            }
+            for item in collaborators
+        ]
+        if roundtable_participants:
+            system_prompt = (
+                f"{system_prompt}\n\n"
+                "你是本次圆桌会话的主 Agent。需要协作时只能使用 "
+                "neomua-roundtable 的 delegate_to_collaborator 工具，并且只能选择"
+                "下列 conversation_agent_id。工具会等待真实协作任务完成并返回完整结果；"
+                "协作失败必须如实说明，不得伪装成自己的结论。\n"
+                f"固定协作成员：{json.dumps(roundtable_participants, ensure_ascii=False)}"
+            )
+            previous_main_task = session.exec(
+                select(AgentTask)
+                .where(AgentTask.session_id == participant.agent_session_id)
+                .order_by(col(AgentTask.created_at).desc())
+            ).first()
+            if previous_main_task is not None:
+                updates = session.exec(
+                    select(ConversationMessage)
+                    .where(
+                        ConversationMessage.conversation_id == conversation.id,
+                        ConversationMessage.id != user_message.id,
+                        ConversationMessage.created_at > previous_main_task.created_at,
+                    )
+                    .order_by(col(ConversationMessage.sequence))
+                ).all()
+                roundtable_updates = [
+                    {
+                        "sequence": item.sequence,
+                        "author_type": item.author_type.value,
+                        "author_id": str(item.author_id) if item.author_id else None,
+                        "target_type": item.target_type.value,
+                        "target_agent_id": (
+                            str(item.target_agent_id) if item.target_agent_id else None
+                        ),
+                        "status": item.status.value,
+                        "payload": item.payload,
+                        "error": item.error,
+                    }
+                    for item in updates
+                ]
+                if roundtable_updates:
+                    effective_prompt = (
+                        "以下是主 Agent 上一轮之后新增的完整圆桌记录，请先纳入主持上下文：\n"
+                        f"{json.dumps(roundtable_updates, ensure_ascii=False)}\n\n"
+                        f"当前用户消息：\n{effective_prompt}"
+                    )
     task = AgentTask(
         namespace_id=conversation.namespace_id,
         session_id=participant.agent_session_id,
         runtime_profile_id=runtime.id,
         target_node_id=node_id,
-        prompt=prompt,
+        prompt=effective_prompt,
         snapshot={
             "conversation_id": str(conversation.id),
             "conversation_message_id": str(user_message.id),
@@ -413,7 +569,7 @@ def create_agent_task(
             "agent_release_id": str(release.id),
             "agent_release_version": release.version,
             "resolved_spec_digest": release.resolved_spec_digest,
-            "system_prompt": resolved_spec["system_prompt"],
+            "system_prompt": system_prompt,
             "provider_config_id": resolved_spec["model"]["provider_config_id"],
             "model_id": resolved_spec["model"]["model_id"],
             "base_url": runtime.base_url,
@@ -426,19 +582,145 @@ def create_agent_task(
             ),
             "working_directory": runtime.config.get("cwd"),
             "timeout_seconds": int(runtime.config.get("timeout_seconds", 3600)),
+            "roundtable_role": participant.role.value,
+            "roundtable_participants": roundtable_participants,
         },
         agent_release_id=release.id,
         runtime_agent_release_id=binding.id,
         resolved_spec_digest=release.resolved_spec_digest,
         idempotency_key=f"conversation:{conversation.id}:message:{user_message.id}:agent:{participant.id}",
-        created_by=user_message.author_id,
+        created_by=(
+            user_message.author_id
+            if user_message.author_type == MessageAuthorType.USER
+            else None
+        ),
     )
     session.add(task)
     session.flush()
     return task
 
 
-def reconcile_agent_messages(session: Session, conversation: Conversation) -> None:
+def create_runtime_delegation(
+    session: Session,
+    source_task: AgentTask,
+    source_task_revision: int,
+    target_conversation_agent_id: uuid.UUID,
+    content: str,
+) -> AgentDelegation:
+    """Create a delegation authenticated by the currently executing main task."""
+    if source_task.revision != source_task_revision or source_task.status not in {
+        TaskStatus.DISPATCHED,
+        TaskStatus.RUNNING,
+        TaskStatus.AWAITING_APPROVAL,
+    }:
+        raise HTTPException(409, "Source Agent task is not active")
+    if source_task.snapshot.get("roundtable_role") != ConversationAgentRole.MAIN.value:
+        raise HTTPException(403, "Only the executing main Agent may delegate")
+    conversation_id_value = source_task.snapshot.get("conversation_id")
+    source_message_id_value = source_task.snapshot.get("conversation_message_id")
+    if not conversation_id_value or not source_message_id_value:
+        raise HTTPException(409, "Source task has no roundtable scope")
+    conversation = session.get(Conversation, uuid.UUID(str(conversation_id_value)))
+    source_message = session.get(
+        ConversationMessage, uuid.UUID(str(source_message_id_value))
+    )
+    source = session.exec(
+        select(ConversationAgent).where(
+            ConversationAgent.agent_session_id == source_task.session_id,
+            ConversationAgent.role == ConversationAgentRole.MAIN,
+        )
+    ).first()
+    target = session.get(ConversationAgent, target_conversation_agent_id)
+    allowed_ids = {
+        str(item.get("conversation_agent_id"))
+        for item in source_task.snapshot.get("roundtable_participants", [])
+        if isinstance(item, dict)
+    }
+    if (
+        conversation is None
+        or source_message is None
+        or source is None
+        or target is None
+        or source.conversation_id != conversation.id
+        or target.conversation_id != conversation.id
+        or target.role != ConversationAgentRole.COLLABORATOR
+        or str(target.id) not in allowed_ids
+    ):
+        raise HTTPException(422, "Delegation target is outside the fixed roundtable")
+    identity = canonical_digest(
+        {
+            "source_task_id": str(source_task.id),
+            "source_task_revision": source_task_revision,
+            "target_conversation_agent_id": str(target.id),
+            "content": content,
+        }
+    )
+    key = f"runtime:{source_task.id}:{identity}"
+    existing = session.exec(
+        select(AgentDelegation).where(
+            AgentDelegation.conversation_id == conversation.id,
+            AgentDelegation.idempotency_key == key,
+        )
+    ).first()
+    if existing is not None:
+        return existing
+    delegated_message = ConversationMessage(
+        conversation_id=conversation.id,
+        sequence=next_message_sequence(session, conversation.id),
+        author_type=MessageAuthorType.AGENT,
+        author_id=source.id,
+        target_type=MessageTargetType.AGENT,
+        target_agent_id=target.id,
+        context_snapshot_id=source_message.context_snapshot_id,
+        payload={
+            "content": content,
+            "delegated": True,
+            "source_task_id": str(source_task.id),
+        },
+        status=MessageStatus.RUNNING,
+        reply_to_id=source_message.id,
+        idempotency_key=f"delegation-message:{key}",
+    )
+    session.add(delegated_message)
+    session.flush()
+    target_task = create_agent_task(
+        session, conversation, target, delegated_message, content
+    )
+    delegated_message.task_id = target_task.id
+    delegation = AgentDelegation(
+        conversation_id=conversation.id,
+        source_message_id=source_message.id,
+        source_agent_id=source.id,
+        target_agent_id=target.id,
+        input_payload={
+            "content": content,
+            "source_task_id": str(source_task.id),
+            "source_task_revision": source_task_revision,
+            "delegated_message_id": str(delegated_message.id),
+        },
+        task_id=target_task.id,
+        status=DelegationStatus.RUNNING,
+        idempotency_key=key,
+    )
+    session.add_all([delegated_message, delegation])
+    session.flush()
+    append_message_event(session, delegated_message, "message_created")
+    append_conversation_event(
+        session,
+        conversation.id,
+        "delegation_created",
+        {
+            "delegation_id": str(delegation.id),
+            "source_agent_id": str(source.id),
+            "target_agent_id": str(target.id),
+            "task_id": str(target_task.id),
+            "status": delegation.status.value,
+        },
+    )
+    return delegation
+
+
+def reconcile_agent_messages(session: Session, conversation: Conversation) -> bool:
     active_messages = session.exec(
         select(ConversationMessage).where(
             ConversationMessage.conversation_id == conversation.id,
@@ -449,6 +731,7 @@ def reconcile_agent_messages(session: Session, conversation: Conversation) -> No
     ).all()
     changed = False
     for message in active_messages:
+        previous_message_status = message.status
         raw_task_ids = message.payload.get("task_ids")
         task_ids = (
             [uuid.UUID(str(value)) for value in raw_task_ids]
@@ -460,6 +743,7 @@ def reconcile_agent_messages(session: Session, conversation: Conversation) -> No
             message.status = MessageStatus.FAILED
             message.error = {"code": "agent_task_missing"}
             changed = True
+            append_message_event(session, message, "message_updated")
             continue
         terminal = True
         failures: list[dict[str, Any]] = []
@@ -478,22 +762,23 @@ def reconcile_agent_messages(session: Session, conversation: Conversation) -> No
                             ConversationAgent.agent_session_id == task.session_id
                         )
                     ).first()
-                    session.add(
-                        ConversationMessage(
-                            conversation_id=conversation.id,
-                            sequence=next_message_sequence(session, conversation.id),
-                            author_type=MessageAuthorType.AGENT,
-                            author_id=participant.id if participant else None,
-                            target_type=MessageTargetType.SYSTEM,
-                            context_snapshot_id=message.context_snapshot_id,
-                            payload=task.final_result or {},
-                            status=MessageStatus.COMPLETED,
-                            task_id=task.id,
-                            reply_to_id=message.id,
-                            idempotency_key=f"agent-reply:{task.id}",
-                            completed_at=task.completed_at or utcnow(),
-                        )
+                    reply = ConversationMessage(
+                        conversation_id=conversation.id,
+                        sequence=next_message_sequence(session, conversation.id),
+                        author_type=MessageAuthorType.AGENT,
+                        author_id=participant.id if participant else None,
+                        target_type=MessageTargetType.SYSTEM,
+                        context_snapshot_id=message.context_snapshot_id,
+                        payload=task.final_result or {},
+                        status=MessageStatus.COMPLETED,
+                        task_id=task.id,
+                        reply_to_id=message.id,
+                        idempotency_key=f"agent-reply:{task.id}",
+                        completed_at=task.completed_at or utcnow(),
                     )
+                    session.add(reply)
+                    session.flush()
+                    append_message_event(session, reply, "message_created")
             elif task.status in {
                 TaskStatus.FAILED,
                 TaskStatus.CANCELLED,
@@ -514,6 +799,8 @@ def reconcile_agent_messages(session: Session, conversation: Conversation) -> No
             changed = True
         else:
             message.status = MessageStatus.RUNNING
+        if message.status != previous_message_status:
+            append_message_event(session, message, "message_updated")
 
     delegations = session.exec(
         select(AgentDelegation).where(
@@ -524,6 +811,7 @@ def reconcile_agent_messages(session: Session, conversation: Conversation) -> No
         )
     ).all()
     for delegation in delegations:
+        previous_delegation_status = delegation.status
         task = (
             session.get(AgentTask, delegation.task_id) if delegation.task_id else None
         )
@@ -535,6 +823,42 @@ def reconcile_agent_messages(session: Session, conversation: Conversation) -> No
             delegation.status = DelegationStatus.COMPLETED
             delegation.result_payload = task.final_result or {}
             delegation.completed_at = task.completed_at or utcnow()
+            delegated_message_id = delegation.input_payload.get("delegated_message_id")
+            delegated_message = (
+                session.get(ConversationMessage, uuid.UUID(str(delegated_message_id)))
+                if delegated_message_id
+                else None
+            )
+            if delegated_message is not None:
+                delegated_message.status = MessageStatus.COMPLETED
+                delegated_message.completed_at = delegation.completed_at
+                existing_reply = session.exec(
+                    select(ConversationMessage).where(
+                        ConversationMessage.conversation_id == conversation.id,
+                        ConversationMessage.idempotency_key
+                        == f"delegation-reply:{delegation.id}",
+                    )
+                ).first()
+                if existing_reply is None:
+                    reply = ConversationMessage(
+                        conversation_id=conversation.id,
+                        sequence=next_message_sequence(session, conversation.id),
+                        author_type=MessageAuthorType.AGENT,
+                        author_id=delegation.target_agent_id,
+                        target_type=MessageTargetType.MAIN,
+                        context_snapshot_id=delegated_message.context_snapshot_id,
+                        payload=task.final_result or {},
+                        status=MessageStatus.COMPLETED,
+                        task_id=task.id,
+                        reply_to_id=delegated_message.id,
+                        idempotency_key=f"delegation-reply:{delegation.id}",
+                        completed_at=delegation.completed_at,
+                    )
+                    session.add(reply)
+                    session.flush()
+                    append_message_event(session, reply, "message_created")
+                session.add(delegated_message)
+                append_message_event(session, delegated_message, "message_updated")
             changed = True
         elif task.status in {
             TaskStatus.FAILED,
@@ -545,12 +869,37 @@ def reconcile_agent_messages(session: Session, conversation: Conversation) -> No
             delegation.status = DelegationStatus.FAILED
             delegation.error = task.final_result or {"code": task.status.value}
             delegation.completed_at = task.completed_at or utcnow()
+            delegated_message_id = delegation.input_payload.get("delegated_message_id")
+            delegated_message = (
+                session.get(ConversationMessage, uuid.UUID(str(delegated_message_id)))
+                if delegated_message_id
+                else None
+            )
+            if delegated_message is not None:
+                delegated_message.status = MessageStatus.FAILED
+                delegated_message.error = delegation.error
+                delegated_message.completed_at = delegation.completed_at
+                session.add(delegated_message)
+                append_message_event(session, delegated_message, "message_updated")
             changed = True
         else:
             delegation.status = DelegationStatus.RUNNING
+        if delegation.status != previous_delegation_status:
+            append_conversation_event(
+                session,
+                conversation.id,
+                "delegation_updated",
+                {
+                    "delegation_id": str(delegation.id),
+                    "status": delegation.status.value,
+                    "task_id": str(delegation.task_id) if delegation.task_id else None,
+                    "error": delegation.error,
+                },
+            )
         session.add(delegation)
     if changed:
-        session.commit()
+        session.flush()
+    return changed
 
 
 def conversation_public(session: Session, conversation: Conversation) -> dict[str, Any]:

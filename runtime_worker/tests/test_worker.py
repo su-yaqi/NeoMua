@@ -3,7 +3,6 @@ import json
 
 import httpx
 import pytest
-
 from runtime_worker.worker import RuntimeWorker
 
 
@@ -207,3 +206,42 @@ async def test_worker_timeout_interrupts_and_posts_structured_error() -> None:
         if request.url.path.endswith("/events")
     )
     assert payload["events"][0]["payload"]["code"] == "task_timeout"
+
+
+@pytest.mark.anyio
+async def test_worker_executes_runtime_job_and_reports_result(monkeypatch) -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path.endswith("/jobs/claim"):
+            return httpx.Response(
+                200,
+                json={
+                    "job_id": "00000000-0000-0000-0000-000000000099",
+                    "revision": 3,
+                    "kind": "workflow_handler",
+                    "payload": {"component_key": "test"},
+                    "side_effecting": False,
+                },
+            )
+        return httpx.Response(200, json={"status": "succeeded"})
+
+    monkeypatch.setattr(
+        "runtime_worker.worker.execute_runtime_job",
+        lambda kind, payload: {"output": {"kind": kind, **payload}},
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url="http://control"
+    ) as client:
+        worker = RuntimeWorker(client, "token", "worker-1", shell=FakeShell())
+        assert await worker.run_runtime_job_once()
+    result_request = next(
+        request for request in requests if request.url.path.endswith("/result")
+    )
+    assert json.loads(result_request.content) == {
+        "worker_id": "worker-1",
+        "revision": 3,
+        "status": "succeeded",
+        "result": {"output": {"kind": "workflow_handler", "component_key": "test"}},
+    }

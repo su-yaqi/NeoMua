@@ -146,6 +146,9 @@ class ProjectRepository(SQLModel, table=True):
         default=None, sa_column=Column(POSTGRES_JSON)
     )
     validated_commit: str | None = Field(default=None, max_length=64)
+    validation_job_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_job.id", ondelete="SET NULL"
+    )
     created_at: datetime = Field(
         default_factory=utcnow, sa_type=DateTime(timezone=True)
     )

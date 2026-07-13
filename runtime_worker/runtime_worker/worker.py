@@ -1,16 +1,17 @@
 import asyncio
 import hashlib
+import json
 import logging
 import random
 import time
-import json
 from typing import Any
 
 import httpx
+from workflow_runtime.executor import execute_runtime_job
 
 from runtime_worker.agent_shell import AgentShell, RunCommand
-from runtime_worker.release_store import AgentReleaseStore, canonical_bytes
 from runtime_worker.mcp_manager import McpRuntimeManager
+from runtime_worker.release_store import AgentReleaseStore, canonical_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +156,68 @@ class RuntimeWorker:
         self._classify_response(response)
         self._last_capability_report = time.monotonic()
 
+    async def run_runtime_job_once(self) -> bool:
+        try:
+            response = await self.client.post(
+                "/api/v1/internal/runtime/jobs/claim",
+                headers=self.headers,
+                json={"worker_id": self.worker_id},
+            )
+        except httpx.TransportError as exc:
+            raise TransientWorkerError("Runtime job claim failed") from exc
+        if response.status_code == 204:
+            return False
+        self._classify_response(response)
+        command = response.json()
+        job_id = str(command["job_id"])
+        revision = int(command["revision"])
+        side_effecting = bool(command.get("side_effecting", False))
+        stop_lease = asyncio.Event()
+        lease = asyncio.create_task(
+            self._renew_runtime_job_lease(job_id, revision, stop_lease)
+        )
+        try:
+            try:
+                result = await asyncio.to_thread(
+                    execute_runtime_job,
+                    str(command["kind"]),
+                    dict(command["payload"]),
+                )
+                body: dict[str, Any] = {"status": "succeeded", "result": result}
+            except Exception as exc:
+                body = {
+                    "status": (
+                        "needs_manual_resolution" if side_effecting else "failed"
+                    ),
+                    "error": {
+                        "code": "runtime_job_execution_failed",
+                        "message": str(exc),
+                    },
+                }
+            reported = await self.client.post(
+                f"/api/v1/internal/runtime/jobs/{job_id}/result",
+                headers=self.headers,
+                json={"worker_id": self.worker_id, "revision": revision, **body},
+            )
+            self._classify_response(reported, task_scoped=True)
+        finally:
+            stop_lease.set()
+            lease.cancel()
+            await asyncio.gather(lease, return_exceptions=True)
+        return True
+
+    async def _renew_runtime_job_lease(
+        self, job_id: str, revision: int, stopped: asyncio.Event
+    ) -> None:
+        while not stopped.is_set():
+            await asyncio.sleep(self.lease_interval)
+            response = await self.client.post(
+                f"/api/v1/internal/runtime/jobs/{job_id}/lease",
+                headers=self.headers,
+                json={"worker_id": self.worker_id, "revision": revision},
+            )
+            self._classify_response(response, task_scoped=True)
+
     @staticmethod
     def _classify_response(
         response: httpx.Response, *, task_scoped: bool = False
@@ -233,6 +296,40 @@ class RuntimeWorker:
             if status in {"denied", "expired", "cancelled"}:
                 return False
 
+    async def _request_agent_delegation(
+        self,
+        task_id: str,
+        task_revision: int,
+        target_conversation_agent_id: str,
+        content: str,
+    ) -> dict[str, Any]:
+        created = await self.client.post(
+            "/api/v1/internal/runtime/agent-delegations",
+            headers=self.headers,
+            json={
+                "source_task_id": task_id,
+                "source_task_revision": task_revision,
+                "target_conversation_agent_id": target_conversation_agent_id,
+                "content": content,
+            },
+        )
+        self._classify_response(created, task_scoped=True)
+        delegation_id = created.json()["id"]
+        while True:
+            checked = await self.client.get(
+                f"/api/v1/internal/runtime/agent-delegations/{delegation_id}",
+                headers=self.headers,
+                params={
+                    "source_task_id": task_id,
+                    "source_task_revision": task_revision,
+                },
+            )
+            self._classify_response(checked, task_scoped=True)
+            result = checked.json()
+            if result["status"] in {"completed", "failed"}:
+                return result
+            await asyncio.sleep(2)
+
     async def run_once(self) -> bool:
         try:
             response = await self.client.post(
@@ -252,6 +349,7 @@ class RuntimeWorker:
             revision = int(payload["revision"])
             command.task_revision = revision
             command.approval_callback = self._request_tool_approval
+            command.delegation_callback = self._request_agent_delegation
             if payload.get("mcp_runtime_configs"):
                 if self.mcp_manager is None:
                     raise TransientWorkerError("MCP Runtime Manager is unavailable")
@@ -435,9 +533,15 @@ class RuntimeWorker:
                     await self.report_capabilities()
                 validated_mcp = await self.validate_mcp_once()
                 applied = await self.apply_release_once()
+                ran_runtime_job = await self.run_runtime_job_once()
                 worked = await self.run_once()
                 attempt = 0
-                if not worked and not applied and not validated_mcp:
+                if (
+                    not worked
+                    and not applied
+                    and not validated_mcp
+                    and not ran_runtime_job
+                ):
                     await asyncio.sleep(2)
             except PermanentWorkerError:
                 logger.critical(

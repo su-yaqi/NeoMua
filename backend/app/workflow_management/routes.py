@@ -4,7 +4,7 @@ import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
@@ -24,9 +24,14 @@ from app.conversation_management.models import (
     MessageStatus,
     MessageTargetType,
 )
-from app.conversation_management.service import create_agent_task, next_message_sequence
+from app.conversation_management.service import (
+    append_message_event,
+    create_agent_task,
+    next_message_sequence,
+)
 from app.project_management.service import can_manage_namespace, require_project_member
 from app.runtime.security import require_internal_runtime
+from app.text_attachments import store_text_attachment
 from app.workflow_management.bundled import load_bundled_workflow_code
 from app.workflow_management.engine import (
     advance_instance,
@@ -49,10 +54,13 @@ from app.workflow_management.models import (
     ConfirmationMode,
     NamespaceWorkflowEnablement,
     WorkflowApplication,
+    WorkflowArtifact,
+    WorkflowAttachment,
     WorkflowConfirmation,
     WorkflowEdgeDefinition,
     WorkflowEvent,
     WorkflowExecutionStatus,
+    WorkflowGateResult,
     WorkflowInstance,
     WorkflowInstanceStatus,
     WorkflowNodeDefinition,
@@ -120,6 +128,11 @@ def _version_visible(
 def _instance_public(session: SessionDep, instance: WorkflowInstance) -> dict[str, Any]:
     version = session.get(WorkflowTemplateVersion, instance.template_version_id)
     template = session.get(WorkflowTemplate, version.template_id) if version else None
+    application = session.exec(
+        select(WorkflowApplication).where(
+            WorkflowApplication.template_version_id == instance.template_version_id
+        )
+    ).first()
     nodes = session.exec(
         select(WorkflowNodeInstance)
         .where(WorkflowNodeInstance.workflow_instance_id == instance.id)
@@ -131,6 +144,7 @@ def _instance_public(session: SessionDep, instance: WorkflowInstance) -> dict[st
         "project_id": instance.project_id,
         "template_version_id": instance.template_version_id,
         "workflow_slug": template.slug if template else None,
+        "application": application,
         "package_digest": instance.package_digest,
         "title": instance.title,
         "status": instance.status,
@@ -144,6 +158,20 @@ def _instance_public(session: SessionDep, instance: WorkflowInstance) -> dict[st
         "updated_at": instance.updated_at,
         "completed_at": instance.completed_at,
         "cancelled_at": instance.cancelled_at,
+    }
+
+
+def _workflow_attachment_public(attachment: WorkflowAttachment) -> dict[str, Any]:
+    return {
+        "id": attachment.id,
+        "filename": attachment.filename,
+        "content_type": attachment.content_type,
+        "size": attachment.size,
+        "content_digest": attachment.content_digest,
+        "scan_status": attachment.scan_status,
+        "scan_details": attachment.scan_details,
+        "created_by": attachment.created_by,
+        "created_at": attachment.created_at,
     }
 
 
@@ -245,24 +273,13 @@ def sync_registry(
                 condition_config=edge.condition_config,
             )
         )
-    application = session.exec(
-        select(WorkflowApplication).where(
-            WorkflowApplication.template_id == template.id
-        )
-    ).first()
-    if application is None:
-        application = WorkflowApplication(
-            template_id=template.id,
-            component_key=manifest.application.component_key,
-            route_slug=manifest.application.route_slug,
-            build_digest=manifest.application.build_digest,
-            shell_version=manifest.application.shell_version,
-        )
-    else:
-        application.component_key = manifest.application.component_key
-        application.route_slug = manifest.application.route_slug
-        application.build_digest = manifest.application.build_digest
-        application.shell_version = manifest.application.shell_version
+    application = WorkflowApplication(
+        template_version_id=version.id,
+        component_key=manifest.application.component_key,
+        route_slug=manifest.application.route_slug,
+        build_digest=manifest.application.build_digest,
+        shell_version=manifest.application.shell_version,
+    )
     session.add(application)
     try:
         session.commit()
@@ -297,11 +314,41 @@ def list_workflow_templates(
                 WorkflowTemplateVersion.template_id == template.id
             )
         ).all()
-        application = session.exec(
-            select(WorkflowApplication).where(
-                WorkflowApplication.template_id == template.id
+        version_ids = [version.id for version in versions]
+        applications = (
+            session.exec(
+                select(WorkflowApplication).where(
+                    col(WorkflowApplication.template_version_id).in_(version_ids)
+                )
+            ).all()
+            if version_ids
+            else []
+        )
+        applications_by_version = {
+            application.template_version_id: application for application in applications
+        }
+        version_items = []
+        selected_application = None
+        for version in versions:
+            enablement = session.exec(
+                select(NamespaceWorkflowEnablement).where(
+                    NamespaceWorkflowEnablement.namespace_id == namespace_id,
+                    NamespaceWorkflowEnablement.template_version_id == version.id,
+                )
+            ).first() or {"enabled": False, "is_default": False}
+            application = applications_by_version.get(version.id)
+            version_items.append(
+                {
+                    "version": version,
+                    "application": application,
+                    "enablement": enablement,
+                }
             )
-        ).first()
+            if application is not None and (
+                selected_application is None
+                or bool(getattr(enablement, "is_default", False))
+            ):
+                selected_application = application
         data.append(
             {
                 "id": template.id,
@@ -309,22 +356,8 @@ def list_workflow_templates(
                 "name": template.name,
                 "description": template.description,
                 "scope_type": template.scope_type,
-                "application": application,
-                "versions": [
-                    {
-                        "version": version,
-                        "enablement": session.exec(
-                            select(NamespaceWorkflowEnablement).where(
-                                NamespaceWorkflowEnablement.namespace_id
-                                == namespace_id,
-                                NamespaceWorkflowEnablement.template_version_id
-                                == version.id,
-                            )
-                        ).first()
-                        or {"enabled": False, "is_default": False},
-                    }
-                    for version in versions
-                ],
+                "application": selected_application,
+                "versions": version_items,
             }
         )
     return {"data": data, "count": len(data)}
@@ -354,7 +387,7 @@ def read_workflow_version(
     ).all()
     application = session.exec(
         select(WorkflowApplication).where(
-            WorkflowApplication.template_id == template.id
+            WorkflowApplication.template_version_id == version.id
         )
     ).first()
     return {
@@ -478,8 +511,11 @@ def list_workflow_instances(
         .where(WorkflowInstance.project_id == project_id)
         .order_by(col(WorkflowInstance.updated_at).desc())
     ).all()
+    changed = False
     for row in rows:
-        reconcile_instance(session, row)
+        changed = reconcile_instance(session, row) or changed
+    if changed:
+        session.commit()
     return {
         "data": [_instance_public(session, row) for row in rows],
         "count": len(rows),
@@ -578,7 +614,8 @@ def read_workflow_instance(
 ) -> dict[str, Any]:
     instance = get_instance(session, instance_id, namespace_id)
     require_project_member(session, instance.project_id, namespace_id, current_user)
-    reconcile_instance(session, instance)
+    if reconcile_instance(session, instance):
+        session.commit()
     session.refresh(instance)
     return _instance_public(session, instance)
 
@@ -602,6 +639,70 @@ def cancel_workflow_instance(
     session.add(instance)
     session.commit()
     return _instance_public(session, instance)
+
+
+@router.get("/workflow-instances/{instance_id}/attachments")
+def list_workflow_attachments(
+    instance_id: uuid.UUID,
+    session: SessionDep,
+    current_user: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_member),
+) -> dict[str, Any]:
+    instance = get_instance(session, instance_id, namespace_id)
+    require_project_member(session, instance.project_id, namespace_id, current_user)
+    rows = session.exec(
+        select(WorkflowAttachment)
+        .where(WorkflowAttachment.workflow_instance_id == instance.id)
+        .order_by(col(WorkflowAttachment.created_at))
+    ).all()
+    return {
+        "data": [_workflow_attachment_public(row) for row in rows],
+        "count": len(rows),
+    }
+
+
+@router.post("/workflow-instances/{instance_id}/attachments", status_code=201)
+async def upload_workflow_attachment(
+    instance_id: uuid.UUID,
+    session: SessionDep,
+    current_user: CurrentUser,
+    file: UploadFile = File(),
+    namespace_id: uuid.UUID = Depends(require_namespace_member),
+) -> dict[str, Any]:
+    instance = get_instance(session, instance_id, namespace_id)
+    require_project_member(session, instance.project_id, namespace_id, current_user)
+    require_mutable_instance(instance)
+    stored = await store_text_attachment(file, storage_prefix="workflow-attachments")
+    existing = session.exec(
+        select(WorkflowAttachment).where(
+            WorkflowAttachment.workflow_instance_id == instance.id,
+            WorkflowAttachment.content_digest == stored["content_digest"],
+        )
+    ).first()
+    if existing:
+        return _workflow_attachment_public(existing)
+    attachment = WorkflowAttachment(
+        workflow_instance_id=instance.id,
+        **stored,
+        scan_status="clean",
+        created_by=current_user.id,
+    )
+    session.add(attachment)
+    session.flush()
+    append_event(
+        session,
+        instance.id,
+        "attachment_uploaded",
+        {
+            "attachment_id": str(attachment.id),
+            "filename": attachment.filename,
+            "content_digest": attachment.content_digest,
+            "created_by": str(current_user.id),
+        },
+    )
+    session.commit()
+    session.refresh(attachment)
+    return _workflow_attachment_public(attachment)
 
 
 @router.get("/workflow-instances/{instance_id}/events", response_model=None)
@@ -693,7 +794,8 @@ def read_workflow_node(
 ) -> dict[str, Any]:
     instance = get_instance(session, instance_id, namespace_id)
     require_project_member(session, instance.project_id, namespace_id, current_user)
-    reconcile_instance(session, instance)
+    if reconcile_instance(session, instance):
+        session.commit()
     node, definition = get_node(session, instance.id, node_key)
     revisions = session.exec(
         select(WorkflowNodeRevision)
@@ -710,12 +812,44 @@ def read_workflow_node(
         .where(WorkflowConfirmation.node_instance_id == node.id)
         .order_by(col(WorkflowConfirmation.created_at))
     ).all()
+    gates = session.exec(
+        select(WorkflowGateResult)
+        .where(WorkflowGateResult.node_instance_id == node.id)
+        .order_by(col(WorkflowGateResult.created_at))
+    ).all()
+    revision_ids = [revision.id for revision in revisions]
+    artifacts = (
+        session.exec(
+            select(WorkflowArtifact)
+            .where(col(WorkflowArtifact.node_revision_id).in_(revision_ids))
+            .order_by(col(WorkflowArtifact.created_at))
+        ).all()
+        if revision_ids
+        else []
+    )
+    conversation_ids = [
+        execution.conversation_id
+        for execution in executions
+        if execution.conversation_id is not None
+    ]
+    messages = (
+        session.exec(
+            select(ConversationMessage)
+            .where(col(ConversationMessage.conversation_id).in_(conversation_ids))
+            .order_by(col(ConversationMessage.created_at))
+        ).all()
+        if conversation_ids
+        else []
+    )
     return {
         "node": node,
         "definition": definition,
         "revisions": revisions,
         "executions": executions,
         "confirmations": confirmations,
+        "gates": gates,
+        "artifacts": artifacts,
+        "messages": messages,
     }
 
 
@@ -1047,5 +1181,6 @@ def send_agent_node_message(
     task = create_agent_task(session, conversation, participant, message, body.content)
     message.task_id = task.id
     session.add(message)
+    append_message_event(session, message, "message_created")
     session.commit()
     return {"message": message, "task_id": task.id}

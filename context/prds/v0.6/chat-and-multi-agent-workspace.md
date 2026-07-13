@@ -156,12 +156,14 @@ sequenceDiagram
 
 ## 7. 验收标准
 
-- [ ] Chat 只能调用固定模型，不获得 Agent、Tool、Skill 或 MCP 能力。
-- [ ] 会话开始后不能切换模型、Runtime 或 Agent Release；派生会话保留来源关系。
-- [ ] 主 Agent只能调度用户本次选择且目标 Runtime 已激活的协作 Agent。
-- [ ] 用户可以直接点名协作 Agent，回答进入圆桌记录并对主 Agent可见。
-- [ ] 主线可展开查看完整委派输入、输出、错误和底层任务，不掩盖协作失败。
-- [ ] 项目上下文按 commit、Spec 版本和内容摘要形成不可变快照；刷新不改写历史。
-- [ ] 未关联项目的会话仅创建者可见；项目会话支持个人或全项目共享。
-- [ ] 所有 namespace 成员可使用已授权模型和 active Agent，但不能因此获得管理权限。
-- [ ] 模型、Agent 或 Runtime 失效时停止新消息，不静默降级或替换。
+- [x] Chat 只能调用固定模型，不获得 Agent、Tool、Skill 或 MCP 能力。
+- [x] 会话开始后不能切换模型、Runtime 或 Agent Release；派生会话保留来源关系。
+- [x] 主 Agent只能调度用户本次选择且目标 Runtime 已激活的协作 Agent。
+- [x] 用户可以直接点名协作 Agent，回答进入圆桌记录并对主 Agent可见。
+- [x] 主线可展开查看完整委派输入、输出、错误和底层任务，不掩盖协作失败。
+- [x] 项目上下文按 commit、Spec 版本和内容摘要形成不可变快照；刷新不改写历史。
+- [x] 未关联项目的会话仅创建者可见；项目会话支持个人或全项目共享。
+- [x] 所有 namespace 成员可使用已授权模型和 active Agent，但不能因此获得管理权限。
+- [x] 模型、Agent 或 Runtime 失效时停止新消息，不静默降级或替换。
+
+验收证据：`backend/tests/conversation_management/test_models_and_snapshot.py` 覆盖固定模型、无 Tool 请求、私有可见性、目标失效阻断、严格附件和 SSE 恢复；`backend/tests/api/routes/test_runtime_internal.py` 覆盖真实主 Agent 委派、固定协作者边界、完整结果回流及事件；`frontend/tests/v06-workspace.spec.ts` 覆盖主线和完整委派时间线。

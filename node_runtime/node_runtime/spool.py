@@ -45,6 +45,13 @@ class EventSpool:
                 snapshot TEXT NOT NULL,
                 state TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS runtime_job_dispatches (
+                job_id TEXT PRIMARY KEY,
+                revision INTEGER NOT NULL,
+                command TEXT NOT NULL,
+                state TEXT NOT NULL,
+                result TEXT
+            );
             CREATE TABLE IF NOT EXISTS metadata (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
@@ -149,6 +156,56 @@ class EventSpool:
             self.connection.execute(
                 "UPDATE dispatches SET state=? WHERE task_id=?", (state, task_id)
             )
+
+    def record_runtime_job_dispatch(
+        self, job_id: str, revision: int, command: dict
+    ) -> str:
+        encoded = json.dumps(command, sort_keys=True, separators=(",", ":"))
+        existing = self.connection.execute(
+            "SELECT revision, command FROM runtime_job_dispatches WHERE job_id=?",
+            (job_id,),
+        ).fetchone()
+        if existing:
+            if existing == (revision, encoded):
+                return "duplicate"
+            if revision <= int(existing[0]):
+                return "stale"
+            with self.connection:
+                self.connection.execute(
+                    "UPDATE runtime_job_dispatches "
+                    "SET revision=?, command=?, state='accepted', result=NULL "
+                    "WHERE job_id=?",
+                    (revision, encoded, job_id),
+                )
+            return "accepted"
+        with self.connection:
+            self.connection.execute(
+                "INSERT INTO runtime_job_dispatches"
+                "(job_id, revision, command, state, result) "
+                "VALUES(?, ?, ?, 'accepted', NULL)",
+                (job_id, revision, encoded),
+            )
+        return "accepted"
+
+    def complete_runtime_job(self, job_id: str, revision: int, result: dict) -> None:
+        encoded = json.dumps(result, sort_keys=True, separators=(",", ":"))
+        with self.connection:
+            updated = self.connection.execute(
+                "UPDATE runtime_job_dispatches "
+                "SET state='completed', result=? "
+                "WHERE job_id=? AND revision=?",
+                (encoded, job_id, revision),
+            )
+        if updated.rowcount != 1:
+            raise SpoolConflict("Runtime job completion scope conflicts with spool")
+
+    def runtime_job_result(self, job_id: str, revision: int) -> dict | None:
+        row = self.connection.execute(
+            "SELECT result FROM runtime_job_dispatches "
+            "WHERE job_id=? AND revision=? AND state='completed'",
+            (job_id, revision),
+        ).fetchone()
+        return json.loads(row[0]) if row and row[0] is not None else None
 
     def recover_interrupted_dispatches(self) -> list[str]:
         rows = self.connection.execute(

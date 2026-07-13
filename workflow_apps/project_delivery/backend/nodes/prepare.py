@@ -1,4 +1,4 @@
-from app.workflow_management.sdk import WorkflowRunContext, register_node_handler
+from workflow_runtime.sdk import WorkflowRunContext, register_node_handler
 
 
 @register_node_handler("project_delivery.prepare")

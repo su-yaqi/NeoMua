@@ -74,3 +74,7 @@ Agent Release / Runtime ─────────────┘              
 - Agent 节点在原对话接收上游变更消息并输出新结果版本，完整对话和底层 Agent Task 可追溯。
 - Git 或其他外部副作用无法确认时停止并要求人工处理，不自动重复、force、换 Runtime 或忽略错误。
 - 已完成任务只读，新模板版本只影响新任务；历史模板、节点、Gate、确认、产物和上下文快照均可还原。
+
+## 最终复核（2026-07-13）
+
+四份子 PRD 共 38 条验收标准已逐条对照实现和自动化证据，全部通过。最终门禁为 Backend 226 项、Runtime Worker 14 项、Node Runtime 26 项、内置 Workflow Package 3 项和 Playwright 71 项；Alembic 无模型差异，完整 Docker 开发栈健康。详细证据见 `context/changelogs/v0.6.md` 及各子 PRD 验收段落。

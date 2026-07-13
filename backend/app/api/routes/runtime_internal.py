@@ -15,11 +15,16 @@ from app.agent_management.capability_models import (
 )
 from app.api.deps import SessionDep
 from app.conversation_management.models import (
+    AgentDelegation,
     Conversation,
     ConversationMessage,
     ConversationMode,
     MessageAuthorType,
     MessageStatus,
+)
+from app.conversation_management.service import (
+    create_runtime_delegation,
+    reconcile_agent_messages,
 )
 from app.core.config import settings
 from app.llm_provider_service import open_secret_payload
@@ -30,6 +35,8 @@ from app.runtime.models import (
     AgentEventType,
     AgentSession,
     AgentTask,
+    RuntimeJob,
+    RuntimeJobStatus,
     RuntimeProfile,
     RuntimeRouteMode,
     RuntimeSecret,
@@ -74,6 +81,21 @@ class LeaseInput(BaseModel):
 class CapabilityReport(BaseModel):
     worker_id: str
     harness_capabilities: HarnessCapabilities
+
+
+class RuntimeDelegationInput(BaseModel):
+    source_task_id: uuid.UUID
+    source_task_revision: int
+    target_conversation_agent_id: uuid.UUID
+    content: str
+
+
+class RuntimeJobResultInput(BaseModel):
+    worker_id: str
+    revision: int
+    status: RuntimeJobStatus
+    result: dict[str, Any] | None = None
+    error: dict[str, Any] | None = None
 
 
 @router.get("/signing-probe")
@@ -129,6 +151,144 @@ def append_events(body: EventBatch, session: SessionDep) -> dict[str, int]:
             raise HTTPException(409, str(exc)) from exc
     session.commit()
     return {"accepted": len(body.events)}
+
+
+@router.post("/agent-delegations", status_code=202)
+def create_runtime_agent_delegation(
+    body: RuntimeDelegationInput, session: SessionDep
+) -> dict[str, Any]:
+    source_task = session.get(AgentTask, body.source_task_id)
+    if source_task is None:
+        raise HTTPException(404, "Source Agent task not found")
+    delegation = create_runtime_delegation(
+        session,
+        source_task,
+        body.source_task_revision,
+        body.target_conversation_agent_id,
+        body.content,
+    )
+    session.commit()
+    session.refresh(delegation)
+    return {"id": str(delegation.id), "status": delegation.status.value}
+
+
+@router.get("/agent-delegations/{delegation_id}")
+def get_runtime_agent_delegation(
+    delegation_id: uuid.UUID,
+    source_task_id: uuid.UUID,
+    source_task_revision: int,
+    session: SessionDep,
+) -> dict[str, Any]:
+    source_task = session.get(AgentTask, source_task_id)
+    delegation = session.get(AgentDelegation, delegation_id)
+    if source_task is None or delegation is None:
+        raise HTTPException(404, "Delegation not found")
+    if source_task.revision != source_task_revision or delegation.input_payload.get(
+        "source_task_id"
+    ) != str(source_task.id):
+        raise HTTPException(409, "Delegation task scope mismatch")
+    conversation = session.get(Conversation, delegation.conversation_id)
+    if conversation is None:
+        raise HTTPException(404, "Conversation not found")
+    reconcile_agent_messages(session, conversation)
+    session.commit()
+    session.refresh(delegation)
+    return {
+        "id": str(delegation.id),
+        "status": delegation.status.value,
+        "result": delegation.result_payload,
+        "error": delegation.error,
+        "task_id": str(delegation.task_id) if delegation.task_id else None,
+    }
+
+
+@router.post("/jobs/claim")
+def claim_platform_runtime_job(body: ClaimInput, session: SessionDep) -> dict[str, Any]:
+    job = session.exec(
+        select(RuntimeJob)
+        .join(
+            RuntimeProfile,
+            col(RuntimeJob.runtime_profile_id) == RuntimeProfile.id,
+        )
+        .where(
+            RuntimeJob.status == RuntimeJobStatus.QUEUED,
+            RuntimeProfile.runtime_type == RuntimeType.PLATFORM,
+        )
+        .order_by(col(RuntimeJob.created_at))
+        .with_for_update(skip_locked=True)
+    ).first()
+    if job is None:
+        raise HTTPException(204)
+    job.status = RuntimeJobStatus.DISPATCHED
+    job.claimed_by = body.worker_id
+    job.lease_expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+    job.updated_at = datetime.now(timezone.utc)
+    session.add(job)
+    session.commit()
+    return {
+        "job_id": str(job.id),
+        "revision": job.revision,
+        "kind": job.kind.value,
+        "payload": job.payload,
+        "side_effecting": job.side_effecting,
+    }
+
+
+@router.post("/jobs/{job_id}/lease")
+def renew_platform_runtime_job_lease(
+    job_id: uuid.UUID, body: LeaseInput, session: SessionDep
+) -> dict[str, str]:
+    job = session.exec(
+        select(RuntimeJob).where(RuntimeJob.id == job_id).with_for_update()
+    ).first()
+    if (
+        job is None
+        or job.claimed_by != body.worker_id
+        or job.revision != body.revision
+        or job.status not in {RuntimeJobStatus.DISPATCHED, RuntimeJobStatus.RUNNING}
+    ):
+        raise HTTPException(409, "Runtime job lease scope mismatch")
+    job.status = RuntimeJobStatus.RUNNING
+    job.lease_expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+    job.updated_at = datetime.now(timezone.utc)
+    session.add(job)
+    session.commit()
+    return {"status": job.status.value}
+
+
+@router.post("/jobs/{job_id}/result")
+def complete_platform_runtime_job(
+    job_id: uuid.UUID, body: RuntimeJobResultInput, session: SessionDep
+) -> dict[str, str]:
+    job = session.exec(
+        select(RuntimeJob).where(RuntimeJob.id == job_id).with_for_update()
+    ).first()
+    if (
+        job is None
+        or job.claimed_by != body.worker_id
+        or job.revision != body.revision
+        or job.status not in {RuntimeJobStatus.DISPATCHED, RuntimeJobStatus.RUNNING}
+        or body.status
+        not in {
+            RuntimeJobStatus.SUCCEEDED,
+            RuntimeJobStatus.FAILED,
+            RuntimeJobStatus.NEEDS_MANUAL_RESOLUTION,
+        }
+    ):
+        raise HTTPException(409, "Runtime job result scope mismatch")
+    if body.status == RuntimeJobStatus.SUCCEEDED and body.result is None:
+        raise HTTPException(422, "Successful Runtime job requires a result")
+    if body.status != RuntimeJobStatus.SUCCEEDED and body.error is None:
+        raise HTTPException(422, "Failed Runtime job requires an error")
+    job.status = body.status
+    job.result = body.result
+    job.error = body.error
+    job.completed_at = datetime.now(timezone.utc)
+    job.updated_at = job.completed_at
+    job.lease_expires_at = None
+    session.add(job)
+    session.commit()
+    return {"status": job.status.value}
 
 
 @router.post("/tasks/claim")
@@ -268,6 +428,7 @@ def claim_platform_task(body: ClaimInput, session: SessionDep) -> dict[str, Any]
             "sdk_session_id": agent_session.sdk_session_id if agent_session else None,
             "start_sequence": 1,
             "timeout_seconds": task.snapshot.get("timeout_seconds", 3600),
+            "roundtable_participants": task.snapshot.get("roundtable_participants", []),
         },
     }
 

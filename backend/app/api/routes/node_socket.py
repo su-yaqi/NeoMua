@@ -38,6 +38,15 @@ from app.agent_management.release_routes import (
     request_tool_approval,
 )
 from app.api.deps import SessionDep
+from app.conversation_management.models import (
+    AgentDelegation,
+    Conversation,
+    DelegationStatus,
+)
+from app.conversation_management.service import (
+    create_runtime_delegation,
+    reconcile_agent_messages,
+)
 from app.core.config import settings
 from app.llm_provider_service import open_secret_payload
 from app.runtime.artifacts.manifest import DeploymentManifest
@@ -54,6 +63,7 @@ from app.runtime.enrollment import (
     retire_replaced_credential,
     rotate_node_credential,
 )
+from app.runtime.jobs import reserve_node_runtime_jobs
 from app.runtime.models import (
     AgentEventType,
     AgentTask,
@@ -61,6 +71,8 @@ from app.runtime.models import (
     ArtifactRelease,
     DeploymentStatus,
     RuntimeArtifact,
+    RuntimeJob,
+    RuntimeJobStatus,
     RuntimeNode,
     RuntimeNodeArtifact,
     RuntimeProfile,
@@ -186,6 +198,42 @@ async def _send_pending_control(
                 {"task_id": str(task.id), "revision": task.revision},
             )
         )
+
+
+async def _send_pending_runtime_jobs(
+    websocket: WebSocket,
+    session: SessionDep,
+    node: RuntimeNode,
+    connection_id: uuid.UUID,
+) -> None:
+    if not await _connection_is_current(websocket, session, node.id, connection_id):
+        return
+    jobs = reserve_node_runtime_jobs(
+        session, node_id=node.id, connection_id=connection_id, limit=10
+    )
+    for job in jobs:
+        if not await _connection_is_current(websocket, session, node.id, connection_id):
+            return
+        try:
+            await websocket.send_json(
+                _envelope(
+                    "runtime_job_dispatch",
+                    node.id,
+                    {
+                        "job_id": str(job.id),
+                        "revision": job.revision,
+                        "kind": job.kind.value,
+                        "payload": job.payload,
+                        "side_effecting": job.side_effecting,
+                    },
+                )
+            )
+        except Exception:
+            job.dispatch_connection_id = None
+            job.dispatch_reserved_until = None
+            session.add(job)
+            session.commit()
+            raise
 
 
 async def _send_runtime_config(
@@ -499,6 +547,62 @@ async def _send_pending_mcp_validations(
     session.commit()
 
 
+async def _send_pending_delegation_results(
+    websocket: WebSocket,
+    session: SessionDep,
+    node: RuntimeNode,
+    connection_id: uuid.UUID,
+) -> None:
+    if not await _connection_is_current(websocket, session, node.id, connection_id):
+        return
+    delegations = session.exec(select(AgentDelegation)).all()
+    for delegation in delegations:
+        source_task_id = delegation.input_payload.get("source_task_id")
+        client_key = delegation.input_payload.get("client_delegation_key")
+        if (
+            not source_task_id
+            or not client_key
+            or delegation.input_payload.get("result_acknowledged_at")
+        ):
+            continue
+        try:
+            source_task = session.get(AgentTask, uuid.UUID(str(source_task_id)))
+        except ValueError:
+            continue
+        if source_task is None or source_task.target_node_id != node.id:
+            continue
+        if delegation.status in {DelegationStatus.QUEUED, DelegationStatus.RUNNING}:
+            conversation = session.get(Conversation, delegation.conversation_id)
+            if conversation is not None:
+                reconcile_agent_messages(session, conversation)
+                session.commit()
+                session.refresh(delegation)
+        if delegation.status not in {
+            DelegationStatus.COMPLETED,
+            DelegationStatus.FAILED,
+        }:
+            continue
+        await websocket.send_json(
+            _envelope(
+                "agent_delegation_result",
+                node.id,
+                {
+                    "delegation_id": str(delegation.id),
+                    "client_delegation_key": str(client_key),
+                    "result": {
+                        "id": str(delegation.id),
+                        "status": delegation.status.value,
+                        "result": delegation.result_payload,
+                        "error": delegation.error,
+                        "task_id": (
+                            str(delegation.task_id) if delegation.task_id else None
+                        ),
+                    },
+                },
+            )
+        )
+
+
 async def _connection_is_current(
     websocket: WebSocket,
     session: SessionDep,
@@ -574,10 +678,12 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
             )
         )
     await _send_pending_control(websocket, session, node, connection_id)
+    await _send_pending_runtime_jobs(websocket, session, node, connection_id)
     await _send_pending_artifacts(websocket, session, node, connection_id)
     await _send_pending_agent_releases(websocket, session, node, connection_id)
     await _send_pending_mcp_validations(websocket, session, node, connection_id)
     await _send_tool_approval_decisions(websocket, session, node, connection_id)
+    await _send_pending_delegation_results(websocket, session, node, connection_id)
     try:
         while True:
             raw = await websocket.receive_json()
@@ -685,6 +791,9 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                     _envelope("heartbeat_ack", node.id, {}, message.message_id)
                 )
                 await _send_pending_control(websocket, session, current, connection_id)
+                await _send_pending_runtime_jobs(
+                    websocket, session, current, connection_id
+                )
                 await _send_pending_artifacts(
                     websocket, session, current, connection_id
                 )
@@ -695,6 +804,12 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                     websocket, session, current, connection_id
                 )
                 await _send_tool_approval_decisions(
+                    websocket, session, current, connection_id
+                )
+                await _send_pending_runtime_jobs(
+                    websocket, session, current, connection_id
+                )
+                await _send_pending_delegation_results(
                     websocket, session, current, connection_id
                 )
             elif message.type == "reconcile":
@@ -844,6 +959,242 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                         message.message_id,
                     )
                 )
+            elif message.type == "agent_delegation_request":
+                try:
+                    source_task = session.get(
+                        AgentTask, uuid.UUID(message.payload["source_task_id"])
+                    )
+                    if (
+                        source_task is None
+                        or source_task.target_node_id != current.id
+                        or source_task.claimed_by != f"node:{current.id}"
+                    ):
+                        raise ValueError("source task is not owned by this node")
+                    delegation = create_runtime_delegation(
+                        session,
+                        source_task,
+                        int(message.payload["source_task_revision"]),
+                        uuid.UUID(message.payload["target_conversation_agent_id"]),
+                        str(message.payload["content"]),
+                    )
+                    delegation.input_payload = {
+                        **delegation.input_payload,
+                        "client_delegation_key": str(
+                            message.payload["client_delegation_key"]
+                        ),
+                    }
+                    session.add(delegation)
+                    session.commit()
+                except (KeyError, ValueError, HTTPException) as exc:
+                    session.rollback()
+                    await websocket.send_json(
+                        _envelope(
+                            "error",
+                            node.id,
+                            {
+                                "code": "agent_delegation_request_rejected",
+                                "detail": str(exc),
+                            },
+                            message.message_id,
+                        )
+                    )
+                    continue
+                await websocket.send_json(
+                    _envelope(
+                        "agent_delegation_request_ack",
+                        node.id,
+                        {
+                            "delegation_id": str(delegation.id),
+                            "client_delegation_key": message.payload[
+                                "client_delegation_key"
+                            ],
+                        },
+                        message.message_id,
+                    )
+                )
+            elif message.type == "agent_delegation_result_ack":
+                try:
+                    acknowledged_delegation = session.get(
+                        AgentDelegation, uuid.UUID(message.payload["delegation_id"])
+                    )
+                except (KeyError, ValueError):
+                    acknowledged_delegation = None
+                if (
+                    acknowledged_delegation is None
+                    or acknowledged_delegation.input_payload.get(
+                        "client_delegation_key"
+                    )
+                    != message.payload.get("client_delegation_key")
+                ):
+                    await websocket.send_json(
+                        _envelope(
+                            "error",
+                            node.id,
+                            {"code": "agent_delegation_ack_scope_mismatch"},
+                            message.message_id,
+                        )
+                    )
+                    continue
+                acknowledged_delegation.input_payload = {
+                    **acknowledged_delegation.input_payload,
+                    "result_acknowledged_at": datetime.now(timezone.utc).isoformat(),
+                }
+                session.add(acknowledged_delegation)
+                session.commit()
+            elif message.type == "runtime_job_rejected":
+                try:
+                    job_id = uuid.UUID(message.payload["job_id"])
+                    revision = int(message.payload["revision"])
+                except (KeyError, ValueError):
+                    job_id = uuid.UUID(int=0)
+                    revision = -1
+                job = session.exec(
+                    select(RuntimeJob).where(RuntimeJob.id == job_id).with_for_update()
+                ).first()
+                if (
+                    job is None
+                    or job.target_node_id != current.id
+                    or job.revision != revision
+                    or job.status != RuntimeJobStatus.QUEUED
+                    or job.dispatch_connection_id != connection_id
+                ):
+                    await websocket.send_json(
+                        _envelope(
+                            "error",
+                            node.id,
+                            {"code": "runtime_job_reject_scope_mismatch"},
+                            message.message_id,
+                        )
+                    )
+                    continue
+                job.status = (
+                    RuntimeJobStatus.NEEDS_MANUAL_RESOLUTION
+                    if job.side_effecting
+                    else RuntimeJobStatus.FAILED
+                )
+                job.error = {
+                    "code": "node_runtime_job_dispatch_conflict",
+                    "reason": str(message.payload.get("reason", "unknown")),
+                }
+                job.completed_at = datetime.now(timezone.utc)
+                job.updated_at = job.completed_at
+                job.dispatch_connection_id = None
+                job.dispatch_reserved_until = None
+                session.add(job)
+                session.commit()
+                await websocket.send_json(
+                    _envelope(
+                        "runtime_job_rejected_ack",
+                        node.id,
+                        {"job_id": str(job.id), "status": job.status.value},
+                        message.message_id,
+                    )
+                )
+            elif message.type == "runtime_job_accepted":
+                try:
+                    job_id = uuid.UUID(message.payload["job_id"])
+                    revision = int(message.payload["revision"])
+                except (KeyError, ValueError):
+                    job_id = uuid.UUID(int=0)
+                    revision = -1
+                job = session.exec(
+                    select(RuntimeJob).where(RuntimeJob.id == job_id).with_for_update()
+                ).first()
+                if (
+                    job is None
+                    or job.target_node_id != current.id
+                    or job.revision != revision
+                    or job.status != RuntimeJobStatus.QUEUED
+                    or job.dispatch_connection_id != connection_id
+                    or job.dispatch_reserved_until is None
+                    or job.dispatch_reserved_until < datetime.now(timezone.utc)
+                ):
+                    await websocket.send_json(
+                        _envelope(
+                            "error",
+                            node.id,
+                            {"code": "runtime_job_accept_scope_mismatch"},
+                            message.message_id,
+                        )
+                    )
+                    continue
+                job.status = RuntimeJobStatus.DISPATCHED
+                job.claimed_by = f"node:{current.id}"
+                job.lease_expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+                job.dispatch_connection_id = None
+                job.dispatch_reserved_until = None
+                job.updated_at = datetime.now(timezone.utc)
+                session.add(job)
+                session.commit()
+            elif message.type == "runtime_job_lease":
+                job = session.exec(
+                    select(RuntimeJob)
+                    .where(RuntimeJob.id == uuid.UUID(message.payload["job_id"]))
+                    .with_for_update()
+                ).first()
+                if (
+                    job is None
+                    or job.target_node_id != current.id
+                    or job.claimed_by != f"node:{current.id}"
+                    or job.revision != int(message.payload["revision"])
+                    or job.status
+                    not in {RuntimeJobStatus.DISPATCHED, RuntimeJobStatus.RUNNING}
+                ):
+                    await websocket.send_json(
+                        _envelope(
+                            "error",
+                            node.id,
+                            {"code": "runtime_job_lease_scope_mismatch"},
+                            message.message_id,
+                        )
+                    )
+                    continue
+                job.status = RuntimeJobStatus.RUNNING
+                job.lease_expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+                job.updated_at = datetime.now(timezone.utc)
+                session.add(job)
+                session.commit()
+            elif message.type == "runtime_job_result":
+                job = session.exec(
+                    select(RuntimeJob)
+                    .where(RuntimeJob.id == uuid.UUID(message.payload["job_id"]))
+                    .with_for_update()
+                ).first()
+                try:
+                    result_status = RuntimeJobStatus(message.payload["status"])
+                except (KeyError, ValueError):
+                    result_status = RuntimeJobStatus.FAILED
+                if (
+                    job is None
+                    or job.target_node_id != current.id
+                    or job.claimed_by != f"node:{current.id}"
+                    or job.revision != int(message.payload.get("revision", -1))
+                    or job.status
+                    not in {RuntimeJobStatus.DISPATCHED, RuntimeJobStatus.RUNNING}
+                    or result_status
+                    not in {
+                        RuntimeJobStatus.SUCCEEDED,
+                        RuntimeJobStatus.FAILED,
+                        RuntimeJobStatus.NEEDS_MANUAL_RESOLUTION,
+                    }
+                ):
+                    await websocket.send_json(
+                        _envelope(
+                            "error",
+                            node.id,
+                            {"code": "runtime_job_result_scope_mismatch"},
+                            message.message_id,
+                        )
+                    )
+                    continue
+                job.status = result_status
+                job.result = message.payload.get("result")
+                job.error = message.payload.get("error")
+                job.completed_at = datetime.now(timezone.utc)
+                job.updated_at = job.completed_at
+                job.lease_expires_at = None
+                session.add(job)
+                session.commit()
             elif message.type == "task_accepted":
                 task_id = uuid.UUID(message.payload["task_id"])
                 revision = int(message.payload["revision"])

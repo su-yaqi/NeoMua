@@ -1169,6 +1169,29 @@ export interface ConversationMessage {
   created_at: string
 }
 
+export interface ConversationEvent {
+  id: string
+  conversation_id: string
+  sequence: number
+  event_type: string
+  payload: Record<string, unknown>
+  created_at: string
+}
+
+export interface AgentDelegation {
+  id: string
+  source_message_id: string
+  source_agent_id: string
+  target_agent_id: string
+  status: "queued" | "running" | "completed" | "failed"
+  input_payload: Record<string, unknown>
+  result_payload: Record<string, unknown> | null
+  error: Record<string, unknown> | null
+  task_id: string | null
+  created_at: string
+  completed_at: string | null
+}
+
 export interface ConversationAttachment {
   id: string
   filename: string
@@ -1189,15 +1212,69 @@ export interface WorkflowNodeInstance {
   resolved_runtime_id: string
 }
 
+export interface WorkflowNodeDetail {
+  node: WorkflowNodeInstance
+  definition: {
+    node_type: "human" | "agent" | "code"
+    confirmation_mode: "process" | "result" | "none"
+    skippable: boolean
+    side_effecting: boolean
+    input_schema: Record<string, unknown>
+    output_schema: Record<string, unknown>
+  }
+  revisions: Array<Record<string, unknown>>
+  executions: Array<
+    Record<string, unknown> & {
+      id: string
+      attempt: number
+      status: string
+      error?: Record<string, unknown> | null
+      external_state_proof?: Record<string, unknown> | null
+    }
+  >
+  confirmations: Array<Record<string, unknown>>
+  gates: Array<Record<string, unknown>>
+  artifacts: Array<Record<string, unknown>>
+  messages: ConversationMessage[]
+}
+
+export interface WorkflowEvent {
+  id: string
+  sequence: number
+  event_type: string
+  payload: Record<string, unknown>
+  created_at: string
+}
+
+export interface WorkflowAttachment {
+  id: string
+  filename: string
+  content_type: string
+  size: number
+  content_digest: string
+  scan_status: string
+  scan_details: Record<string, unknown>
+  created_by: string | null
+  created_at: string
+}
+
 export interface WorkflowInstance {
   id: string
   project_id: string
   template_version_id: string
   workflow_slug: string
+  application: {
+    component_key: string
+    route_slug: string
+    build_digest: string
+    shell_version: string
+  }
   package_digest: string
   title: string
   status: string
   input: Record<string, unknown>
+  runtime_resolution: Record<string, unknown>
+  project_context_snapshot: Record<string, unknown>
   nodes: WorkflowNodeInstance[]
   created_at: string
   updated_at: string
@@ -1220,6 +1297,12 @@ export interface WorkflowTemplateCatalogItem {
       package_digest: string
       manifest: Record<string, unknown>
     }
+    application: {
+      route_slug: string
+      component_key: string
+      build_digest: string
+      shell_version: string
+    } | null
     enablement: { enabled: boolean; is_default: boolean }
   }>
 }
@@ -1368,6 +1451,49 @@ export const workspaceApi = {
         `/api/v1/conversations/${conversationId}/messages`,
       )
     ).data,
+  listDelegations: async (conversationId: string) =>
+    (
+      await api.get<{ data: AgentDelegation[]; count: number }>(
+        `/api/v1/conversations/${conversationId}/delegations`,
+      )
+    ).data,
+  streamConversationEvents: async (
+    conversationId: string,
+    lastEventId: number,
+    onEvent: (event: ConversationEvent) => void,
+    signal?: AbortSignal,
+  ) => {
+    const namespaceId = localStorage.getItem("selected_namespace_id") || ""
+    const response = await fetch(
+      `${client.getConfig().baseURL}/api/v1/conversations/${conversationId}/events`,
+      {
+        headers: {
+          Accept: "text/event-stream",
+          "Last-Event-ID": String(lastEventId),
+          "X-Namespace-Id": namespaceId,
+        },
+        credentials: "include",
+        signal,
+      },
+    )
+    if (!response.ok || !response.body) {
+      throw new Error(`会话事件流连接失败 (${response.status})`)
+    }
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ""
+    while (true) {
+      const { done, value } = await reader.read()
+      buffer += decoder.decode(value, { stream: !done })
+      const frames = buffer.split("\n\n")
+      buffer = frames.pop() ?? ""
+      for (const frame of frames) {
+        const data = frame.split("\n").find((line) => line.startsWith("data: "))
+        if (data) onEvent(JSON.parse(data.slice(6)) as ConversationEvent)
+      }
+      if (done) break
+    }
+  },
   sendMessage: async (conversationId: string, body: Record<string, unknown>) =>
     (
       await api.post(`/api/v1/conversations/${conversationId}/messages`, body, {
@@ -1388,7 +1514,7 @@ export const workspaceApi = {
     (
       await api.post(
         `/api/v1/conversations/${conversationId}/context-snapshots`,
-        { content_refs: [] },
+        {},
       )
     ).data,
   listWorkflowTemplates: async () =>
@@ -1446,8 +1572,71 @@ export const workspaceApi = {
       )
     ).data,
   getWorkflowNode: async (instanceId: string, nodeKey: string) =>
-    (await api.get(`/api/v1/workflow-instances/${instanceId}/nodes/${nodeKey}`))
-      .data,
+    (
+      await api.get<WorkflowNodeDetail>(
+        `/api/v1/workflow-instances/${instanceId}/nodes/${nodeKey}`,
+      )
+    ).data,
+  listWorkflowEvents: async (instanceId: string, afterSequence = 0) =>
+    (
+      await api.get<{ data: WorkflowEvent[]; count: number }>(
+        `/api/v1/workflow-instances/${instanceId}/events`,
+        { params: { after_sequence: afterSequence } },
+      )
+    ).data,
+  listWorkflowAttachments: async (instanceId: string) =>
+    (
+      await api.get<{ data: WorkflowAttachment[]; count: number }>(
+        `/api/v1/workflow-instances/${instanceId}/attachments`,
+      )
+    ).data,
+  uploadWorkflowAttachment: async (instanceId: string, file: File) => {
+    const form = new FormData()
+    form.append("file", file)
+    return (
+      await api.post<WorkflowAttachment>(
+        `/api/v1/workflow-instances/${instanceId}/attachments`,
+        form,
+      )
+    ).data
+  },
+  streamWorkflowEvents: async (
+    instanceId: string,
+    lastEventId: number,
+    onEvent: (event: WorkflowEvent) => void,
+    signal?: AbortSignal,
+  ) => {
+    const namespaceId = localStorage.getItem("selected_namespace_id") || ""
+    const response = await fetch(
+      `${client.getConfig().baseURL}/api/v1/workflow-instances/${instanceId}/events`,
+      {
+        headers: {
+          Accept: "text/event-stream",
+          "Last-Event-ID": String(lastEventId),
+          "X-Namespace-Id": namespaceId,
+        },
+        credentials: "include",
+        signal,
+      },
+    )
+    if (!response.ok || !response.body) {
+      throw new Error(`Workflow 事件流连接失败 (${response.status})`)
+    }
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ""
+    while (true) {
+      const { done, value } = await reader.read()
+      buffer += decoder.decode(value, { stream: !done })
+      const frames = buffer.split("\n\n")
+      buffer = frames.pop() ?? ""
+      for (const frame of frames) {
+        const data = frame.split("\n").find((line) => line.startsWith("data: "))
+        if (data) onEvent(JSON.parse(data.slice(6)) as WorkflowEvent)
+      }
+      if (done) break
+    }
+  },
   createWorkflowInstance: async (
     projectId: string,
     body: Record<string, unknown>,
@@ -1481,4 +1670,53 @@ export const workspaceApi = {
         body,
       )
     ).data,
+  skipWorkflowNode: async (
+    instanceId: string,
+    nodeKey: string,
+    body: Record<string, unknown>,
+  ) =>
+    (
+      await api.post(
+        `/api/v1/workflow-instances/${instanceId}/nodes/${nodeKey}/skip`,
+        body,
+      )
+    ).data,
+  retryWorkflowNode: async (
+    instanceId: string,
+    nodeKey: string,
+    expectedRevision: number,
+  ) =>
+    (
+      await api.post(
+        `/api/v1/workflow-instances/${instanceId}/nodes/${nodeKey}/retry`,
+        { expected_revision: expectedRevision },
+      )
+    ).data,
+  sendWorkflowNodeMessage: async (
+    instanceId: string,
+    nodeKey: string,
+    expectedRevision: number,
+    content: string,
+  ) =>
+    (
+      await api.post(
+        `/api/v1/workflow-instances/${instanceId}/nodes/${nodeKey}/messages`,
+        { expected_revision: expectedRevision, content },
+      )
+    ).data,
+  resolveWorkflowExternalState: async (
+    instanceId: string,
+    nodeKey: string,
+    body: Record<string, unknown>,
+  ) =>
+    (
+      await api.post(
+        `/api/v1/workflow-instances/${instanceId}/nodes/${nodeKey}/external-state-resolution`,
+        body,
+        { headers: { "Idempotency-Key": crypto.randomUUID() } },
+      )
+    ).data,
+  cancelWorkflowInstance: async (instanceId: string) =>
+    (await api.post(`/api/v1/workflow-instances/${instanceId}/cancel`, {}))
+      .data,
 }

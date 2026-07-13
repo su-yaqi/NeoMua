@@ -30,6 +30,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY ./backend/scripts /app/backend/scripts
 
 COPY ./backend/pyproject.toml ./backend/alembic.ini /app/backend/
+COPY ./workflow_runtime/pyproject.toml /app/workflow_runtime/
+COPY ./workflow_runtime/workflow_runtime /app/workflow_runtime/workflow_runtime
 
 COPY ./backend/app /app/backend/app
 COPY ./workflow_apps /app/workflow_apps

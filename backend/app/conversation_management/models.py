@@ -309,6 +309,29 @@ class ConversationMessage(SQLModel, table=True):
     completed_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
 
 
+class ConversationEvent(SQLModel, table=True):
+    __tablename__ = "conversation_event"
+    __table_args__ = (
+        UniqueConstraint(
+            "conversation_id", "sequence", name="uq_conversation_event_sequence"
+        ),
+        Index("ix_conversation_event_cursor", "conversation_id", "sequence"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    conversation_id: uuid.UUID = Field(
+        foreign_key="conversation.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    sequence: int
+    event_type: str = Field(max_length=64)
+    payload: dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(POSTGRES_JSON, nullable=False)
+    )
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+
+
 class ConversationAttachment(SQLModel, table=True):
     __tablename__ = "conversation_attachment"
     __table_args__ = (

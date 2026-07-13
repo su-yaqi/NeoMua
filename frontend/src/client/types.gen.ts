@@ -111,67 +111,6 @@ export type AgentCreate = {
 };
 
 /**
- * AgentDelegation
- */
-export type AgentDelegation = {
-    /**
-     * Id
-     */
-    id?: string;
-    /**
-     * Conversation Id
-     */
-    conversation_id: string;
-    /**
-     * Source Message Id
-     */
-    source_message_id: string;
-    /**
-     * Source Agent Id
-     */
-    source_agent_id: string;
-    /**
-     * Target Agent Id
-     */
-    target_agent_id: string;
-    /**
-     * Input Payload
-     */
-    input_payload?: {
-        [key: string]: unknown;
-    };
-    /**
-     * Result Payload
-     */
-    result_payload?: {
-        [key: string]: unknown;
-    } | null;
-    /**
-     * Task Id
-     */
-    task_id?: string | null;
-    status?: DelegationStatus;
-    /**
-     * Idempotency Key
-     */
-    idempotency_key: string;
-    /**
-     * Error
-     */
-    error?: {
-        [key: string]: unknown;
-    } | null;
-    /**
-     * Created At
-     */
-    created_at?: string;
-    /**
-     * Completed At
-     */
-    completed_at?: string | null;
-};
-
-/**
  * AgentDraftPublic
  */
 export type AgentDraftPublic = {
@@ -608,6 +547,16 @@ export type BodyRuntimeArtifactsUploadArtifact = {
 };
 
 /**
+ * Body_workflows-upload_workflow_attachment
+ */
+export type BodyWorkflowsUploadWorkflowAttachment = {
+    /**
+     * File
+     */
+    file: Blob | File;
+};
+
+/**
  * CapabilityReport
  */
 export type CapabilityReport = {
@@ -672,35 +621,10 @@ export type CliRefresh = {
 export type ConfirmationDecision = 'submit' | 'accept' | 'reject' | 'skip';
 
 /**
- * ContentReferenceInput
- */
-export type ContentReferenceInput = {
-    /**
-     * Repository Id
-     */
-    repository_id: string;
-    /**
-     * Path
-     */
-    path: string;
-    /**
-     * Blob Digest
-     */
-    blob_digest: string;
-    /**
-     * Summary
-     */
-    summary?: string | null;
-};
-
-/**
  * ContextRefresh
  */
 export type ContextRefresh = {
-    /**
-     * Content Refs
-     */
-    content_refs?: Array<ContentReferenceInput>;
+    [key: string]: never;
 };
 
 /**
@@ -862,33 +786,6 @@ export type ConversationUpdate = {
  * ConversationVisibility
  */
 export type ConversationVisibility = 'private' | 'project';
-
-/**
- * DelegationCreate
- */
-export type DelegationCreate = {
-    /**
-     * Source Message Id
-     */
-    source_message_id: string;
-    /**
-     * Source Conversation Agent Id
-     */
-    source_conversation_agent_id: string;
-    /**
-     * Target Conversation Agent Id
-     */
-    target_conversation_agent_id: string;
-    /**
-     * Content
-     */
-    content: string;
-};
-
-/**
- * DelegationStatus
- */
-export type DelegationStatus = 'queued' | 'running' | 'completed' | 'failed';
 
 /**
  * DeploymentPublic
@@ -2574,6 +2471,10 @@ export type ProjectRepository = {
      */
     validated_commit?: string | null;
     /**
+     * Validation Job Id
+     */
+    validation_job_id?: string | null;
+    /**
      * Created At
      */
     created_at?: string;
@@ -2808,6 +2709,60 @@ export type RepositoryValidationRequest = {
      */
     runtime_id: string;
 };
+
+/**
+ * RuntimeDelegationInput
+ */
+export type RuntimeDelegationInput = {
+    /**
+     * Source Task Id
+     */
+    source_task_id: string;
+    /**
+     * Source Task Revision
+     */
+    source_task_revision: number;
+    /**
+     * Target Conversation Agent Id
+     */
+    target_conversation_agent_id: string;
+    /**
+     * Content
+     */
+    content: string;
+};
+
+/**
+ * RuntimeJobResultInput
+ */
+export type RuntimeJobResultInput = {
+    /**
+     * Worker Id
+     */
+    worker_id: string;
+    /**
+     * Revision
+     */
+    revision: number;
+    status: RuntimeJobStatus;
+    /**
+     * Result
+     */
+    result?: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Error
+     */
+    error?: {
+        [key: string]: unknown;
+    } | null;
+};
+
+/**
+ * RuntimeJobStatus
+ */
+export type RuntimeJobStatus = 'queued' | 'dispatched' | 'running' | 'succeeded' | 'failed' | 'needs_manual_resolution';
 
 /**
  * RuntimeRouteMode
@@ -5552,6 +5507,205 @@ export type RuntimeInternalAppendEventsResponses = {
 };
 
 export type RuntimeInternalAppendEventsResponse = RuntimeInternalAppendEventsResponses[keyof RuntimeInternalAppendEventsResponses];
+
+export type RuntimeInternalCreateRuntimeAgentDelegationData = {
+    body: RuntimeDelegationInput;
+    headers?: {
+        /**
+         * X-Runtime-Token
+         */
+        'X-Runtime-Token'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/internal/runtime/agent-delegations';
+};
+
+export type RuntimeInternalCreateRuntimeAgentDelegationErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeInternalCreateRuntimeAgentDelegationError = RuntimeInternalCreateRuntimeAgentDelegationErrors[keyof RuntimeInternalCreateRuntimeAgentDelegationErrors];
+
+export type RuntimeInternalCreateRuntimeAgentDelegationResponses = {
+    /**
+     * Response Runtime-Internal-Create Runtime Agent Delegation
+     *
+     * Successful Response
+     */
+    202: {
+        [key: string]: unknown;
+    };
+};
+
+export type RuntimeInternalCreateRuntimeAgentDelegationResponse = RuntimeInternalCreateRuntimeAgentDelegationResponses[keyof RuntimeInternalCreateRuntimeAgentDelegationResponses];
+
+export type RuntimeInternalGetRuntimeAgentDelegationData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Runtime-Token
+         */
+        'X-Runtime-Token'?: string | null;
+    };
+    path: {
+        /**
+         * Delegation Id
+         */
+        delegation_id: string;
+    };
+    query: {
+        /**
+         * Source Task Id
+         */
+        source_task_id: string;
+        /**
+         * Source Task Revision
+         */
+        source_task_revision: number;
+    };
+    url: '/api/v1/internal/runtime/agent-delegations/{delegation_id}';
+};
+
+export type RuntimeInternalGetRuntimeAgentDelegationErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeInternalGetRuntimeAgentDelegationError = RuntimeInternalGetRuntimeAgentDelegationErrors[keyof RuntimeInternalGetRuntimeAgentDelegationErrors];
+
+export type RuntimeInternalGetRuntimeAgentDelegationResponses = {
+    /**
+     * Response Runtime-Internal-Get Runtime Agent Delegation
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type RuntimeInternalGetRuntimeAgentDelegationResponse = RuntimeInternalGetRuntimeAgentDelegationResponses[keyof RuntimeInternalGetRuntimeAgentDelegationResponses];
+
+export type RuntimeInternalClaimPlatformRuntimeJobData = {
+    body: ClaimInput;
+    headers?: {
+        /**
+         * X-Runtime-Token
+         */
+        'X-Runtime-Token'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/internal/runtime/jobs/claim';
+};
+
+export type RuntimeInternalClaimPlatformRuntimeJobErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeInternalClaimPlatformRuntimeJobError = RuntimeInternalClaimPlatformRuntimeJobErrors[keyof RuntimeInternalClaimPlatformRuntimeJobErrors];
+
+export type RuntimeInternalClaimPlatformRuntimeJobResponses = {
+    /**
+     * Response Runtime-Internal-Claim Platform Runtime Job
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type RuntimeInternalClaimPlatformRuntimeJobResponse = RuntimeInternalClaimPlatformRuntimeJobResponses[keyof RuntimeInternalClaimPlatformRuntimeJobResponses];
+
+export type RuntimeInternalRenewPlatformRuntimeJobLeaseData = {
+    body: LeaseInput;
+    headers?: {
+        /**
+         * X-Runtime-Token
+         */
+        'X-Runtime-Token'?: string | null;
+    };
+    path: {
+        /**
+         * Job Id
+         */
+        job_id: string;
+    };
+    query?: never;
+    url: '/api/v1/internal/runtime/jobs/{job_id}/lease';
+};
+
+export type RuntimeInternalRenewPlatformRuntimeJobLeaseErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeInternalRenewPlatformRuntimeJobLeaseError = RuntimeInternalRenewPlatformRuntimeJobLeaseErrors[keyof RuntimeInternalRenewPlatformRuntimeJobLeaseErrors];
+
+export type RuntimeInternalRenewPlatformRuntimeJobLeaseResponses = {
+    /**
+     * Response Runtime-Internal-Renew Platform Runtime Job Lease
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: string;
+    };
+};
+
+export type RuntimeInternalRenewPlatformRuntimeJobLeaseResponse = RuntimeInternalRenewPlatformRuntimeJobLeaseResponses[keyof RuntimeInternalRenewPlatformRuntimeJobLeaseResponses];
+
+export type RuntimeInternalCompletePlatformRuntimeJobData = {
+    body: RuntimeJobResultInput;
+    headers?: {
+        /**
+         * X-Runtime-Token
+         */
+        'X-Runtime-Token'?: string | null;
+    };
+    path: {
+        /**
+         * Job Id
+         */
+        job_id: string;
+    };
+    query?: never;
+    url: '/api/v1/internal/runtime/jobs/{job_id}/result';
+};
+
+export type RuntimeInternalCompletePlatformRuntimeJobErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeInternalCompletePlatformRuntimeJobError = RuntimeInternalCompletePlatformRuntimeJobErrors[keyof RuntimeInternalCompletePlatformRuntimeJobErrors];
+
+export type RuntimeInternalCompletePlatformRuntimeJobResponses = {
+    /**
+     * Response Runtime-Internal-Complete Platform Runtime Job
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: string;
+    };
+};
+
+export type RuntimeInternalCompletePlatformRuntimeJobResponse = RuntimeInternalCompletePlatformRuntimeJobResponses[keyof RuntimeInternalCompletePlatformRuntimeJobResponses];
 
 export type RuntimeInternalClaimPlatformTaskData = {
     body: ClaimInput;
@@ -10233,7 +10387,7 @@ export type ProjectsValidateRepositoryAccessResponses = {
     /**
      * Successful Response
      */
-    200: ProjectRepository;
+    202: ProjectRepository;
 };
 
 export type ProjectsValidateRepositoryAccessResponse = ProjectsValidateRepositoryAccessResponses[keyof ProjectsValidateRepositoryAccessResponses];
@@ -11209,6 +11363,57 @@ export type ConversationsCreateMessageResponses = {
 
 export type ConversationsCreateMessageResponse = ConversationsCreateMessageResponses[keyof ConversationsCreateMessageResponses];
 
+export type ConversationsListConversationEventsData = {
+    body?: never;
+    headers?: {
+        /**
+         * Accept
+         */
+        Accept?: string | null;
+        /**
+         * Last-Event-Id
+         */
+        'Last-Event-ID'?: string | null;
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Conversation Id
+         */
+        conversation_id: string;
+    };
+    query?: {
+        /**
+         * After Sequence
+         */
+        after_sequence?: number;
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/conversations/{conversation_id}/events';
+};
+
+export type ConversationsListConversationEventsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ConversationsListConversationEventsError = ConversationsListConversationEventsErrors[keyof ConversationsListConversationEventsErrors];
+
+export type ConversationsListConversationEventsResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
 export type ConversationsListDelegationsData = {
     body?: never;
     headers?: {
@@ -11253,51 +11458,6 @@ export type ConversationsListDelegationsResponses = {
 };
 
 export type ConversationsListDelegationsResponse = ConversationsListDelegationsResponses[keyof ConversationsListDelegationsResponses];
-
-export type ConversationsCreateDelegationData = {
-    body: DelegationCreate;
-    headers?: {
-        /**
-         * Idempotency-Key
-         */
-        'Idempotency-Key'?: string | null;
-        /**
-         * X-Namespace-Id
-         */
-        'X-Namespace-Id'?: string | null;
-    };
-    path: {
-        /**
-         * Conversation Id
-         */
-        conversation_id: string;
-    };
-    query?: {
-        /**
-         * Namespace Id
-         */
-        namespace_id?: string | null;
-    };
-    url: '/api/v1/conversations/{conversation_id}/delegations';
-};
-
-export type ConversationsCreateDelegationErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type ConversationsCreateDelegationError = ConversationsCreateDelegationErrors[keyof ConversationsCreateDelegationErrors];
-
-export type ConversationsCreateDelegationResponses = {
-    /**
-     * Successful Response
-     */
-    202: AgentDelegation;
-};
-
-export type ConversationsCreateDelegationResponse = ConversationsCreateDelegationResponses[keyof ConversationsCreateDelegationResponses];
 
 export type ConversationsRefreshContextSnapshotData = {
     body: ContextRefresh;
@@ -11792,6 +11952,96 @@ export type WorkflowsCancelWorkflowInstanceResponses = {
 };
 
 export type WorkflowsCancelWorkflowInstanceResponse = WorkflowsCancelWorkflowInstanceResponses[keyof WorkflowsCancelWorkflowInstanceResponses];
+
+export type WorkflowsListWorkflowAttachmentsData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Instance Id
+         */
+        instance_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/workflow-instances/{instance_id}/attachments';
+};
+
+export type WorkflowsListWorkflowAttachmentsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type WorkflowsListWorkflowAttachmentsError = WorkflowsListWorkflowAttachmentsErrors[keyof WorkflowsListWorkflowAttachmentsErrors];
+
+export type WorkflowsListWorkflowAttachmentsResponses = {
+    /**
+     * Response Workflows-List Workflow Attachments
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type WorkflowsListWorkflowAttachmentsResponse = WorkflowsListWorkflowAttachmentsResponses[keyof WorkflowsListWorkflowAttachmentsResponses];
+
+export type WorkflowsUploadWorkflowAttachmentData = {
+    body: BodyWorkflowsUploadWorkflowAttachment;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Instance Id
+         */
+        instance_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/workflow-instances/{instance_id}/attachments';
+};
+
+export type WorkflowsUploadWorkflowAttachmentErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type WorkflowsUploadWorkflowAttachmentError = WorkflowsUploadWorkflowAttachmentErrors[keyof WorkflowsUploadWorkflowAttachmentErrors];
+
+export type WorkflowsUploadWorkflowAttachmentResponses = {
+    /**
+     * Response Workflows-Upload Workflow Attachment
+     *
+     * Successful Response
+     */
+    201: {
+        [key: string]: unknown;
+    };
+};
+
+export type WorkflowsUploadWorkflowAttachmentResponse = WorkflowsUploadWorkflowAttachmentResponses[keyof WorkflowsUploadWorkflowAttachmentResponses];
 
 export type WorkflowsListWorkflowEventsData = {
     body?: never;

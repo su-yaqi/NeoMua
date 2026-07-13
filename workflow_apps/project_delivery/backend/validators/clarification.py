@@ -1,4 +1,4 @@
-from app.workflow_management.sdk import WorkflowRunContext, register_validator
+from workflow_runtime.sdk import WorkflowRunContext, register_validator
 
 
 @register_validator("project_delivery.has_clarification")

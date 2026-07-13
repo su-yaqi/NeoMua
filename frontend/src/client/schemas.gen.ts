@@ -210,112 +210,6 @@ export const AgentCreateSchema = {
     title: 'AgentCreate'
 } as const;
 
-export const AgentDelegationSchema = {
-    properties: {
-        id: {
-            type: 'string',
-            format: 'uuid',
-            title: 'Id'
-        },
-        conversation_id: {
-            type: 'string',
-            format: 'uuid',
-            title: 'Conversation Id'
-        },
-        source_message_id: {
-            type: 'string',
-            format: 'uuid',
-            title: 'Source Message Id'
-        },
-        source_agent_id: {
-            type: 'string',
-            format: 'uuid',
-            title: 'Source Agent Id'
-        },
-        target_agent_id: {
-            type: 'string',
-            format: 'uuid',
-            title: 'Target Agent Id'
-        },
-        input_payload: {
-            additionalProperties: true,
-            type: 'object',
-            title: 'Input Payload'
-        },
-        result_payload: {
-            anyOf: [
-                {
-                    additionalProperties: true,
-                    type: 'object'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Result Payload'
-        },
-        task_id: {
-            anyOf: [
-                {
-                    type: 'string',
-                    format: 'uuid'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Task Id'
-        },
-        status: {
-            $ref: '#/components/schemas/DelegationStatus',
-            default: 'queued'
-        },
-        idempotency_key: {
-            type: 'string',
-            maxLength: 255,
-            title: 'Idempotency Key'
-        },
-        error: {
-            anyOf: [
-                {
-                    additionalProperties: true,
-                    type: 'object'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Error'
-        },
-        created_at: {
-            type: 'string',
-            format: 'date-time',
-            title: 'Created At'
-        },
-        completed_at: {
-            anyOf: [
-                {
-                    type: 'string',
-                    format: 'date-time'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Completed At'
-        }
-    },
-    type: 'object',
-    required: [
-        'conversation_id',
-        'source_message_id',
-        'source_agent_id',
-        'target_agent_id',
-        'idempotency_key'
-    ],
-    title: 'AgentDelegation'
-} as const;
-
 export const AgentDraftPublicSchema = {
     properties: {
         agent_id: {
@@ -1078,6 +972,21 @@ export const Body_runtime_artifacts_upload_artifactSchema = {
     title: 'Body_runtime-artifacts-upload_artifact'
 } as const;
 
+export const Body_workflows_upload_workflow_attachmentSchema = {
+    properties: {
+        file: {
+            type: 'string',
+            format: 'binary',
+            title: 'File'
+        }
+    },
+    type: 'object',
+    required: [
+        'file'
+    ],
+    title: 'Body_workflows-upload_workflow_attachment'
+} as const;
+
 export const CapabilityReportSchema = {
     properties: {
         worker_id: {
@@ -1185,58 +1094,8 @@ export const ConfirmationDecisionSchema = {
     title: 'ConfirmationDecision'
 } as const;
 
-export const ContentReferenceInputSchema = {
-    properties: {
-        repository_id: {
-            type: 'string',
-            format: 'uuid',
-            title: 'Repository Id'
-        },
-        path: {
-            type: 'string',
-            maxLength: 1024,
-            minLength: 1,
-            title: 'Path'
-        },
-        blob_digest: {
-            type: 'string',
-            maxLength: 64,
-            minLength: 40,
-            title: 'Blob Digest'
-        },
-        summary: {
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Summary'
-        }
-    },
-    additionalProperties: false,
-    type: 'object',
-    required: [
-        'repository_id',
-        'path',
-        'blob_digest'
-    ],
-    title: 'ContentReferenceInput'
-} as const;
-
 export const ContextRefreshSchema = {
-    properties: {
-        content_refs: {
-            items: {
-                $ref: '#/components/schemas/ContentReferenceInput'
-            },
-            type: 'array',
-            title: 'Content Refs',
-            default: []
-        }
-    },
+    properties: {},
     additionalProperties: false,
     type: 'object',
     title: 'ContextRefresh'
@@ -1552,51 +1411,6 @@ export const ConversationVisibilitySchema = {
         'project'
     ],
     title: 'ConversationVisibility'
-} as const;
-
-export const DelegationCreateSchema = {
-    properties: {
-        source_message_id: {
-            type: 'string',
-            format: 'uuid',
-            title: 'Source Message Id'
-        },
-        source_conversation_agent_id: {
-            type: 'string',
-            format: 'uuid',
-            title: 'Source Conversation Agent Id'
-        },
-        target_conversation_agent_id: {
-            type: 'string',
-            format: 'uuid',
-            title: 'Target Conversation Agent Id'
-        },
-        content: {
-            type: 'string',
-            minLength: 1,
-            title: 'Content'
-        }
-    },
-    additionalProperties: false,
-    type: 'object',
-    required: [
-        'source_message_id',
-        'source_conversation_agent_id',
-        'target_conversation_agent_id',
-        'content'
-    ],
-    title: 'DelegationCreate'
-} as const;
-
-export const DelegationStatusSchema = {
-    type: 'string',
-    enum: [
-        'queued',
-        'running',
-        'completed',
-        'failed'
-    ],
-    title: 'DelegationStatus'
 } as const;
 
 export const DeploymentPublicSchema = {
@@ -4647,6 +4461,18 @@ export const ProjectRepositorySchema = {
             ],
             title: 'Validated Commit'
         },
+        validation_job_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Validation Job Id'
+        },
         created_at: {
             type: 'string',
             format: 'date-time',
@@ -5104,6 +4930,97 @@ export const RepositoryValidationRequestSchema = {
         'runtime_id'
     ],
     title: 'RepositoryValidationRequest'
+} as const;
+
+export const RuntimeDelegationInputSchema = {
+    properties: {
+        source_task_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Source Task Id'
+        },
+        source_task_revision: {
+            type: 'integer',
+            title: 'Source Task Revision'
+        },
+        target_conversation_agent_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Target Conversation Agent Id'
+        },
+        content: {
+            type: 'string',
+            title: 'Content'
+        }
+    },
+    type: 'object',
+    required: [
+        'source_task_id',
+        'source_task_revision',
+        'target_conversation_agent_id',
+        'content'
+    ],
+    title: 'RuntimeDelegationInput'
+} as const;
+
+export const RuntimeJobResultInputSchema = {
+    properties: {
+        worker_id: {
+            type: 'string',
+            title: 'Worker Id'
+        },
+        revision: {
+            type: 'integer',
+            title: 'Revision'
+        },
+        status: {
+            $ref: '#/components/schemas/RuntimeJobStatus'
+        },
+        result: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Result'
+        },
+        error: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Error'
+        }
+    },
+    type: 'object',
+    required: [
+        'worker_id',
+        'revision',
+        'status'
+    ],
+    title: 'RuntimeJobResultInput'
+} as const;
+
+export const RuntimeJobStatusSchema = {
+    type: 'string',
+    enum: [
+        'queued',
+        'dispatched',
+        'running',
+        'succeeded',
+        'failed',
+        'needs_manual_resolution'
+    ],
+    title: 'RuntimeJobStatus'
 } as const;
 
 export const RuntimeRouteModeSchema = {

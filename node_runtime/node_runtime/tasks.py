@@ -4,14 +4,16 @@ import json
 from enum import Enum
 from typing import Protocol
 
-from node_runtime.model_route import ModelRouteStore, build_route_env
-from node_runtime.protocol import Envelope, envelope
-from node_runtime.spool import EventSpool
 from runtime_worker.agent_shell import AgentShell, RunCommand
+from runtime_worker.mcp_manager import McpRuntimeManager
 from runtime_worker.permissions import validate_permission_mode
 from runtime_worker.release_store import AgentReleaseStore
-from runtime_worker.mcp_manager import McpRuntimeManager
+from workflow_runtime.executor import execute_runtime_job
+
+from node_runtime.model_route import ModelRouteStore, build_route_env
+from node_runtime.protocol import Envelope, envelope
 from node_runtime.secrets import read_node_secret
+from node_runtime.spool import EventSpool
 
 
 class DispatchDecision(str, Enum):
@@ -56,6 +58,7 @@ class NodeTaskExecutor:
         shell: AgentShell | None = None,
         release_store: AgentReleaseStore | None = None,
         approval_callback=None,
+        delegation_callback=None,
         mcp_manager: McpRuntimeManager | None = None,
     ) -> None:
         self.spool = spool
@@ -67,6 +70,7 @@ class NodeTaskExecutor:
         self.cancelling: set[str] = set()
         self.release_store = release_store
         self.approval_callback = approval_callback
+        self.delegation_callback = delegation_callback
         self.mcp_manager = mcp_manager or McpRuntimeManager()
 
     def validate(self, command: dict) -> None:
@@ -137,6 +141,7 @@ class NodeTaskExecutor:
                 task_revision=revision,
                 require_approval_tools=snapshot.get("require_approval_tools", []),
                 approval_callback=self.approval_callback,
+                delegation_callback=self.delegation_callback,
                 add_dirs=[
                     str(
                         release_store.verify_installed(
@@ -147,6 +152,9 @@ class NodeTaskExecutor:
                     )
                 ],
                 skills=[str(item["slug"]) for item in snapshot.get("skills", [])],
+                roundtable_participants=list(
+                    snapshot.get("roundtable_participants", [])
+                ),
             )
             mcp_runtime_configs = []
             for server in snapshot.get("mcp_servers", []):
@@ -274,6 +282,8 @@ class NodeTaskController:
         self.spool = spool
         self.outbox: asyncio.Queue[Envelope] = asyncio.Queue()
         self.approval_waiters: dict[str, asyncio.Future[bool]] = {}
+        self.delegation_waiters: dict[str, asyncio.Future[dict]] = {}
+        self.runtime_jobs: dict[str, asyncio.Task] = {}
         self.executor = NodeTaskExecutor(
             spool,
             route_store,
@@ -282,10 +292,50 @@ class NodeTaskController:
             shell=shell,
             release_store=release_store,
             approval_callback=self._request_approval,
+            delegation_callback=self._request_delegation,
         )
         self.dispatcher = TaskDispatcher(spool, self.executor)
 
     async def handle(self, message: Envelope) -> list[Envelope]:
+        if message.type == "runtime_job_dispatch":
+            job_id = str(message.payload["job_id"])
+            revision = int(message.payload["revision"])
+            decision = self.spool.record_runtime_job_dispatch(
+                job_id, revision, dict(message.payload)
+            )
+            if decision not in {"accepted", "duplicate"}:
+                return [
+                    envelope(
+                        "runtime_job_rejected",
+                        self.node_id,
+                        {
+                            "job_id": job_id,
+                            "revision": revision,
+                            "reason": decision,
+                        },
+                    )
+                ]
+            if decision == "accepted" and job_id not in self.runtime_jobs:
+                self.runtime_jobs[job_id] = asyncio.create_task(
+                    self._run_runtime_job(job_id, revision, message.payload)
+                )
+            responses = [
+                envelope(
+                    "runtime_job_accepted",
+                    self.node_id,
+                    {
+                        "job_id": job_id,
+                        "revision": revision,
+                        "duplicate": decision == "duplicate",
+                    },
+                )
+            ]
+            stored_result = self.spool.runtime_job_result(job_id, revision)
+            if decision == "duplicate" and stored_result is not None:
+                responses.append(
+                    envelope("runtime_job_result", self.node_id, stored_result)
+                )
+            return responses
         if message.type == "task_dispatch":
             try:
                 decision = self.dispatcher.accept(message.payload)
@@ -346,7 +396,69 @@ class NodeTaskController:
                     {"approval_id": approval_id},
                 )
             ]
+        elif message.type == "agent_delegation_result":
+            delegation_key = str(message.payload["client_delegation_key"])
+            waiter = self.delegation_waiters.get(delegation_key)
+            if waiter and not waiter.done():
+                waiter.set_result(dict(message.payload["result"]))
+            return [
+                envelope(
+                    "agent_delegation_result_ack",
+                    self.node_id,
+                    {
+                        "delegation_id": message.payload["delegation_id"],
+                        "client_delegation_key": delegation_key,
+                    },
+                )
+            ]
         return []
+
+    async def _run_runtime_job(self, job_id: str, revision: int, command: dict) -> None:
+        lease = asyncio.create_task(self._runtime_job_lease(job_id, revision))
+        try:
+            try:
+                result = await asyncio.to_thread(
+                    execute_runtime_job,
+                    str(command["kind"]),
+                    dict(command["payload"]),
+                )
+                payload = {
+                    "job_id": job_id,
+                    "revision": revision,
+                    "status": "succeeded",
+                    "result": result,
+                }
+            except Exception as exc:
+                payload = {
+                    "job_id": job_id,
+                    "revision": revision,
+                    "status": (
+                        "needs_manual_resolution"
+                        if command.get("side_effecting")
+                        else "failed"
+                    ),
+                    "error": {
+                        "code": "runtime_job_execution_failed",
+                        "message": str(exc),
+                    },
+                }
+            self.spool.complete_runtime_job(job_id, revision, payload)
+            await self.outbox.put(envelope("runtime_job_result", self.node_id, payload))
+        finally:
+            lease.cancel()
+            await asyncio.gather(lease, return_exceptions=True)
+            self.runtime_jobs.pop(job_id, None)
+
+    async def _runtime_job_lease(self, job_id: str, revision: int) -> None:
+        while True:
+            await asyncio.sleep(60)
+            await self.outbox.put(
+                envelope(
+                    "runtime_job_lease",
+                    self.node_id,
+                    {"job_id": job_id, "revision": revision},
+                )
+            )
 
     async def _request_approval(
         self, task_id: str, task_revision: int, tool_name: str, tool_input: dict
@@ -388,6 +500,49 @@ class NodeTaskController:
             return False
         finally:
             self.approval_waiters.pop(approval_key, None)
+
+    async def _request_delegation(
+        self,
+        task_id: str,
+        task_revision: int,
+        target_conversation_agent_id: str,
+        content: str,
+    ) -> dict:
+        digest = hashlib.sha256(
+            json.dumps(
+                {
+                    "task_id": task_id,
+                    "revision": task_revision,
+                    "target": target_conversation_agent_id,
+                    "content": content,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode()
+        ).hexdigest()
+        delegation_key = f"{task_id}:{task_revision}:{digest}"
+        loop = asyncio.get_running_loop()
+        waiter = self.delegation_waiters.setdefault(
+            delegation_key, loop.create_future()
+        )
+        await self.outbox.put(
+            envelope(
+                "agent_delegation_request",
+                self.node_id,
+                {
+                    "client_delegation_key": delegation_key,
+                    "source_task_id": task_id,
+                    "source_task_revision": task_revision,
+                    "target_conversation_agent_id": target_conversation_agent_id,
+                    "content": content,
+                },
+            )
+        )
+        try:
+            return await waiter
+        finally:
+            self.delegation_waiters.pop(delegation_key, None)
 
     async def replay_pending(self) -> None:
         task_ids = sorted({event.task_id for event in self.spool.pending()})

@@ -86,15 +86,8 @@ class DelegationCreate(StrictBody):
     content: str = Field(min_length=1)
 
 
-class ContentReferenceInput(StrictBody):
-    repository_id: uuid.UUID
-    path: str = Field(min_length=1, max_length=1024)
-    blob_digest: str = Field(min_length=40, max_length=64)
-    summary: str | None = None
-
-
 class ContextRefresh(StrictBody):
-    content_refs: list[ContentReferenceInput] = []
+    pass
 
 
 class CatalogQuery(BaseModel):

@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { createFileRoute } from "@tanstack/react-router"
 import { useState } from "react"
 import { toast } from "sonner"
 import { type WorkflowNodeInstance, workspaceApi } from "@/api/tenantApi"
@@ -8,19 +7,14 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 
-export const Route = createFileRoute(
-  "/_layout/apps/$workflowSlug/tasks/$instanceId",
-)({ component: WorkflowTaskPage })
-
-function WorkflowTaskPage() {
-  const { instanceId } = Route.useParams()
+export function ProjectDeliveryTask({ instanceId }: { instanceId: string }) {
   const queryClient = useQueryClient()
   const task = useQuery({
     queryKey: ["workflow-task", instanceId],
     queryFn: () => workspaceApi.getWorkflowInstance(instanceId),
     refetchInterval: 3000,
   })
-  if (!task.data) return <p>正在加载项目任务…</p>
+  if (!task.data) return <p>正在加载项目交付任务…</p>
   return (
     <div className="space-y-6">
       <div>
@@ -35,7 +29,7 @@ function WorkflowTaskPage() {
       </div>
       <div className="space-y-4">
         {task.data.nodes.map((node) => (
-          <NodeCard
+          <ProjectDeliveryNode
             key={node.id}
             node={node}
             instanceId={instanceId}
@@ -55,7 +49,7 @@ function WorkflowTaskPage() {
   )
 }
 
-function NodeCard({
+function ProjectDeliveryNode({
   node,
   instanceId,
   readOnly,
@@ -90,11 +84,12 @@ function NodeCard({
     onSuccess: refresh,
     onError: () => toast.error("确认失败；候选结果可能已更新"),
   })
+  const isClarification = node.node_key === "clarify"
   return (
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
-          <CardTitle>{node.node_key}</CardTitle>
+          <CardTitle>{isClarification ? "需求澄清" : "交付摘要"}</CardTitle>
           <Badge
             variant={
               node.status.includes("failed") || node.status.includes("blocked")
@@ -111,6 +106,7 @@ function NodeCard({
           修订 {node.expected_revision} · Runtime {node.resolved_runtime_id}
         </p>
         {!readOnly &&
+          isClarification &&
           node.status === "waiting_confirmation" &&
           node.expected_revision === 0 && (
             <div className="grid gap-2">
@@ -128,15 +124,18 @@ function NodeCard({
                 disabled={!goals || !criteria}
                 onClick={() => submit.mutate()}
               >
-                提交过程结果
+                提交澄清结果
               </Button>
             </div>
           )}
         {!readOnly &&
+          !isClarification &&
           node.status === "waiting_confirmation" &&
           node.expected_revision > 0 && (
             <div className="flex gap-2">
-              <Button onClick={() => confirm.mutate("accept")}>接受结果</Button>
+              <Button onClick={() => confirm.mutate("accept")}>
+                接受交付摘要
+              </Button>
               <Button
                 variant="outline"
                 onClick={() => confirm.mutate("reject")}

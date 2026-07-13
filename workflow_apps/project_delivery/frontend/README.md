@@ -1,5 +1,6 @@
 # Project Delivery application
 
-The compiled frontend registry maps this package to `workflow.default`. The route
-`/apps/project-delivery` supplies the package-specific title, input contract, DAG,
-and task list while reusing NeoMua's audited Workflow task shell.
+The compiled frontend registry maps this package to `workflow.project_delivery`.
+`ProjectDeliveryApplication.tsx` and `ProjectDeliveryTask.tsx` are imported by the
+static frontend build; no module URL or executable frontend source is loaded from
+the database.

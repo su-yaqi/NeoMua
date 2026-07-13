@@ -22,6 +22,9 @@ from app.runtime.connections import node_is_online
 from app.runtime.models import (
     AgentEventType,
     AgentTask,
+    RuntimeJob,
+    RuntimeJobKind,
+    RuntimeJobStatus,
     RuntimeNode,
     RuntimeProfile,
     RuntimeRouteMode,
@@ -335,3 +338,166 @@ def test_node_dispatch_ack_and_result_are_persisted(
         assert event_ack["payload"]["through_sequence"] == 2
     db.expire_all()
     assert db.get(AgentTask, task.id).status == TaskStatus.SUCCEEDED
+
+
+def test_runtime_job_dispatch_lease_and_result_are_persisted(
+    client: TestClient, db: Session, superuser_token_headers: dict[str, str]
+) -> None:
+    enrolled, private = _enroll(client, db, superuser_token_headers)
+    node = db.get(RuntimeNode, uuid.UUID(enrolled["node_id"]))
+    assert node is not None
+    runtime = RuntimeProfile(
+        namespace_id=node.namespace_id,
+        runtime_type=RuntimeType.NODE,
+        route_mode=RuntimeRouteMode.DIRECT_ANTHROPIC,
+        model_id="claude-node",
+        base_url="https://anthropic.example",
+        config={"direct_compatibility_verified": True},
+    )
+    db.add(runtime)
+    db.flush()
+    node.runtime_profile_id = runtime.id
+    job = RuntimeJob(
+        namespace_id=node.namespace_id,
+        runtime_profile_id=runtime.id,
+        target_node_id=node.id,
+        kind=RuntimeJobKind.WORKFLOW_HANDLER,
+        payload={"component_key": "project_delivery.prepare"},
+        idempotency_key=f"node-job:{uuid.uuid4()}",
+    )
+    db.add(node)
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    with client.websocket_connect(
+        f"{settings.API_V1_STR}/node/ws",
+        headers=_connection_headers(enrolled, private),
+    ) as websocket:
+        assert websocket.receive_json()["type"] == "hello_ack"
+        dispatch = websocket.receive_json()
+        assert dispatch["type"] == "runtime_job_dispatch"
+        assert dispatch["payload"]["job_id"] == str(job.id)
+        websocket.send_json(
+            {
+                "type": "runtime_job_accepted",
+                "protocol_version": "2",
+                "message_id": str(uuid.uuid4()),
+                "correlation_id": None,
+                "node_id": enrolled["node_id"],
+                "sent_at": datetime.now(timezone.utc).isoformat(),
+                "payload": {"job_id": str(job.id), "revision": job.revision},
+            }
+        )
+        websocket.send_json(
+            {
+                "type": "runtime_job_lease",
+                "protocol_version": "2",
+                "message_id": str(uuid.uuid4()),
+                "correlation_id": None,
+                "node_id": enrolled["node_id"],
+                "sent_at": datetime.now(timezone.utc).isoformat(),
+                "payload": {"job_id": str(job.id), "revision": job.revision},
+            }
+        )
+        websocket.send_json(
+            {
+                "type": "runtime_job_result",
+                "protocol_version": "2",
+                "message_id": str(uuid.uuid4()),
+                "correlation_id": None,
+                "node_id": enrolled["node_id"],
+                "sent_at": datetime.now(timezone.utc).isoformat(),
+                "payload": {
+                    "job_id": str(job.id),
+                    "revision": job.revision,
+                    "status": "succeeded",
+                    "result": {"summary": "done"},
+                    "error": None,
+                },
+            }
+        )
+        websocket.send_json(
+            {
+                "type": "heartbeat",
+                "protocol_version": "2",
+                "message_id": str(uuid.uuid4()),
+                "correlation_id": None,
+                "node_id": enrolled["node_id"],
+                "sent_at": datetime.now(timezone.utc).isoformat(),
+                "payload": {},
+            }
+        )
+        assert websocket.receive_json()["type"] == "heartbeat_ack"
+
+    db.expire_all()
+    persisted = db.get(RuntimeJob, job.id)
+    assert persisted is not None
+    assert persisted.status == RuntimeJobStatus.SUCCEEDED
+    assert persisted.result == {"summary": "done"}
+
+
+def test_side_effecting_runtime_job_rejection_requires_manual_resolution(
+    client: TestClient, db: Session, superuser_token_headers: dict[str, str]
+) -> None:
+    enrolled, private = _enroll(client, db, superuser_token_headers)
+    node = db.get(RuntimeNode, uuid.UUID(enrolled["node_id"]))
+    assert node is not None
+    runtime = RuntimeProfile(
+        namespace_id=node.namespace_id,
+        runtime_type=RuntimeType.NODE,
+        route_mode=RuntimeRouteMode.DIRECT_ANTHROPIC,
+        model_id="claude-node",
+        base_url="https://anthropic.example",
+        config={"direct_compatibility_verified": True},
+    )
+    db.add(runtime)
+    db.flush()
+    node.runtime_profile_id = runtime.id
+    job = RuntimeJob(
+        namespace_id=node.namespace_id,
+        runtime_profile_id=runtime.id,
+        target_node_id=node.id,
+        kind=RuntimeJobKind.WORKFLOW_HANDLER,
+        payload={"component_key": "project_delivery.prepare"},
+        side_effecting=True,
+        idempotency_key=f"node-job:{uuid.uuid4()}",
+    )
+    db.add(node)
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    with client.websocket_connect(
+        f"{settings.API_V1_STR}/node/ws",
+        headers=_connection_headers(enrolled, private),
+    ) as websocket:
+        assert websocket.receive_json()["type"] == "hello_ack"
+        assert websocket.receive_json()["type"] == "runtime_job_dispatch"
+        websocket.send_json(
+            {
+                "type": "runtime_job_rejected",
+                "protocol_version": "2",
+                "message_id": str(uuid.uuid4()),
+                "correlation_id": None,
+                "node_id": enrolled["node_id"],
+                "sent_at": datetime.now(timezone.utc).isoformat(),
+                "payload": {
+                    "job_id": str(job.id),
+                    "revision": job.revision,
+                    "reason": "durable revision conflict",
+                },
+            }
+        )
+        rejected = websocket.receive_json()
+        assert rejected["type"] == "runtime_job_rejected_ack"
+        assert rejected["payload"]["status"] == "needs_manual_resolution"
+
+    db.expire_all()
+    persisted = db.get(RuntimeJob, job.id)
+    assert persisted is not None
+    assert persisted.status == RuntimeJobStatus.NEEDS_MANUAL_RESOLUTION
+    assert persisted.error == {
+        "code": "node_runtime_job_dispatch_conflict",
+        "reason": "durable revision conflict",
+    }

@@ -1,7 +1,6 @@
 from dataclasses import fields, is_dataclass
 from typing import Any
 
-
 MAX_SERIALIZATION_DEPTH = 20
 MAX_SERIALIZATION_NODES = 10_000
 MAX_FALLBACK_LENGTH = 1_024
@@ -56,14 +55,10 @@ def _value(
                 for field in fields(value)
             }
         if isinstance(value, (list, tuple, set, frozenset)):
-            return [
-                _value(item, _depth=_depth + 1, _budget=budget) for item in value
-            ]
+            return [_value(item, _depth=_depth + 1, _budget=budget) for item in value]
         if isinstance(value, dict):
             return {
-                _safe_string(key): _value(
-                    item, _depth=_depth + 1, _budget=budget
-                )
+                _safe_string(key): _value(item, _depth=_depth + 1, _budget=budget)
                 for key, item in value.items()
             }
         if hasattr(value, "__dict__"):
@@ -110,9 +105,7 @@ def normalize_messages(message: Any, start_sequence: int) -> list[dict[str, Any]
             payload = {
                 "id": getattr(block, "id", value_dict.get("id")),
                 "name": getattr(block, "name", value_dict.get("name")),
-                "input": _value(
-                    getattr(block, "input", value_dict.get("input", {}))
-                ),
+                "input": _value(getattr(block, "input", value_dict.get("input", {}))),
             }
             event_type = "tool_call"
         elif block_type == "tool_result":
@@ -120,9 +113,7 @@ def normalize_messages(message: Any, start_sequence: int) -> list[dict[str, Any]
                 "tool_use_id": getattr(
                     block, "tool_use_id", value_dict.get("tool_use_id")
                 ),
-                "content": _value(
-                    getattr(block, "content", value_dict.get("content"))
-                ),
+                "content": _value(getattr(block, "content", value_dict.get("content"))),
                 "is_error": getattr(
                     block, "is_error", value_dict.get("is_error", False)
                 ),
@@ -134,9 +125,7 @@ def normalize_messages(message: Any, start_sequence: int) -> list[dict[str, Any]
         elif block_type == "thinking":
             payload = {
                 "kind": "thinking",
-                "thinking": getattr(
-                    block, "thinking", value_dict.get("thinking", "")
-                ),
+                "thinking": getattr(block, "thinking", value_dict.get("thinking", "")),
             }
             event_type = "assistant_message"
         else:

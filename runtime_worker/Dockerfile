@@ -6,10 +6,13 @@ WORKDIR /app
 ENV PATH="/app/.venv/bin:$PATH"
 
 COPY pyproject.toml uv.lock ./
+COPY workflow_runtime/pyproject.toml ./workflow_runtime/
 COPY runtime_worker/pyproject.toml ./runtime_worker/
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --package neomua-runtime-worker --no-install-workspace
 COPY runtime_worker/runtime_worker ./runtime_worker/runtime_worker
+COPY workflow_runtime/workflow_runtime ./workflow_runtime/workflow_runtime
+COPY workflow_apps ./workflow_apps
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --package neomua-runtime-worker
 

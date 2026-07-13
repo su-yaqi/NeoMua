@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
-export const Route = createFileRoute("/_layout/projects/$projectId")({
+export const Route = createFileRoute("/_layout/projects_/$projectId")({
   component: ProjectDetailPage,
 })
 

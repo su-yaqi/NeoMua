@@ -30,10 +30,20 @@ from app.project_management.models import (
     ProjectSpecLocation,
     ProjectStatus,
     RepositoryStatus,
+    SpecBindingStatus,
+    SpecLocationStatus,
     SpecStandard,
     SpecStandardVersion,
 )
-from app.runtime.models import AgentTask, RuntimeProfile
+from app.project_management.service import verified_repository_runtime_proof
+from app.runtime.jobs import enqueue_runtime_job
+from app.runtime.models import (
+    AgentTask,
+    RuntimeJob,
+    RuntimeJobKind,
+    RuntimeJobStatus,
+    RuntimeProfile,
+)
 from app.runtime.policy import TaskStatus
 from app.workflow_management.models import (
     ConfirmationDecision,
@@ -58,8 +68,6 @@ from app.workflow_management.models import (
 )
 from app.workflow_management.sdk import (
     EDGE_CONDITIONS,
-    NODE_HANDLERS,
-    VALIDATORS,
     WorkflowRunContext,
 )
 
@@ -231,10 +239,12 @@ def project_context_snapshot(session: Session, project: Project) -> dict[str, An
             "remote_url": item.remote_url,
             "purpose": item.purpose,
             "commit": item.validated_commit,
+            "runtime_workspace_refs": item.runtime_workspace_refs,
         }
         for item in repositories
     ]
     spec_refs: list[dict[str, Any]] = []
+    content_refs: list[dict[str, Any]] = []
     locations = session.exec(
         select(ProjectSpecLocation).where(ProjectSpecLocation.project_id == project.id)
     ).all()
@@ -250,14 +260,21 @@ def project_context_snapshot(session: Session, project: Project) -> dict[str, An
             else None
         )
         standard = session.get(SpecStandard, version.standard_id) if version else None
-        if binding is None or version is None or standard is None:
+        repository = next(
+            item for item in repositories if item.id == location.repository_id
+        )
+        if (
+            binding is None
+            or version is None
+            or standard is None
+            or binding.status != SpecBindingStatus.VALID
+            or location.status != SpecLocationStatus.VALID
+            or binding.validated_commit != repository.validated_commit
+        ):
             raise HTTPException(
                 409,
                 {"code": "spec_binding_unavailable", "location_id": str(location.id)},
             )
-        repository = next(
-            item for item in repositories if item.id == location.repository_id
-        )
         spec_refs.append(
             {
                 "location_id": str(location.id),
@@ -270,7 +287,34 @@ def project_context_snapshot(session: Session, project: Project) -> dict[str, An
                 "content_digest": version.content_digest,
             }
         )
-    snapshot = {"repository_refs": repository_refs, "spec_refs": spec_refs}
+        seen_files: set[tuple[str, str]] = set()
+        for runtime_id, proof in repository.runtime_workspace_refs.items():
+            if not isinstance(proof, dict):
+                continue
+            for proof_location in proof.get("spec_locations", []):
+                if str(proof_location.get("spec_location_id")) != str(location.id):
+                    continue
+                for file in proof_location.get("files", []):
+                    identity = (str(repository.id), str(file.get("path")))
+                    if identity in seen_files:
+                        continue
+                    seen_files.add(identity)
+                    content_refs.append(
+                        {
+                            "repository_id": str(repository.id),
+                            "spec_location_id": str(location.id),
+                            "runtime_id": runtime_id,
+                            "path": file["path"],
+                            "blob_digest": file["content_digest"],
+                            "size": file["size"],
+                            "content": file["content"],
+                        }
+                    )
+    snapshot = {
+        "repository_refs": repository_refs,
+        "spec_refs": spec_refs,
+        "content_refs": content_refs,
+    }
     return {**snapshot, "content_digest": canonical_digest(snapshot)}
 
 
@@ -338,6 +382,25 @@ def preflight(
                     "message": message,
                 }
             )
+        if version.manifest.get("requirements", {}).get("repositories"):
+            repositories = session.exec(
+                select(ProjectRepository).where(
+                    ProjectRepository.project_id == project.id
+                )
+            ).all()
+            for repository in repositories:
+                proof = verified_repository_runtime_proof(
+                    session, repository, runtime.id
+                )
+                if proof is None:
+                    errors.append(
+                        {
+                            "code": "runtime_repository_unverified",
+                            "node_key": definition.node_key,
+                            "repository_id": str(repository.id),
+                            "runtime_id": str(runtime.id),
+                        }
+                    )
         if definition.node_type == WorkflowNodeType.AGENT:
             binding = session.exec(
                 select(RuntimeAgentRelease).where(
@@ -463,68 +526,98 @@ def _run_context(
     )
 
 
-def run_gate(
+def _record_gate_result(
     session: Session,
     instance: WorkflowInstance,
     node: WorkflowNodeInstance,
-    definition: WorkflowNodeDefinition,
     gate_type: GateType,
+    validator_key: str,
+    input_digest: str,
+    revision: int,
+    passed: bool,
+    details: dict[str, Any],
+) -> WorkflowGateResult:
+    result = WorkflowGateResult(
+        node_instance_id=node.id,
+        revision=revision,
+        gate_type=gate_type,
+        validator_key=validator_key,
+        validator_version=instance.package_digest,
+        input_digest=input_digest,
+        passed=passed,
+        details=details,
+    )
+    session.add(result)
+    return result
+
+
+def _runtime_context_payload(context: WorkflowRunContext) -> dict[str, Any]:
+    return {
+        "workflow_instance_id": context.workflow_instance_id,
+        "node_key": context.node_key,
+        "runtime_id": context.runtime_id,
+        "project_id": context.project_id,
+        "input": context.input,
+        "previous_output": context.previous_output,
+        "change_summary": context.change_summary,
+        "idempotency_key": context.idempotency_key,
+    }
+
+
+def _queue_runtime_component(
+    session: Session,
+    instance: WorkflowInstance,
+    node: WorkflowNodeInstance,
     input_snapshot: dict[str, Any],
     previous: WorkflowNodeRevision | None,
-    revision: int,
-) -> bool:
-    key = (
-        definition.entry_validator_key
-        if gate_type == GateType.ENTRY
-        else definition.exit_validator_key
+    *,
+    phase: str,
+    kind: RuntimeJobKind,
+    component_key: str,
+    pending_payload: dict[str, Any] | None = None,
+    side_effecting: bool = False,
+) -> WorkflowNodeExecution:
+    execution = _new_execution(
+        session,
+        node,
+        node.expected_revision + 1,
+        phase=phase,
+        status=WorkflowExecutionStatus.QUEUED,
     )
-    if not key:
-        return True
-    validator = VALIDATORS.get(key)
-    if validator is None:
-        node.status = WorkflowNodeStatus.FAILED
-        session.add(
-            WorkflowGateResult(
-                node_instance_id=node.id,
-                revision=revision,
-                gate_type=gate_type,
-                validator_key=key,
-                validator_version=instance.package_digest,
-                input_digest=canonical_digest(input_snapshot),
-                passed=False,
-                details={"code": "validator_not_registered"},
-            )
-        )
-        return False
-    try:
-        passed, details = validator(
-            _run_context(
-                instance,
-                node,
-                input_snapshot,
-                previous,
-                f"gate:{instance.id}:{node.node_key}:{revision}:{gate_type.value}",
-            )
-        )
-    except Exception as exc:
-        passed = False
-        details = {"code": "validator_exception", "message": str(exc)}
-        node.status = WorkflowNodeStatus.FAILED
-    session.add(
-        WorkflowGateResult(
-            node_instance_id=node.id,
-            revision=revision,
-            gate_type=gate_type,
-            validator_key=key,
-            validator_version=instance.package_digest,
-            input_digest=canonical_digest(input_snapshot),
-            passed=passed,
-            details=details,
-        )
+    execution.pending_payload = pending_payload or {}
+    context = _run_context(
+        instance,
+        node,
+        input_snapshot,
+        previous,
+        execution.idempotency_key,
     )
-    if not passed and node.status != WorkflowNodeStatus.FAILED:
-        node.status = WorkflowNodeStatus.BLOCKED
-    return passed
+    template_version = session.get(
+        WorkflowTemplateVersion, instance.template_version_id
+    )
+    if template_version is None:
+        raise HTTPException(409, "Workflow Template Version is unavailable")
+    package_slug = template_version.manifest.get("slug")
+    if not isinstance(package_slug, str) or not package_slug:
+        raise HTTPException(409, "Workflow Package slug is unavailable")
+    job = enqueue_runtime_job(
+        session,
+        namespace_id=instance.namespace_id,
+        runtime_id=node.resolved_runtime_id,
+        kind=kind,
+        payload={
+            "component_key": component_key,
+            "context": _runtime_context_payload(context),
+            "package_digest": instance.package_digest,
+            "package_slug": package_slug,
+        },
+        idempotency_key=execution.idempotency_key,
+        side_effecting=side_effecting,
+    )
+    execution.runtime_job_id = job.id
+    node.status = WorkflowNodeStatus.RUNNING
+    session.add_all([execution, node])
+    return execution
 
 
 def append_revision(
@@ -595,6 +688,9 @@ def _new_execution(
     session: Session,
     node: WorkflowNodeInstance,
     input_revision: int,
+    *,
+    phase: str = "run",
+    status: WorkflowExecutionStatus = WorkflowExecutionStatus.RUNNING,
 ) -> WorkflowNodeExecution:
     latest_attempt = session.exec(
         select(func.max(WorkflowNodeExecution.attempt)).where(
@@ -607,8 +703,9 @@ def _new_execution(
         input_revision=input_revision,
         attempt=attempt,
         runtime_id=node.resolved_runtime_id,
-        status=WorkflowExecutionStatus.RUNNING,
-        idempotency_key=f"workflow:{node.workflow_instance_id}:node:{node.node_key}:revision:{input_revision}:attempt:{attempt}",
+        status=status,
+        phase=phase,
+        idempotency_key=f"workflow:{node.workflow_instance_id}:node:{node.node_key}:revision:{input_revision}:attempt:{attempt}:{phase}",
     )
     session.add(execution)
     session.flush()
@@ -623,8 +720,7 @@ def _execute_code_node(
     input_snapshot: dict[str, Any],
     previous: WorkflowNodeRevision | None,
 ) -> None:
-    handler = NODE_HANDLERS.get(definition.handler_key or "")
-    if handler is None:
+    if not definition.handler_key:
         node.status = WorkflowNodeStatus.FAILED
         append_event(
             session,
@@ -633,76 +729,23 @@ def _execute_code_node(
             {"node_key": node.node_key, "code": "handler_not_registered"},
         )
         return
-    execution = _new_execution(session, node, node.expected_revision + 1)
-    try:
-        output = handler(
-            _run_context(
-                instance,
-                node,
-                input_snapshot,
-                previous,
-                execution.idempotency_key,
-            )
-        )
-        schema_errors = validate_json_value(output, definition.output_schema)
-        if schema_errors:
-            raise ValueError("; ".join(schema_errors))
-        proof = output.pop("_external_state_proof", None)
-        if definition.side_effecting and not proof:
-            execution.status = WorkflowExecutionStatus.NEEDS_MANUAL_RESOLUTION
-            execution.error = {"code": "external_state_proof_missing"}
-            node.status = WorkflowNodeStatus.NEEDS_MANUAL_RESOLUTION
-            instance.status = WorkflowInstanceStatus.BLOCKED
-            return
-        execution.external_state_proof = proof
-        revision = append_revision(
-            session,
-            node,
-            input_snapshot,
-            output,
-            "code node run(context) completed",
-            None,
-        )
-        if not run_gate(
-            session,
-            instance,
-            node,
-            definition,
-            GateType.EXIT,
-            {"input": input_snapshot, "output": output},
-            previous,
-            revision.revision,
-        ):
-            execution.status = WorkflowExecutionStatus.FAILED
-            execution.error = {"code": "exit_gate_failed"}
-            return
-        execution.status = WorkflowExecutionStatus.COMPLETED
-        execution.completed_at = utcnow()
-        if definition.confirmation_mode == ConfirmationMode.RESULT:
-            node.status = WorkflowNodeStatus.WAITING_CONFIRMATION
-            instance.status = WorkflowInstanceStatus.WAITING
-        else:
-            node.status = WorkflowNodeStatus.COMPLETED
-        append_event(
-            session,
-            instance.id,
-            "node_output_created",
-            {"node_key": node.node_key, "revision": revision.revision},
-        )
-    except Exception as exc:
-        execution.status = WorkflowExecutionStatus.FAILED
-        execution.error = {"code": "node_execution_failed", "message": str(exc)}
-        execution.completed_at = utcnow()
-        node.status = WorkflowNodeStatus.FAILED
-        instance.status = WorkflowInstanceStatus.FAILED
-        append_event(
-            session,
-            instance.id,
-            "node_failed",
-            {"node_key": node.node_key, "message": str(exc)},
-        )
-    finally:
-        session.add_all([execution, node, instance])
+    _queue_runtime_component(
+        session,
+        instance,
+        node,
+        input_snapshot,
+        previous,
+        phase="run",
+        kind=RuntimeJobKind.WORKFLOW_HANDLER,
+        component_key=definition.handler_key,
+        side_effecting=definition.side_effecting,
+    )
+    append_event(
+        session,
+        instance.id,
+        "code_node_queued",
+        {"node_key": node.node_key, "runtime_id": str(node.resolved_runtime_id)},
+    )
 
 
 def _execute_agent_node(
@@ -842,6 +885,81 @@ def _execute_agent_node(
     )
 
 
+def _continue_after_entry_gate(
+    session: Session,
+    instance: WorkflowInstance,
+    node: WorkflowNodeInstance,
+    definition: WorkflowNodeDefinition,
+    input_snapshot: dict[str, Any],
+    previous: WorkflowNodeRevision | None,
+) -> None:
+    if definition.confirmation_mode == ConfirmationMode.PROCESS:
+        node.status = WorkflowNodeStatus.WAITING_CONFIRMATION
+        instance.status = WorkflowInstanceStatus.WAITING
+    elif definition.node_type == WorkflowNodeType.CODE:
+        _execute_code_node(
+            session, instance, node, definition, input_snapshot, previous
+        )
+    elif definition.node_type == WorkflowNodeType.AGENT:
+        _execute_agent_node(
+            session, instance, node, definition, input_snapshot, previous
+        )
+    else:
+        node.status = WorkflowNodeStatus.BLOCKED
+        instance.status = WorkflowInstanceStatus.BLOCKED
+    session.add_all([node, instance])
+
+
+def _complete_after_exit_gate(
+    session: Session,
+    instance: WorkflowInstance,
+    node: WorkflowNodeInstance,
+    definition: WorkflowNodeDefinition,
+    revision: WorkflowNodeRevision,
+) -> None:
+    if definition.confirmation_mode == ConfirmationMode.RESULT:
+        node.status = WorkflowNodeStatus.WAITING_CONFIRMATION
+        instance.status = WorkflowInstanceStatus.WAITING
+    else:
+        node.status = WorkflowNodeStatus.COMPLETED
+    append_event(
+        session,
+        instance.id,
+        "node_output_created",
+        {"node_key": node.node_key, "revision": revision.revision},
+    )
+    session.add_all([node, instance])
+
+
+def _start_exit_gate(
+    session: Session,
+    instance: WorkflowInstance,
+    node: WorkflowNodeInstance,
+    definition: WorkflowNodeDefinition,
+    input_snapshot: dict[str, Any],
+    previous: WorkflowNodeRevision | None,
+    revision: WorkflowNodeRevision,
+) -> None:
+    if not definition.exit_validator_key:
+        _complete_after_exit_gate(session, instance, node, definition, revision)
+        return
+    gate_input = {"input": input_snapshot, "output": revision.output or {}}
+    _queue_runtime_component(
+        session,
+        instance,
+        node,
+        gate_input,
+        previous,
+        phase="exit_gate",
+        kind=RuntimeJobKind.WORKFLOW_VALIDATOR,
+        component_key=definition.exit_validator_key,
+        pending_payload={
+            "revision_id": str(revision.id),
+            "gate_input_digest": canonical_digest(gate_input),
+        },
+    )
+
+
 def activate_node(
     session: Session,
     instance: WorkflowInstance,
@@ -870,39 +988,23 @@ def activate_node(
         )
         return
     node.status = WorkflowNodeStatus.READY
-    if not run_gate(
-        session,
-        instance,
-        node,
-        definition,
-        GateType.ENTRY,
-        input_snapshot,
-        previous,
-        node.expected_revision + 1,
-    ):
-        instance.status = (
-            WorkflowInstanceStatus.FAILED
-            if node.status == WorkflowNodeStatus.FAILED
-            else WorkflowInstanceStatus.BLOCKED
+    if definition.entry_validator_key:
+        _queue_runtime_component(
+            session,
+            instance,
+            node,
+            input_snapshot,
+            previous,
+            phase="entry_gate",
+            kind=RuntimeJobKind.WORKFLOW_VALIDATOR,
+            component_key=definition.entry_validator_key,
+            pending_payload={"gate_input_digest": input_digest},
         )
         session.add_all([node, instance])
         return
-    if definition.confirmation_mode == ConfirmationMode.PROCESS:
-        node.status = WorkflowNodeStatus.WAITING_CONFIRMATION
-        instance.status = WorkflowInstanceStatus.WAITING
-    elif definition.node_type == WorkflowNodeType.CODE:
-        node.status = WorkflowNodeStatus.RUNNING
-        _execute_code_node(
-            session, instance, node, definition, input_snapshot, previous
-        )
-    elif definition.node_type == WorkflowNodeType.AGENT:
-        _execute_agent_node(
-            session, instance, node, definition, input_snapshot, previous
-        )
-    else:
-        node.status = WorkflowNodeStatus.BLOCKED
-        instance.status = WorkflowInstanceStatus.BLOCKED
-    session.add_all([node, instance])
+    _continue_after_entry_gate(
+        session, instance, node, definition, input_snapshot, previous
+    )
 
 
 def advance_instance(session: Session, instance: WorkflowInstance) -> None:
@@ -970,7 +1072,215 @@ def instance_version_exit_nodes(session: Session, version_id: uuid.UUID) -> list
     return [str(item) for item in version.manifest.get("exit_nodes", [])]
 
 
-def reconcile_instance(session: Session, instance: WorkflowInstance) -> None:
+def _reconcile_runtime_executions(
+    session: Session,
+    instance: WorkflowInstance,
+    definitions: list[WorkflowNodeDefinition],
+    edges: list[WorkflowEdgeDefinition],
+) -> bool:
+    executions = session.exec(
+        select(WorkflowNodeExecution).where(
+            col(WorkflowNodeExecution.node_instance_id).in_(
+                select(WorkflowNodeInstance.id).where(
+                    WorkflowNodeInstance.workflow_instance_id == instance.id
+                )
+            ),
+            col(WorkflowNodeExecution.runtime_job_id).is_not(None),
+            col(WorkflowNodeExecution.status).in_(
+                [WorkflowExecutionStatus.QUEUED, WorkflowExecutionStatus.RUNNING]
+            ),
+        )
+    ).all()
+    definition_by_id = {item.id: item for item in definitions}
+    changed = False
+    for execution in executions:
+        job = session.get(RuntimeJob, execution.runtime_job_id)
+        node = session.get(WorkflowNodeInstance, execution.node_instance_id)
+        if job is None or node is None:
+            execution.status = WorkflowExecutionStatus.FAILED
+            execution.error = {"code": "runtime_execution_record_missing"}
+            if node is not None:
+                node.status = WorkflowNodeStatus.FAILED
+                session.add(node)
+            session.add(execution)
+            changed = True
+            continue
+        if job.status in {
+            RuntimeJobStatus.QUEUED,
+            RuntimeJobStatus.DISPATCHED,
+            RuntimeJobStatus.RUNNING,
+        }:
+            if (
+                execution.status != WorkflowExecutionStatus.RUNNING
+                and job.status != RuntimeJobStatus.QUEUED
+            ):
+                execution.status = WorkflowExecutionStatus.RUNNING
+                session.add(execution)
+                changed = True
+            continue
+        definition = definition_by_id[node.node_definition_id]
+        execution.completed_at = job.completed_at or utcnow()
+        if job.status in {
+            RuntimeJobStatus.FAILED,
+            RuntimeJobStatus.NEEDS_MANUAL_RESOLUTION,
+        }:
+            execution.status = (
+                WorkflowExecutionStatus.NEEDS_MANUAL_RESOLUTION
+                if job.status == RuntimeJobStatus.NEEDS_MANUAL_RESOLUTION
+                else WorkflowExecutionStatus.FAILED
+            )
+            execution.error = job.error or {"code": "runtime_job_failed"}
+            node.status = (
+                WorkflowNodeStatus.NEEDS_MANUAL_RESOLUTION
+                if job.status == RuntimeJobStatus.NEEDS_MANUAL_RESOLUTION
+                else WorkflowNodeStatus.FAILED
+            )
+            instance.status = (
+                WorkflowInstanceStatus.BLOCKED
+                if job.status == RuntimeJobStatus.NEEDS_MANUAL_RESOLUTION
+                else WorkflowInstanceStatus.FAILED
+            )
+            append_event(
+                session,
+                instance.id,
+                "node_failed",
+                {
+                    "node_key": node.node_key,
+                    "phase": execution.phase,
+                    "error": execution.error,
+                },
+            )
+            session.add_all([execution, node, instance])
+            changed = True
+            continue
+        result = job.result or {}
+        if execution.phase in {"entry_gate", "exit_gate"}:
+            passed = bool(result.get("passed"))
+            details = (
+                dict(result["details"])
+                if isinstance(result.get("details"), dict)
+                else {"code": "validator_result_invalid"}
+            )
+            key = (
+                definition.entry_validator_key
+                if execution.phase == "entry_gate"
+                else definition.exit_validator_key
+            )
+            assert key is not None
+            _record_gate_result(
+                session,
+                instance,
+                node,
+                GateType.ENTRY if execution.phase == "entry_gate" else GateType.EXIT,
+                key,
+                str(execution.pending_payload.get("gate_input_digest", "")),
+                execution.input_revision,
+                passed,
+                details,
+            )
+            execution.status = (
+                WorkflowExecutionStatus.COMPLETED
+                if passed
+                else WorkflowExecutionStatus.FAILED
+            )
+            if not passed:
+                execution.error = {"code": f"{execution.phase}_failed"}
+                node.status = WorkflowNodeStatus.BLOCKED
+                instance.status = WorkflowInstanceStatus.BLOCKED
+            elif execution.phase == "entry_gate":
+                input_snapshot = build_node_input(session, instance, node, edges)
+                previous = _current_revision(session, node)
+                _continue_after_entry_gate(
+                    session,
+                    instance,
+                    node,
+                    definition,
+                    input_snapshot,
+                    previous,
+                )
+            else:
+                revision = session.get(
+                    WorkflowNodeRevision,
+                    uuid.UUID(str(execution.pending_payload["revision_id"])),
+                )
+                if revision is None:
+                    execution.status = WorkflowExecutionStatus.FAILED
+                    execution.error = {"code": "exit_gate_revision_missing"}
+                    node.status = WorkflowNodeStatus.FAILED
+                    instance.status = WorkflowInstanceStatus.FAILED
+                else:
+                    _complete_after_exit_gate(
+                        session, instance, node, definition, revision
+                    )
+                    if execution.pending_payload.get("propagate_on_success"):
+                        propagate_update(session, instance, node.node_key)
+                    if execution.pending_payload.get("submit_event"):
+                        append_event(
+                            session,
+                            instance.id,
+                            "node_submitted",
+                            {
+                                "node_key": node.node_key,
+                                "revision": revision.revision,
+                            },
+                        )
+        elif execution.phase == "run":
+            output = result.get("output")
+            if not isinstance(output, dict):
+                execution.status = WorkflowExecutionStatus.FAILED
+                execution.error = {"code": "runtime_handler_result_invalid"}
+                node.status = WorkflowNodeStatus.FAILED
+                instance.status = WorkflowInstanceStatus.FAILED
+            else:
+                output = dict(output)
+                schema_errors = validate_json_value(output, definition.output_schema)
+                if schema_errors:
+                    execution.status = WorkflowExecutionStatus.FAILED
+                    execution.error = {
+                        "code": "node_output_schema_invalid",
+                        "errors": schema_errors,
+                    }
+                    node.status = WorkflowNodeStatus.FAILED
+                    instance.status = WorkflowInstanceStatus.FAILED
+                else:
+                    proof = output.pop("_external_state_proof", None)
+                    if definition.side_effecting and not proof:
+                        execution.status = (
+                            WorkflowExecutionStatus.NEEDS_MANUAL_RESOLUTION
+                        )
+                        execution.error = {"code": "external_state_proof_missing"}
+                        node.status = WorkflowNodeStatus.NEEDS_MANUAL_RESOLUTION
+                        instance.status = WorkflowInstanceStatus.BLOCKED
+                    else:
+                        execution.external_state_proof = proof
+                        execution.status = WorkflowExecutionStatus.COMPLETED
+                        input_snapshot = build_node_input(
+                            session, instance, node, edges
+                        )
+                        previous = _current_revision(session, node)
+                        revision = append_revision(
+                            session,
+                            node,
+                            input_snapshot,
+                            output,
+                            "code node run(context) completed in Runtime",
+                            None,
+                        )
+                        _start_exit_gate(
+                            session,
+                            instance,
+                            node,
+                            definition,
+                            input_snapshot,
+                            previous,
+                            revision,
+                        )
+        session.add_all([execution, node, instance])
+        changed = True
+    return changed
+
+
+def reconcile_instance(session: Session, instance: WorkflowInstance) -> bool:
     executions = session.exec(
         select(WorkflowNodeExecution).where(
             col(WorkflowNodeExecution.node_instance_id).in_(
@@ -984,6 +1294,9 @@ def reconcile_instance(session: Session, instance: WorkflowInstance) -> None:
     ).all()
     changed = False
     definitions, edges = _definitions(session, instance.template_version_id)
+    changed = (
+        _reconcile_runtime_executions(session, instance, definitions, edges) or changed
+    )
     definition_by_id = {item.id: item for item in definitions}
     for execution in executions:
         task = session.get(AgentTask, execution.agent_task_id)
@@ -1024,26 +1337,17 @@ def reconcile_instance(session: Session, instance: WorkflowInstance) -> None:
                 "Agent node produced a formal result",
                 None,
             )
-            if run_gate(
+            execution.status = WorkflowExecutionStatus.COMPLETED
+            execution.completed_at = utcnow()
+            _start_exit_gate(
                 session,
                 instance,
                 node,
                 definition,
-                GateType.EXIT,
-                {"input": input_snapshot, "output": output},
+                input_snapshot,
                 previous,
-                revision.revision,
-            ):
-                node.status = (
-                    WorkflowNodeStatus.WAITING_CONFIRMATION
-                    if definition.confirmation_mode == ConfirmationMode.RESULT
-                    else WorkflowNodeStatus.COMPLETED
-                )
-                execution.status = WorkflowExecutionStatus.COMPLETED
-            else:
-                execution.status = WorkflowExecutionStatus.FAILED
-                execution.error = {"code": "exit_gate_failed"}
-            execution.completed_at = utcnow()
+                revision,
+            )
             changed = True
         elif task.status in {
             TaskStatus.FAILED,
@@ -1058,7 +1362,8 @@ def reconcile_instance(session: Session, instance: WorkflowInstance) -> None:
         session.add_all([execution, node])
     if changed:
         advance_instance(session, instance)
-        session.commit()
+        session.flush()
+    return changed
 
 
 def create_instance_nodes(
@@ -1142,19 +1447,6 @@ def submit_node(
         )
     previous = _current_revision(session, node)
     revision = append_revision(session, node, input_snapshot, output, reason, user_id)
-    if not run_gate(
-        session,
-        instance,
-        node,
-        definition,
-        GateType.EXIT,
-        {"input": input_snapshot, "output": output},
-        previous,
-        revision.revision,
-    ):
-        session.add(node)
-        return revision
-    node.status = WorkflowNodeStatus.COMPLETED
     session.add(
         WorkflowConfirmation(
             node_instance_id=node.id,
@@ -1165,13 +1457,40 @@ def submit_node(
             reason=reason,
         )
     )
-    if previous is not None:
-        propagate_update(session, instance, node.node_key)
-    append_event(
+    _start_exit_gate(
         session,
-        instance.id,
-        "node_submitted",
-        {"node_key": node.node_key, "revision": revision.revision},
+        instance,
+        node,
+        definition,
+        input_snapshot,
+        previous,
+        revision,
     )
-    advance_instance(session, instance)
+    if definition.exit_validator_key:
+        pending = session.exec(
+            select(WorkflowNodeExecution)
+            .where(
+                WorkflowNodeExecution.node_instance_id == node.id,
+                WorkflowNodeExecution.phase == "exit_gate",
+                WorkflowNodeExecution.status == WorkflowExecutionStatus.QUEUED,
+            )
+            .order_by(col(WorkflowNodeExecution.attempt).desc())
+        ).first()
+        if pending is not None:
+            pending.pending_payload = {
+                **pending.pending_payload,
+                "propagate_on_success": previous is not None,
+                "submit_event": True,
+            }
+            session.add(pending)
+    else:
+        if previous is not None:
+            propagate_update(session, instance, node.node_key)
+        append_event(
+            session,
+            instance.id,
+            "node_submitted",
+            {"node_key": node.node_key, "revision": revision.revision},
+        )
+        advance_instance(session, instance)
     return revision

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import { workspaceApi } from "@/api/tenantApi"
 import { Badge } from "@/components/ui/badge"
@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/select"
 
 export const Route = createFileRoute(
-  "/_layout/workspace/conversations/$conversationId",
+  "/_layout/workspace_/conversations/$conversationId",
 )({ component: ConversationPage })
 
 function ConversationPage() {
@@ -25,6 +25,10 @@ function ConversationPage() {
   const [content, setContent] = useState("")
   const [target, setTarget] = useState("main")
   const [attachment, setAttachment] = useState<File | null>(null)
+  const [streamState, setStreamState] = useState<
+    "connecting" | "connected" | "reconnecting" | "closed"
+  >("connecting")
+  const lastEventId = useRef(0)
   const conversation = useQuery({
     queryKey: ["conversation", conversationId],
     queryFn: () => workspaceApi.getConversation(conversationId),
@@ -33,8 +37,58 @@ function ConversationPage() {
   const messages = useQuery({
     queryKey: ["conversation-messages", conversationId],
     queryFn: () => workspaceApi.listMessages(conversationId),
-    refetchInterval: 2500,
   })
+  const delegations = useQuery({
+    queryKey: ["conversation-delegations", conversationId],
+    queryFn: () => workspaceApi.listDelegations(conversationId),
+    enabled: conversation.data?.mode === "agent",
+  })
+  useEffect(() => {
+    if (conversation.data?.status !== "active") {
+      setStreamState("closed")
+      return
+    }
+    const controller = new AbortController()
+    let retryTimer: ReturnType<typeof setTimeout> | undefined
+    const connect = async () => {
+      setStreamState(lastEventId.current ? "reconnecting" : "connecting")
+      try {
+        setStreamState("connected")
+        await workspaceApi.streamConversationEvents(
+          conversationId,
+          lastEventId.current,
+          (event) => {
+            lastEventId.current = Math.max(lastEventId.current, event.sequence)
+            void queryClient.invalidateQueries({
+              queryKey: ["conversation-messages", conversationId],
+            })
+            void queryClient.invalidateQueries({
+              queryKey: ["conversation-delegations", conversationId],
+            })
+            if (event.event_type === "conversation_archived") {
+              void queryClient.invalidateQueries({
+                queryKey: ["conversation", conversationId],
+              })
+            }
+          },
+          controller.signal,
+        )
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setStreamState("reconnecting")
+          console.error("Conversation event stream disconnected", error)
+        }
+      }
+      if (!controller.signal.aborted) {
+        retryTimer = setTimeout(() => void connect(), 1000)
+      }
+    }
+    void connect()
+    return () => {
+      controller.abort()
+      if (retryTimer) clearTimeout(retryTimer)
+    }
+  }, [conversation.data?.status, conversationId, queryClient])
   const send = useMutation({
     mutationFn: async () => {
       const uploaded = attachment
@@ -86,6 +140,7 @@ function ConversationPage() {
         </div>
         <div className="flex gap-2">
           <Badge>{conversation.data.mode}</Badge>
+          <Badge variant="outline">事件流 {streamState}</Badge>
           {conversation.data.project_id && (
             <Button
               size="sm"
@@ -129,6 +184,47 @@ function ConversationPage() {
           ))}
         </CardContent>
       </Card>
+      {conversation.data.mode === "agent" && (
+        <Card>
+          <CardHeader>
+            <CardTitle>完整委派时间线</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {delegations.data?.data.length ? (
+              delegations.data.data.map((delegation) => (
+                <div key={delegation.id} className="rounded-lg border p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-medium">
+                      {delegation.source_agent_id.slice(0, 8)} →{" "}
+                      {delegation.target_agent_id.slice(0, 8)}
+                    </span>
+                    <Badge>{delegation.status}</Badge>
+                  </div>
+                  <p className="mt-2 whitespace-pre-wrap text-sm">
+                    {String(delegation.input_payload.content || "")}
+                  </p>
+                  {delegation.result_payload && (
+                    <pre className="mt-2 overflow-auto rounded bg-muted p-2 text-xs">
+                      {JSON.stringify(delegation.result_payload, null, 2)}
+                    </pre>
+                  )}
+                  {delegation.error && (
+                    <pre className="mt-2 overflow-auto rounded bg-destructive/10 p-2 text-xs text-destructive">
+                      {JSON.stringify(delegation.error, null, 2)}
+                    </pre>
+                  )}
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Delegation {delegation.id} · Agent Task{" "}
+                    {delegation.task_id || "尚未创建"}
+                  </p>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">暂无委派记录。</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
       <Card>
         <CardContent className="grid gap-3 py-4 md:grid-cols-[180px_1fr_auto]">
           {conversation.data.mode === "agent" ? (

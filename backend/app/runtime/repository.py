@@ -197,9 +197,7 @@ def append_event_idempotent(
     payload: dict[str, Any],
 ) -> AgentEvent:
     """Compatibility wrapper; the caller remains responsible for commit/rollback."""
-    return append_and_apply_event(
-        session, task.id, sequence, event_type, payload
-    ).event
+    return append_and_apply_event(session, task.id, sequence, event_type, payload).event
 
 
 def last_contiguous_event_sequence(session: Session, task_id: uuid.UUID) -> int:

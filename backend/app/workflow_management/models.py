@@ -277,13 +277,17 @@ class WorkflowEdgeDefinition(SQLModel, table=True):
 class WorkflowApplication(SQLModel, table=True):
     __tablename__ = "workflow_application"
     __table_args__ = (
-        UniqueConstraint("template_id", name="uq_workflow_application_template"),
-        UniqueConstraint("route_slug", name="uq_workflow_application_route"),
+        UniqueConstraint(
+            "template_version_id", name="uq_workflow_application_template_version"
+        ),
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    template_id: uuid.UUID = Field(
-        foreign_key="workflow_template.id", nullable=False, ondelete="CASCADE"
+    template_version_id: uuid.UUID = Field(
+        foreign_key="workflow_template_version.id",
+        nullable=False,
+        ondelete="CASCADE",
+        index=True,
     )
     component_key: str = Field(max_length=255)
     route_slug: str = Field(max_length=128)
@@ -496,6 +500,13 @@ class WorkflowNodeExecution(SQLModel, table=True):
     conversation_id: uuid.UUID | None = Field(
         default=None, foreign_key="conversation.id", ondelete="SET NULL"
     )
+    runtime_job_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_job.id", ondelete="SET NULL"
+    )
+    phase: str = Field(default="run", max_length=32)
+    pending_payload: dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(POSTGRES_JSON, nullable=False)
+    )
     status: WorkflowExecutionStatus = Field(
         default=WorkflowExecutionStatus.QUEUED,
         sa_type=SAEnum(
@@ -605,6 +616,40 @@ class WorkflowArtifact(SQLModel, table=True):
     artifact_metadata: dict[str, Any] = Field(
         default_factory=dict,
         sa_column=Column("metadata", POSTGRES_JSON, nullable=False),
+    )
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+
+
+class WorkflowAttachment(SQLModel, table=True):
+    __tablename__ = "workflow_attachment"
+    __table_args__ = (
+        UniqueConstraint(
+            "workflow_instance_id",
+            "content_digest",
+            name="uq_workflow_attachment_content",
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    workflow_instance_id: uuid.UUID = Field(
+        foreign_key="workflow_instance.id",
+        nullable=False,
+        ondelete="CASCADE",
+        index=True,
+    )
+    filename: str = Field(max_length=255)
+    content_type: str = Field(max_length=255)
+    size: int
+    content_digest: str = Field(max_length=64)
+    storage_ref: str = Field(max_length=1024)
+    scan_status: str = Field(default="clean", max_length=32)
+    scan_details: dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(POSTGRES_JSON, nullable=False)
+    )
+    created_by: uuid.UUID | None = Field(
+        default=None, foreign_key="user.id", ondelete="SET NULL"
     )
     created_at: datetime = Field(
         default_factory=utcnow, sa_type=DateTime(timezone=True)

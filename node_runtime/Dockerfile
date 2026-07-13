@@ -6,6 +6,9 @@ WORKDIR /app
 ENV PATH="/app/.venv/bin:$PATH"
 
 COPY pyproject.toml uv.lock ./
+COPY workflow_runtime/pyproject.toml ./workflow_runtime/
+COPY workflow_runtime/workflow_runtime ./workflow_runtime/workflow_runtime
+COPY workflow_apps ./workflow_apps
 COPY runtime_worker/pyproject.toml ./runtime_worker/
 COPY runtime_worker/runtime_worker ./runtime_worker/runtime_worker
 COPY node_runtime/pyproject.toml ./node_runtime/

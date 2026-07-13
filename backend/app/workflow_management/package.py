@@ -1,9 +1,8 @@
-import hashlib
-import json
 from collections import deque
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from workflow_runtime.package import directory_digest, package_content_digest
 
 from app.workflow_management.models import (
     ConfirmationMode,
@@ -113,13 +112,10 @@ def canonical_manifest(manifest: WorkflowManifest) -> dict[str, Any]:
 
 
 def package_digest(manifest: WorkflowManifest) -> str:
-    payload = json.dumps(
-        canonical_manifest(manifest),
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-    ).encode()
-    return hashlib.sha256(payload).hexdigest()
+    from app.workflow_management.bundled import bundled_package_root
+
+    package_root = bundled_package_root(manifest.slug)
+    return package_content_digest(package_root, canonical_manifest(manifest))
 
 
 def _schema_errors(schema: dict[str, Any], path: str) -> list[dict[str, Any]]:
@@ -161,6 +157,9 @@ def _schema_errors(schema: dict[str, Any], path: str) -> list[dict[str, Any]]:
 
 
 def validate_package(raw: dict[str, Any]) -> WorkflowManifest:
+    from app.workflow_management.bundled import load_bundled_workflow_code
+
+    load_bundled_workflow_code()
     try:
         manifest = WorkflowManifest.model_validate(raw)
     except ValidationError as exc:
@@ -175,6 +174,39 @@ def validate_package(raw: dict[str, Any]) -> WorkflowManifest:
             ]
         ) from exc
     errors: list[dict[str, Any]] = []
+    from app.workflow_management.bundled import bundled_package_root
+
+    try:
+        package_root = bundled_package_root(manifest.slug)
+    except RuntimeError as exc:
+        raise PackageValidationError(
+            [
+                {
+                    "path": "slug",
+                    "code": "package_source_missing",
+                    "message": str(exc),
+                }
+            ]
+        ) from exc
+    try:
+        frontend_digest = directory_digest(package_root / "frontend")
+    except ValueError as exc:
+        errors.append(
+            {
+                "path": "application",
+                "code": "frontend_package_missing",
+                "message": str(exc),
+            }
+        )
+    else:
+        if manifest.application.build_digest != frontend_digest:
+            errors.append(
+                {
+                    "path": "application.build_digest",
+                    "code": "frontend_digest_mismatch",
+                    "message": frontend_digest,
+                }
+            )
     node_keys = [node.key for node in manifest.nodes]
     node_set = set(node_keys)
     if len(node_keys) != len(node_set):

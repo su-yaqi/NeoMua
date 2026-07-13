@@ -1,6 +1,6 @@
 # 数据模型
 
-> 当前数据库实体集中定义在 `backend/app/models.py`，并通过 Alembic 管理迁移。
+> 当前数据库实体按模块定义在 `backend/app/models.py` 与 `backend/app/**/models.py`，并通过 Alembic 管理迁移。
 
 ## 命名规范
 
@@ -29,6 +29,7 @@ Namespace 1 ---- N LlmProviderConfig 1 ---- N LlmProviderModel
 Namespace 1 ---- N RuntimeProfile / RuntimeNode / AgentTask / RuntimeArtifact
 RuntimeNode 1 ---- N NodeCredential / AgentTask / ArtifactDeployment
 AgentTask 1 ---- N AgentEvent
+RuntimeProfile 1 ---- N RuntimeJob
 Namespace 1 ---- N AgentDefinition / SkillDefinition / McpServer / Plugin
 AgentDefinition 1 ---- 1 AgentDraft 1 ---- N exact capability bindings
 AgentRelease 1 ---- N AgentActivation 1 ---- N AgentDeployment
@@ -46,6 +47,7 @@ RuntimeProfile N ---- N AgentRelease (via RuntimeAgentRelease)
 | `agent_session` | 平台多轮会话与 Claude SDK session ID |
 | `agent_task` | 不可变执行快照、目标节点、任务类型、状态、租约、幂等键和 retry 链 |
 | `agent_event` | 按 `(task_id, sequence)` 唯一保存用户、Agent、工具、状态、错误和结果事件 |
+| `runtime_job` | 仓库探测、Workflow Validator/Handler 的持久任务；保存目标 Runtime、租约、修订、幂等键、结果与人工处理状态 |
 | `runtime_node` | 节点公钥、指纹、版本、心跳、连接代次、配置修订和吊销时间 |
 | `node_enrollment_token` | 一次性注册令牌 HMAC；仅保存哈希、有效期和消费时间 |
 | `node_credential` | 90 天设备凭证、密钥指纹、轮换链与吊销时间；不保存私钥 |
@@ -216,8 +218,10 @@ RuntimeProfile N ---- N AgentRelease (via RuntimeAgentRelease)
 |------|--------|------------------|
 | 项目 | `project`、`project_member`、`project_repository`、`project_spec_location` | 项目只归档；成员必须来自 namespace；仓库无主次，路径拒绝绝对路径与 `..` 逃逸 |
 | Spec 标准 | `spec_standard`、`spec_standard_version`、`project_spec_binding` | 平台/namespace slug 唯一；版本与 content digest 不可变；项目绑定精确版本 |
-| 会话 | `conversation`、`conversation_agent`、`conversation_context_snapshot`、`conversation_message`、`agent_delegation`、`conversation_attachment` | 创建按 creator + idempotency key 唯一；每轮消息幂等；仅一个主 Agent；上下文快照追加式 |
+| 会话 | `conversation`、`conversation_agent`、`conversation_context_snapshot`、`conversation_message`、`conversation_event`、`agent_delegation`、`conversation_attachment` | 创建按 creator + idempotency key 唯一；每轮消息幂等；仅一个主 Agent；上下文快照与 SSE 事件追加式 |
 | Workflow 定义 | `workflow_template`、`workflow_template_version`、`workflow_node_definition`、`workflow_edge_definition`、`workflow_application`、`namespace_workflow_enablement` | Package digest 和版本不可变；节点/边固定为有限 DAG；namespace 默认版本必须启用 |
-| Workflow 运行 | `workflow_instance`、`workflow_node_instance`、`workflow_node_revision`、`workflow_node_execution`、`workflow_gate_result`、`workflow_confirmation`、`workflow_artifact`、`workflow_event` | 任务固定模板版本/Package/上下文；修订和事件追加；每输入修订仅一个 active execution；完成任务只读 |
+| Workflow 运行 | `workflow_instance`、`workflow_node_instance`、`workflow_node_revision`、`workflow_node_execution`、`workflow_gate_result`、`workflow_confirmation`、`workflow_artifact`、`workflow_attachment`、`workflow_event` | 任务固定模板版本/Package/上下文；修订、附件和事件追加；每输入修订仅一个 active execution；完成任务只读 |
 
 `conversation.current_context_snapshot_id` 与 `workflow_node_instance.current_revision_id` 使用具名 `use_alter` 外键，既保留当前指针，也让空库迁移可确定排序。删除历史模板、版本、Release 或已引用标准均由 `RESTRICT` 阻止。
+
+`conversation_event` 与 `workflow_event` 均以聚合内单调 `sequence` 作为 SSE 恢复游标。`conversation_attachment` 与 `workflow_attachment` 只接受严格扫描后的 UTF-8 TXT/Markdown/JSON，数据库保存不可变摘要和受控存储引用，公开 API 不返回 `storage_ref`。

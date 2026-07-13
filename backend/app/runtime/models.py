@@ -52,6 +52,21 @@ class AgentEventType(str, Enum):
     APPROVAL_EXPIRED = "approval_expired"
 
 
+class RuntimeJobKind(str, Enum):
+    WORKFLOW_HANDLER = "workflow_handler"
+    WORKFLOW_VALIDATOR = "workflow_validator"
+    REPOSITORY_PROBE = "repository_probe"
+
+
+class RuntimeJobStatus(str, Enum):
+    QUEUED = "queued"
+    DISPATCHED = "dispatched"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    NEEDS_MANUAL_RESOLUTION = "needs_manual_resolution"
+
+
 class RuntimeProfile(SQLModel, table=True):
     __tablename__ = "runtime_profile"
     __table_args__ = (
@@ -216,6 +231,70 @@ class AgentTask(SQLModel, table=True):
     created_by: uuid.UUID | None = Field(
         default=None, foreign_key="user.id", ondelete="SET NULL"
     )
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+    updated_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+    completed_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+
+
+class RuntimeJob(SQLModel, table=True):
+    __tablename__ = "runtime_job"
+    __table_args__ = (
+        UniqueConstraint(
+            "namespace_id", "idempotency_key", name="uq_runtime_job_idempotency"
+        ),
+        Index(
+            "ix_runtime_job_dispatch_candidate",
+            "target_node_id",
+            "status",
+            "dispatch_reserved_until",
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    namespace_id: uuid.UUID = Field(
+        foreign_key="namespace.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    runtime_profile_id: uuid.UUID = Field(
+        foreign_key="runtime_profile.id", nullable=False, ondelete="CASCADE"
+    )
+    target_node_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_node.id", ondelete="SET NULL", index=True
+    )
+    kind: RuntimeJobKind = Field(
+        sa_type=SAEnum(
+            RuntimeJobKind,
+            name="runtimejobkind",
+            values_callable=lambda values: [value.value for value in values],
+        )
+    )
+    status: RuntimeJobStatus = Field(
+        default=RuntimeJobStatus.QUEUED,
+        sa_type=SAEnum(
+            RuntimeJobStatus,
+            name="runtimejobstatus",
+            values_callable=lambda values: [value.value for value in values],
+        ),
+    )
+    payload: dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(POSTGRES_JSON, nullable=False)
+    )
+    result: dict[str, Any] | None = Field(default=None, sa_column=Column(POSTGRES_JSON))
+    error: dict[str, Any] | None = Field(default=None, sa_column=Column(POSTGRES_JSON))
+    side_effecting: bool = False
+    revision: int = 1
+    claimed_by: str | None = Field(default=None, max_length=255)
+    lease_expires_at: datetime | None = Field(
+        default=None, sa_type=DateTime(timezone=True)
+    )
+    dispatch_connection_id: uuid.UUID | None = Field(default=None, index=True)
+    dispatch_reserved_until: datetime | None = Field(
+        default=None, sa_type=DateTime(timezone=True), index=True
+    )
+    idempotency_key: str = Field(max_length=255)
     created_at: datetime = Field(
         default_factory=utcnow, sa_type=DateTime(timezone=True)
     )

@@ -1,6 +1,6 @@
-import pytest
 import stat
 
+import pytest
 from node_runtime.spool import EventSpool, SpoolConflict
 
 
@@ -40,3 +40,19 @@ def test_accepted_dispatch_is_reported_interrupted_after_restart(tmp_path) -> No
     second = EventSpool(path)
     assert second.recover_interrupted_dispatches() == ["task-1"]
     assert second.recover_interrupted_dispatches() == []
+
+
+def test_runtime_job_result_is_durable_and_new_revision_can_retry(tmp_path) -> None:
+    path = tmp_path / "spool.db"
+    first = EventSpool(path)
+    command = {"kind": "repository_probe", "payload": {"path": "/workspace"}}
+    assert first.record_runtime_job_dispatch("job-1", 1, command) == "accepted"
+    result = {"job_id": "job-1", "revision": 1, "status": "succeeded"}
+    first.complete_runtime_job("job-1", 1, result)
+    first.close()
+
+    second = EventSpool(path)
+    assert second.record_runtime_job_dispatch("job-1", 1, command) == "duplicate"
+    assert second.runtime_job_result("job-1", 1) == result
+    assert second.record_runtime_job_dispatch("job-1", 2, command) == "accepted"
+    assert second.runtime_job_result("job-1", 2) is None

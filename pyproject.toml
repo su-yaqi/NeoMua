@@ -1,5 +1,5 @@
 [tool.uv.workspace]
-members = ["backend", "runtime_worker", "model_gateway", "node_runtime", "operator_cli"]
+members = ["backend", "runtime_worker", "workflow_runtime", "model_gateway", "node_runtime", "operator_cli"]
 
 [dependency-groups]
 dev = [
