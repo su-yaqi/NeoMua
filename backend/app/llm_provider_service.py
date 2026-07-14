@@ -588,13 +588,26 @@ def validate_provider_connection(
     config: LlmProviderConfig,
 ) -> tuple[ProviderValidationStatus, str]:
     definition = get_provider_definition(config.provider_slug)
+    secret_inputs = open_secret_payload(config.secret_ciphertext)
+    return validate_provider_connection_inputs(
+        definition,
+        base_url=config.base_url,
+        secret_inputs=secret_inputs,
+    )
+
+
+def validate_provider_connection_inputs(
+    definition: ProviderDefinition,
+    *,
+    base_url: str,
+    secret_inputs: dict[str, str],
+) -> tuple[ProviderValidationStatus, str]:
     if not definition.supports_health_check:
         return ProviderValidationStatus.UNSUPPORTED, "当前供应商暂不支持在线校验"
-    secret_inputs = open_secret_payload(config.secret_ciphertext)
     try:
         fetch_provider_models(
             definition,
-            base_url=config.base_url,
+            base_url=base_url,
             secret_inputs=secret_inputs,
         )
     except Exception as exc:

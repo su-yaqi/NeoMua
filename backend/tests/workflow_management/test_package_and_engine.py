@@ -40,6 +40,30 @@ def _manifest() -> dict:
     return json.loads(path.read_text())
 
 
+def test_web_platform_development_package_is_valid() -> None:
+    package_root = (
+        Path(__file__).parents[3] / "workflow_apps/web_platform_development"
+    )
+    manifest = json.loads((package_root / "manifest.json").read_text())
+
+    validated = validate_package(manifest)
+
+    assert validated.project_mode == "required"
+    assert [node.name for node in validated.nodes] == [
+        "需求沟通",
+        "需求设计",
+        "技术方案",
+        "后端开发",
+        "前端开发",
+        "测试用例",
+        "测试环境部署",
+        "测试",
+        "验收",
+        "上线",
+    ]
+    assert package_content_digest(package_root, manifest)
+
+
 def test_package_validator_rejects_cycles() -> None:
     manifest = _manifest()
     manifest["edges"].append(
@@ -184,11 +208,27 @@ def test_project_task_runs_human_then_code_result_confirmation(
         "X-Namespace-Id": str(namespace.id),
         "Idempotency-Key": "workflow-create-1",
     }
+    configured = client.put(
+        f"{settings.API_V1_STR}/workflow-templates/{template.id}"
+        f"/versions/{version.id}/execution-configuration",
+        headers=headers,
+        json={
+            "expected_revision": 0,
+            "project_id": str(project.id),
+            "node_bindings": {
+                "prepare": {
+                    "runtime_id": str(runtime.id),
+                    "agent_release_id": None,
+                }
+            },
+        },
+    )
+    assert configured.status_code == 200, configured.text
     created = client.post(
         f"{settings.API_V1_STR}/projects/{project.id}/workflow-instances",
         headers=headers,
         json={
-            "title": "完成 V0.6 验收",
+            "title": "完成 V0.7 验收",
             "template_version_id": str(version.id),
             "input": {"request": "完成需求"},
         },

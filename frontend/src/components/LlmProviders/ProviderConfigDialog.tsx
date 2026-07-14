@@ -6,7 +6,10 @@ import { z } from "zod"
 import {
   type LlmProviderCatalogItem,
   type LlmProviderConfig,
+  type LlmProviderDraftBody,
+  type LlmProviderDraftResult,
   type LlmProviderModel,
+  type LlmProviderModelPreview,
   tenantApi,
 } from "@/api/tenantApi"
 import { Badge } from "@/components/ui/badge"
@@ -57,7 +60,9 @@ const statusLabel: Record<string, string> = {
   unsupported: "不支持校验",
 }
 
-function normalizeModels(models: LlmProviderModel[] = []): EditableModel[] {
+function normalizeModels(
+  models: Array<LlmProviderModel | LlmProviderModelPreview> = [],
+): EditableModel[] {
   return models.map((item) => ({
     model_id: item.model_id,
     display_name: item.display_name ?? item.model_id,
@@ -89,6 +94,12 @@ function ProviderConfigDialog({
   const [workingConfig, setWorkingConfig] = useState<LlmProviderConfig | null>(
     config ?? null,
   )
+  const [draftResult, setDraftResult] = useState<LlmProviderDraftResult | null>(
+    null,
+  )
+  const [draftValidationAttempted, setDraftValidationAttempted] =
+    useState(false)
+  const [draftModelsSynced, setDraftModelsSynced] = useState(false)
   const queryClient = useQueryClient()
   const { showSuccessToast, showErrorToast } = useCustomToast()
 
@@ -103,6 +114,7 @@ function ProviderConfigDialog({
     selectedProvider !== null &&
     !selectedProvider.base_url_editable &&
     Boolean(selectedProvider.default_base_url)
+  const canProbe = Boolean(workingConfig || (providerSlug && baseUrl.trim()))
 
   useEffect(() => {
     if (!isOpen) {
@@ -118,6 +130,9 @@ function ProviderConfigDialog({
     setModels(normalizeModels(config?.models))
     setManualModelId("")
     setManualModelName("")
+    setDraftResult(null)
+    setDraftValidationAttempted(false)
+    setDraftModelsSynced(false)
   }, [catalog, config, isOpen])
 
   useEffect(() => {
@@ -129,19 +144,56 @@ function ProviderConfigDialog({
     }
   }, [config, selectedProvider])
 
+  const invalidateDraftProbe = (clearDiscoveredModels = true) => {
+    if (workingConfig) {
+      return
+    }
+    setDraftResult(null)
+    setDraftValidationAttempted(false)
+    setDraftModelsSynced(false)
+    if (clearDiscoveredModels) {
+      setModels((current) =>
+        current.filter((item) => item.source_type === "manual"),
+      )
+    }
+  }
+
+  const getModelSelection = () => ({
+    manual_models: models
+      .filter((item) => item.source_type === "manual")
+      .map((item) => ({
+        model_id: item.model_id,
+        display_name: item.display_name,
+      })),
+    enabled_model_ids: models
+      .filter((item) => item.is_enabled)
+      .map((item) => item.model_id),
+  })
+
+  const buildDraftBody = (): LlmProviderDraftBody => {
+    if (!providerSlug) {
+      throw new Error("请选择供应商")
+    }
+    const parsedBaseUrl = z.string().min(1).parse(baseUrl)
+    const sanitizedSecretInputs = Object.fromEntries(
+      Object.entries(secretInputs).filter(
+        ([, value]) => value.trim().length > 0,
+      ),
+    )
+    return {
+      provider_slug: providerSlug,
+      base_url: parsedBaseUrl,
+      secret_inputs: sanitizedSecretInputs,
+      extra_config: extraConfig,
+      ...getModelSelection(),
+    }
+  }
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       const parsedName = z.string().min(1).parse(configName)
       const parsedBaseUrl = z.string().min(1).parse(baseUrl)
-      const manualModels = models
-        .filter((item) => item.source_type === "manual")
-        .map((item) => ({
-          model_id: item.model_id,
-          display_name: item.display_name,
-        }))
-      const enabledModelIds = models
-        .filter((item) => item.is_enabled)
-        .map((item) => item.model_id)
+      const modelSelection = getModelSelection()
       const sanitizedSecretInputs = Object.fromEntries(
         Object.entries(secretInputs).filter(
           ([, value]) => value.trim().length > 0,
@@ -154,8 +206,7 @@ function ProviderConfigDialog({
           base_url: parsedBaseUrl,
           enabled,
           extra_config: extraConfig,
-          manual_models: manualModels,
-          enabled_model_ids: enabledModelIds,
+          ...modelSelection,
           ...(Object.keys(sanitizedSecretInputs).length > 0
             ? { secret_inputs: sanitizedSecretInputs }
             : {}),
@@ -173,8 +224,9 @@ function ProviderConfigDialog({
         enabled,
         secret_inputs: sanitizedSecretInputs,
         extra_config: extraConfig,
-        manual_models: manualModels,
-        enabled_model_ids: enabledModelIds,
+        ...modelSelection,
+        validate_on_create: draftValidationAttempted,
+        sync_models_on_create: draftModelsSynced,
       })
     },
     onSuccess: (savedConfig) => {
@@ -190,42 +242,72 @@ function ProviderConfigDialog({
 
   const validateMutation = useMutation({
     mutationFn: async () => {
-      if (!workingConfig) {
-        throw new Error("请先保存配置，再执行校验")
+      if (workingConfig) {
+        return {
+          kind: "saved" as const,
+          value: await tenantApi.validateLlmProviderConfig(workingConfig.id),
+        }
       }
-      return tenantApi.validateLlmProviderConfig(workingConfig.id)
+      return {
+        kind: "draft" as const,
+        value: await tenantApi.validateLlmProviderDraft(buildDraftBody()),
+      }
     },
-    onSuccess: (nextConfig) => {
-      setWorkingConfig(nextConfig)
-      setModels(normalizeModels(nextConfig.models))
-      queryClient.invalidateQueries({ queryKey: ["llm-provider-configs"] })
-      showSuccessToast(nextConfig.validation_message ?? "连接校验已完成")
+    onSuccess: (result) => {
+      if (result.kind === "saved") {
+        setWorkingConfig(result.value)
+        setModels(normalizeModels(result.value.models))
+        queryClient.invalidateQueries({ queryKey: ["llm-provider-configs"] })
+      } else {
+        setDraftResult(result.value)
+        setDraftValidationAttempted(true)
+      }
+      const message = result.value.validation_message ?? "连接校验已完成"
+      if (result.value.validation_status === "failed") {
+        showErrorToast(message)
+      } else {
+        showSuccessToast(message)
+      }
     },
     onError: handleError.bind(showErrorToast),
   })
 
   const syncMutation = useMutation({
     mutationFn: async () => {
-      if (!workingConfig) {
-        throw new Error("请先保存配置，再同步模型")
+      if (workingConfig) {
+        return {
+          kind: "saved" as const,
+          value: await tenantApi.syncLlmProviderConfigModels(
+            workingConfig.id,
+            getModelSelection(),
+          ),
+        }
       }
-      return tenantApi.syncLlmProviderConfigModels(workingConfig.id, {
-        manual_models: models
-          .filter((item) => item.source_type === "manual")
-          .map((item) => ({
-            model_id: item.model_id,
-            display_name: item.display_name,
-          })),
-        enabled_model_ids: models
-          .filter((item) => item.is_enabled)
-          .map((item) => item.model_id),
-      })
+      return {
+        kind: "draft" as const,
+        value: await tenantApi.syncLlmProviderDraftModels(buildDraftBody()),
+      }
     },
-    onSuccess: (nextConfig) => {
-      setWorkingConfig(nextConfig)
-      setModels(normalizeModels(nextConfig.models))
-      queryClient.invalidateQueries({ queryKey: ["llm-provider-configs"] })
-      showSuccessToast(nextConfig.validation_message ?? "模型同步已完成")
+    onSuccess: (result) => {
+      if (result.kind === "saved") {
+        setWorkingConfig(result.value)
+        setModels(normalizeModels(result.value.models))
+        queryClient.invalidateQueries({ queryKey: ["llm-provider-configs"] })
+      } else {
+        setDraftResult(result.value)
+        setDraftValidationAttempted(true)
+        const syncSucceeded = result.value.validation_status === "success"
+        setDraftModelsSynced(syncSucceeded)
+        if (syncSucceeded) {
+          setModels(normalizeModels(result.value.models))
+        }
+      }
+      const message = result.value.validation_message ?? "模型同步已完成"
+      if (result.value.validation_status === "failed") {
+        showErrorToast(message)
+      } else {
+        showSuccessToast(message)
+      }
     },
     onError: handleError.bind(showErrorToast),
   })
@@ -316,7 +398,13 @@ function ProviderConfigDialog({
                   disabled
                 />
               ) : (
-                <Select value={providerSlug} onValueChange={setProviderSlug}>
+                <Select
+                  value={providerSlug}
+                  onValueChange={(value) => {
+                    setProviderSlug(value)
+                    invalidateDraftProbe()
+                  }}
+                >
                   <SelectTrigger id="provider-slug">
                     <SelectValue placeholder="请选择供应商" />
                   </SelectTrigger>
@@ -340,7 +428,10 @@ function ProviderConfigDialog({
                 id="base-url"
                 value={baseUrl}
                 disabled={baseUrlDisabled}
-                onChange={(event) => setBaseUrl(event.target.value)}
+                onChange={(event) => {
+                  setBaseUrl(event.target.value)
+                  invalidateDraftProbe()
+                }}
                 placeholder="https://api.example.com/v1"
               />
               {selectedProvider?.description ? (
@@ -363,12 +454,13 @@ function ProviderConfigDialog({
                     id={field.name}
                     type="password"
                     value={secretInputs[field.name] ?? ""}
-                    onChange={(event) =>
+                    onChange={(event) => {
                       setSecretInputs((current) => ({
                         ...current,
                         [field.name]: event.target.value,
                       }))
-                    }
+                      invalidateDraftProbe()
+                    }}
                     placeholder={
                       workingConfig?.secret_masked
                         ? `${workingConfig.secret_masked}（留空则保持不变）`
@@ -392,12 +484,13 @@ function ProviderConfigDialog({
                   <Input
                     id={field.name}
                     value={extraConfig[field.name] ?? ""}
-                    onChange={(event) =>
+                    onChange={(event) => {
                       setExtraConfig((current) => ({
                         ...current,
                         [field.name]: event.target.value,
                       }))
-                    }
+                      invalidateDraftProbe()
+                    }}
                     placeholder={field.placeholder ?? undefined}
                   />
                 </div>
@@ -412,10 +505,15 @@ function ProviderConfigDialog({
               id="config-enabled"
             />
             <Label htmlFor="config-enabled">启用该配置</Label>
-            {workingConfig ? (
+            {workingConfig || draftResult ? (
               <Badge variant="outline">
-                {statusLabel[workingConfig.validation_status] ??
-                  workingConfig.validation_status}
+                {statusLabel[
+                  workingConfig?.validation_status ??
+                    draftResult?.validation_status ??
+                    "unverified"
+                ] ??
+                  workingConfig?.validation_status ??
+                  draftResult?.validation_status}
               </Badge>
             ) : null}
           </div>
@@ -432,7 +530,12 @@ function ProviderConfigDialog({
                 <Button
                   type="button"
                   variant="outline"
-                  disabled={!workingConfig || validateMutation.isPending}
+                  disabled={
+                    !canProbe ||
+                    validateMutation.isPending ||
+                    syncMutation.isPending ||
+                    saveMutation.isPending
+                  }
                   onClick={() => validateMutation.mutate()}
                 >
                   <ShieldCheck className="mr-2 size-4" />
@@ -441,7 +544,12 @@ function ProviderConfigDialog({
                 <Button
                   type="button"
                   variant="outline"
-                  disabled={!workingConfig || syncMutation.isPending}
+                  disabled={
+                    !canProbe ||
+                    syncMutation.isPending ||
+                    validateMutation.isPending ||
+                    saveMutation.isPending
+                  }
                   onClick={() => syncMutation.mutate()}
                 >
                   <RefreshCw className="mr-2 size-4" />
@@ -473,7 +581,8 @@ function ProviderConfigDialog({
             <div className="space-y-3">
               {models.length === 0 ? (
                 <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                  暂无模型。先保存配置，再执行连接校验或同步模型。
+                  暂无模型。填写供应商、接入地址和凭据后即可同步，也可手工补录模型
+                  ID。
                 </div>
               ) : (
                 models.map((item) => (
@@ -525,7 +634,8 @@ function ProviderConfigDialog({
         <DialogFooter className="gap-2 sm:justify-between">
           <div className="text-sm text-muted-foreground">
             {workingConfig?.validation_message ??
-              "保存后可继续执行校验和模型同步。"}
+              draftResult?.validation_message ??
+              "保存前即可校验连接并同步模型；保存时会由服务端再次确认。"}
           </div>
           <div className="flex gap-2">
             <Button

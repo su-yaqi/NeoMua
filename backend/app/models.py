@@ -195,6 +195,8 @@ class LlmProviderConfigCreate(LlmProviderConfigBase):
     secret_inputs: dict[str, str] = Field(default_factory=dict)
     manual_models: list[LlmProviderModelInput] = []
     enabled_model_ids: list[str] = []
+    validate_on_create: bool = False
+    sync_models_on_create: bool = False
 
 
 class LlmProviderConfigUpdate(SQLModel):
@@ -210,6 +212,31 @@ class LlmProviderConfigUpdate(SQLModel):
 class LlmProviderSyncModelsRequest(SQLModel):
     manual_models: list[LlmProviderModelInput] = []
     enabled_model_ids: list[str] = []
+
+
+class LlmProviderDraftRequest(SQLModel):
+    provider_slug: str = Field(min_length=1, max_length=128)
+    base_url: str = Field(min_length=1, max_length=1024)
+    secret_inputs: dict[str, str] = Field(default_factory=dict)
+    extra_config: dict[str, Any] = Field(default_factory=dict)
+    manual_models: list[LlmProviderModelInput] = []
+    enabled_model_ids: list[str] = []
+
+
+class LlmProviderModelPreview(SQLModel):
+    model_id: str
+    display_name: str | None = None
+    source_type: ProviderModelSourceType
+    is_enabled: bool
+    sync_status: ProviderModelSyncStatus
+    raw_metadata: dict[str, Any] = Field(default_factory=dict)
+    last_synced_at: datetime | None = None
+
+
+class LlmProviderDraftResult(SQLModel):
+    validation_status: ProviderValidationStatus
+    validation_message: str
+    models: list[LlmProviderModelPreview] = []
 
 
 class LlmProviderConfig(SQLModel, table=True):

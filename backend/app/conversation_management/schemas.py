@@ -54,6 +54,14 @@ class ConversationUpdate(StrictBody):
     archived: bool | None = None
 
 
+class ConversationConfigurationUpdate(StrictBody):
+    expected_revision: int = Field(ge=1)
+    provider_config_id: uuid.UUID | None = None
+    model_id: str | None = Field(default=None, min_length=1, max_length=255)
+    participant_runtime_agent_release_ids: list[uuid.UUID] = []
+    organizer_runtime_agent_release_id: uuid.UUID | None = None
+
+
 class ConversationMessageCreate(StrictBody):
     content: str = Field(min_length=1)
     target_type: MessageTargetType

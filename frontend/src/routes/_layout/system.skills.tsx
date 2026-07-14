@@ -1,5 +1,6 @@
 import { createFileRoute, Outlet, useRouterState } from "@tanstack/react-router"
 import { skillsApi } from "@/api/tenantApi"
+import { CreateSkillCompleteDialog } from "@/components/Agents/CompleteCapabilityDialogs"
 import IdentityManager from "@/components/Agents/IdentityManager"
 import useAuth from "@/hooks/useAuth"
 
@@ -23,6 +24,9 @@ function Page() {
       queryKey="skills"
       api={skillsApi}
       canManage={Boolean(user?.is_superuser || role === "admin")}
+      createLabel="新建 Skill"
+      identifierLabel="Skill 标识"
+      createAction={<CreateSkillCompleteDialog />}
       onSelect={(item) => window.location.assign(`/system/skills/${item.id}`)}
     />
   )

@@ -239,3 +239,175 @@ def test_sync_models_for_custom_provider_uses_discovered_and_manual_models(
     assert models["deepseek-v4-pro"]["is_enabled"] is True
     assert models["manual-model"]["source_type"] == "manual"
     assert models["manual-model"]["is_enabled"] is True
+
+
+def test_validate_draft_provider_does_not_persist_config(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+    monkeypatch,
+) -> None:
+    namespace = create_namespace(db)
+    headers = namespace_headers(superuser_token_headers, namespace.id)
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, list[dict[str, str]]]:
+            return {"data": [{"id": "draft-model"}]}
+
+    monkeypatch.setattr("httpx.get", lambda *args, **kwargs: FakeResponse())
+
+    response = client.post(
+        f"{settings.API_V1_STR}/llm/provider-configs/draft/validate",
+        headers=headers,
+        json={
+            "provider_slug": "custom",
+            "base_url": "https://draft.example.com/v1",
+            "secret_inputs": {"api_token": "sk-draft-secret"},
+            "extra_config": {},
+            "manual_models": [],
+            "enabled_model_ids": [],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["validation_status"] == "success"
+
+    configs_response = client.get(
+        f"{settings.API_V1_STR}/llm/provider-configs",
+        headers=headers,
+    )
+    assert configs_response.status_code == 200
+    assert configs_response.json()["count"] == 0
+
+
+def test_sync_draft_models_returns_preview_without_persisting_config(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+    monkeypatch,
+) -> None:
+    namespace = create_namespace(db)
+    headers = namespace_headers(superuser_token_headers, namespace.id)
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, list[dict[str, str]]]:
+            return {"data": [{"id": "draft-discovered"}]}
+
+    monkeypatch.setattr("httpx.get", lambda *args, **kwargs: FakeResponse())
+
+    response = client.post(
+        f"{settings.API_V1_STR}/llm/provider-configs/draft/sync-models",
+        headers=headers,
+        json={
+            "provider_slug": "custom",
+            "base_url": "https://draft.example.com/v1",
+            "secret_inputs": {"api_token": "sk-draft-secret"},
+            "extra_config": {},
+            "manual_models": [
+                {"model_id": "draft-manual", "display_name": "Draft Manual"}
+            ],
+            "enabled_model_ids": ["draft-discovered", "draft-manual"],
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["validation_status"] == "success"
+    models = {item["model_id"]: item for item in body["models"]}
+    assert models["draft-discovered"]["source_type"] == "discovered"
+    assert models["draft-discovered"]["is_enabled"] is True
+    assert models["draft-manual"]["source_type"] == "manual"
+
+    configs_response = client.get(
+        f"{settings.API_V1_STR}/llm/provider-configs",
+        headers=headers,
+    )
+    assert configs_response.json()["count"] == 0
+
+
+def test_create_after_draft_sync_refetches_and_persists_models(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+    monkeypatch,
+) -> None:
+    namespace = create_namespace(db)
+    headers = namespace_headers(superuser_token_headers, namespace.id)
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, list[dict[str, str]]]:
+            return {"data": [{"id": "persisted-discovered"}]}
+
+    monkeypatch.setattr("httpx.get", lambda *args, **kwargs: FakeResponse())
+
+    response = client.post(
+        f"{settings.API_V1_STR}/llm/provider-configs",
+        headers=headers,
+        json={
+            "config_name": f"draft-sync-{random_lower_string()}",
+            "provider_slug": "custom",
+            "base_url": "https://draft.example.com/v1",
+            "enabled": True,
+            "secret_inputs": {"api_token": "sk-draft-secret"},
+            "extra_config": {},
+            "manual_models": [],
+            "enabled_model_ids": ["persisted-discovered"],
+            "validate_on_create": True,
+            "sync_models_on_create": True,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["validation_status"] == "success"
+    models = {item["model_id"]: item for item in body["models"]}
+    assert models["persisted-discovered"]["source_type"] == "discovered"
+    assert models["persisted-discovered"]["is_enabled"] is True
+
+
+def test_create_after_draft_sync_is_atomic_when_refetch_fails(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+    monkeypatch,
+) -> None:
+    namespace = create_namespace(db)
+    headers = namespace_headers(superuser_token_headers, namespace.id)
+
+    def fail_get(*_args, **_kwargs):
+        raise RuntimeError("provider temporarily unavailable")
+
+    monkeypatch.setattr("httpx.get", fail_get)
+
+    response = client.post(
+        f"{settings.API_V1_STR}/llm/provider-configs",
+        headers=headers,
+        json={
+            "config_name": f"draft-sync-failure-{random_lower_string()}",
+            "provider_slug": "custom",
+            "base_url": "https://draft.example.com/v1",
+            "enabled": True,
+            "secret_inputs": {"api_token": "sk-draft-secret"},
+            "extra_config": {},
+            "manual_models": [],
+            "enabled_model_ids": ["persisted-discovered"],
+            "sync_models_on_create": True,
+        },
+    )
+
+    assert response.status_code == 502
+
+    configs_response = client.get(
+        f"{settings.API_V1_STR}/llm/provider-configs",
+        headers=headers,
+    )
+    assert configs_response.json()["count"] == 0

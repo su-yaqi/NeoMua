@@ -7,6 +7,7 @@ from workflow_runtime.package import directory_digest, package_content_digest
 from app.workflow_management.models import (
     ConfirmationMode,
     WorkflowNodeType,
+    WorkflowProjectMode,
     WorkflowScopeType,
 )
 from app.workflow_management.sdk import (
@@ -36,6 +37,9 @@ class ManifestNode(StrictManifestModel):
     output_schema: dict[str, Any]
     runtime_policy: dict[str, Any] = {}
     agent_release_id: str | None = None
+    agent_role_key: str | None = Field(
+        default=None, min_length=1, max_length=128, pattern=r"^[a-z][a-z0-9_]*$"
+    )
     handler_key: str | None = None
     validate_in: str | None = None
     validate_out: str | None = None
@@ -50,8 +54,13 @@ class ManifestNode(StrictManifestModel):
             raise ValueError("human nodes cannot declare a handler")
         if self.type == WorkflowNodeType.CODE and not self.handler_key:
             raise ValueError("code nodes require handler_key")
-        if self.type == WorkflowNodeType.AGENT and not self.agent_release_id:
-            raise ValueError("agent nodes require an exact agent_release_id")
+        if self.type == WorkflowNodeType.AGENT:
+            if bool(self.agent_release_id) == bool(self.agent_role_key):
+                raise ValueError(
+                    "agent nodes require exactly one of agent_release_id or agent_role_key"
+                )
+        elif self.agent_release_id or self.agent_role_key:
+            raise ValueError("only agent nodes may declare an Agent binding")
         if (
             self.confirmation_mode == ConfirmationMode.PROCESS
             and self.type != WorkflowNodeType.HUMAN
@@ -90,6 +99,7 @@ class WorkflowManifest(StrictManifestModel):
     sdk_version: str
     scope_type: WorkflowScopeType
     namespace_id: str | None = None
+    project_mode: WorkflowProjectMode
     nodes: list[ManifestNode] = Field(min_length=1)
     edges: list[ManifestEdge]
     entry_nodes: list[str] = Field(min_length=1)
@@ -104,6 +114,13 @@ class WorkflowManifest(StrictManifestModel):
             raise ValueError("platform packages cannot declare namespace_id")
         if self.scope_type == WorkflowScopeType.NAMESPACE and not self.namespace_id:
             raise ValueError("namespace packages require namespace_id")
+        if (
+            self.requirements.get("repositories")
+            and self.project_mode != WorkflowProjectMode.REQUIRED
+        ):
+            raise ValueError(
+                "workflows requiring repositories must use project_mode=required"
+            )
         return self
 
 

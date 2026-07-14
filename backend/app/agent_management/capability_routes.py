@@ -148,6 +148,12 @@ class McpSecretWrite(StrictBody):
     secret_inputs: dict[str, str]
 
 
+class McpCompleteCreate(IdentityCreate):
+    revision: McpRevisionCreate
+    target: McpTargetCreate
+    secret_inputs: dict[str, str] = Field(default_factory=dict)
+
+
 class McpAgentBinding(StrictBody):
     revision_id: uuid.UUID
     allowed_tools: list[str] = Field(default_factory=list)
@@ -172,6 +178,13 @@ class PluginDraftSave(StrictBody):
     adapter_schema_version: str = "1.0"
     adapter_config: dict[str, Any] = Field(default_factory=dict)
     components: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class PluginCompleteCreate(IdentityCreate):
+    harness_type: str = "claude_code"
+    adapter_schema_version: str = "1.0"
+    adapter_config: dict[str, Any] = Field(default_factory=dict)
+    components: list[dict[str, Any]] = Field(min_length=1)
 
 
 class PluginVersionCreate(StrictBody):
@@ -340,6 +353,92 @@ def create_skill(
         session.rollback()
         raise HTTPException(409, "Skill slug already exists") from exc
     return _identity_public(row)
+
+
+@router.post("/skills/complete", status_code=201)
+async def create_skill_complete(
+    session: SessionDep,
+    current_user: CurrentUser,
+    slug: str = Form(min_length=1, max_length=128, pattern=r"^[a-z0-9][a-z0-9-]*$"),
+    name: str = Form(min_length=1, max_length=255),
+    description: str | None = Form(default=None),
+    version: str = Form(),
+    file: UploadFile = File(),
+    namespace_id: uuid.UUID = Depends(require_namespace_admin),
+) -> dict[str, Any]:
+    temp_root = Path(settings.ARTIFACT_TEMP_DIR or tempfile.gettempdir())
+    temp_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix="neomua-skill-", suffix=".zip", dir=temp_root
+    )
+    temporary = Path(temporary_name)
+    try:
+        size = 0
+        with os.fdopen(descriptor, "wb") as target:
+            while chunk := await file.read(1024 * 1024):
+                size += len(chunk)
+                if size > settings.ARTIFACT_MAX_ARCHIVE_BYTES:
+                    raise HTTPException(413, "Skill archive exceeds size limit")
+                target.write(chunk)
+            target.flush()
+            os.fsync(target.fileno())
+        try:
+            scan = scan_skill_archive(temporary, slug=slug, version=version)
+        except ValueError as exc:
+            raise HTTPException(
+                422, {"code": "invalid_skill_archive", "message": str(exc)}
+            ) from exc
+        storage_key = f"skills/sha256/{scan.content_sha256[:2]}/{scan.content_sha256}"
+        try:
+            _artifact_storage().put_once(storage_key, temporary)
+        except OSError as exc:
+            if exc.errno == 28:
+                raise HTTPException(
+                    507, "Skill storage capacity is insufficient"
+                ) from exc
+            raise
+        skill = SkillDefinition(
+            namespace_id=namespace_id,
+            slug=slug,
+            name=name,
+            description=description,
+            created_by=current_user.id,
+        )
+        manifest = {**scan.manifest, "files": scan.files}
+        skill_version = SkillVersion(
+            skill_id=skill.id,
+            version=version,
+            content_sha256=scan.content_sha256,
+            storage_key=storage_key,
+            size=scan.size,
+            manifest=manifest,
+            invocation_mode=scan.manifest["invocation_mode"],
+            platforms=scan.manifest["platforms"],
+            required_capabilities={
+                "tools": scan.manifest["required_tools"],
+                "mcp_tools": scan.manifest["required_mcp_tools"],
+                "config_schema": scan.manifest["config_schema"],
+            },
+            content_types=scan.manifest["content_types"],
+            validation_result={"status": "validated", "diagnostics": []},
+            created_by=current_user.id,
+        )
+        session.add(skill)
+        session.add(skill_version)
+        try:
+            session.commit()
+        except IntegrityError as exc:
+            session.rollback()
+            raise HTTPException(
+                409, "Skill identifier, version, or content already exists"
+            ) from exc
+        return {
+            "skill": _identity_public(skill),
+            "version": _skill_version_public(skill_version),
+        }
+    finally:
+        temporary.unlink(missing_ok=True)
+        await file.close()
 
 
 def _get_skill(
@@ -803,6 +902,138 @@ def create_mcp_server(
         session.rollback()
         raise HTTPException(409, "MCP slug already exists") from exc
     return _identity_public(row)
+
+
+def _validated_platform_secret(
+    transport: McpTransport, secret_inputs: dict[str, str]
+) -> tuple[str, str] | None:
+    if not secret_inputs:
+        return None
+    if any(not key or not value for key, value in secret_inputs.items()):
+        raise HTTPException(422, "secret_inputs must contain non-empty values")
+    if any("\n" in value or "\r" in value for value in secret_inputs.values()):
+        raise HTTPException(422, "MCP secret values must not contain line breaks")
+    if transport == McpTransport.STDIO:
+        denied = [
+            key
+            for key in secret_inputs
+            if key in ENV_DENYLIST
+            or any(key.startswith(prefix) for prefix in ENV_DENYLIST_PREFIXES)
+        ]
+        if denied:
+            raise HTTPException(422, {"code": "env_denied", "names": denied})
+        if any(not re.fullmatch(r"[A-Z][A-Z0-9_]*", key) for key in secret_inputs):
+            raise HTTPException(
+                422, "stdio secret names must be canonical environment names"
+            )
+    elif any(
+        not re.fullmatch(r"[A-Za-z0-9-]+", key)
+        or key.lower() in {"host", "content-length", "connection"}
+        for key in secret_inputs
+    ):
+        raise HTTPException(422, "HTTP secret names must be safe request Header names")
+    ciphertext = seal_secret_payload(secret_inputs)
+    if ciphertext is None:
+        raise HTTPException(422, "Secret payload is empty")
+    fingerprint = hashlib.sha256(canonical_bytes(sorted(secret_inputs))).hexdigest()
+    return ciphertext, fingerprint
+
+
+@router.post("/mcp-servers/complete", status_code=201)
+def create_mcp_server_complete(
+    body: McpCompleteCreate,
+    session: SessionDep,
+    current_user: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_admin),
+) -> dict[str, Any]:
+    diagnostics = validate_mcp_config(
+        body.revision.transport,
+        body.revision.config,
+        allow_http=settings.ENVIRONMENT == "local",
+    )
+    if diagnostics:
+        raise HTTPException(
+            422, {"errors": [item.model_dump() for item in diagnostics]}
+        )
+    runtime = session.get(RuntimeProfile, body.target.runtime_profile_id)
+    if runtime is None or runtime.namespace_id != namespace_id:
+        raise HTTPException(404, "Runtime target not found")
+    if runtime.runtime_type == RuntimeType.NODE and not body.target.secret_ref:
+        raise HTTPException(422, "Node MCP target requires a node-local secret_ref")
+    if runtime.runtime_type == RuntimeType.PLATFORM and body.target.secret_ref:
+        raise HTTPException(422, "Platform target cannot use secret_ref")
+    if runtime.runtime_type == RuntimeType.NODE and body.secret_inputs:
+        raise HTTPException(422, "Node secrets must be managed locally")
+    if body.revision.transport == McpTransport.STDIO:
+        executable = body.revision.config.get("executable_key")
+        inventory = runtime.harness_capabilities.get("mcp_executables") or []
+        if executable not in inventory:
+            raise HTTPException(422, "stdio executable is not in target inventory")
+    platform_secret = (
+        _validated_platform_secret(body.revision.transport, body.secret_inputs)
+        if runtime.runtime_type == RuntimeType.PLATFORM
+        else None
+    )
+    server = McpServer(
+        namespace_id=namespace_id,
+        slug=body.slug,
+        name=body.name,
+        description=body.description,
+        created_by=current_user.id,
+    )
+    digest = canonical_digest(
+        {
+            "transport": body.revision.transport.value,
+            "config": body.revision.config,
+            "protocol_version": body.revision.protocol_version,
+        }
+    )
+    revision = McpServerRevision(
+        server_id=server.id,
+        revision=1,
+        transport=body.revision.transport,
+        config=body.revision.config,
+        config_sha256=digest,
+        protocol_version=body.revision.protocol_version,
+        created_by=current_user.id,
+    )
+    target = McpTargetBinding(
+        revision_id=revision.id,
+        runtime_profile_id=runtime.id,
+        secret_ref=body.target.secret_ref,
+        capability_fingerprint=runtime_capability_fingerprint(runtime),
+    )
+    session.add(server)
+    session.add(revision)
+    session.add(target)
+    if platform_secret:
+        ciphertext, fingerprint = platform_secret
+        target.secret_fingerprint = fingerprint
+        target.status = McpTargetStatus.STALE
+        session.add(
+            McpPlatformSecret(
+                target_binding_id=target.id, secret_ciphertext=ciphertext
+            )
+        )
+    try:
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(409, "MCP identifier or target already exists") from exc
+    return {
+        "server": _identity_public(server),
+        "revision": {
+            "id": revision.id,
+            "revision": revision.revision,
+            "transport": revision.transport.value,
+            "config": revision.config,
+        },
+        "target": {
+            "id": target.id,
+            "runtime_profile_id": target.runtime_profile_id,
+            "status": target.status.value,
+        },
+    }
 
 
 def _get_mcp(
@@ -1683,6 +1914,54 @@ def create_plugin(
         session.rollback()
         raise HTTPException(409, "Plugin slug already exists") from exc
     return _identity_public(plugin)
+
+
+@router.post("/plugins/complete", status_code=201)
+def create_plugin_complete(
+    body: PluginCompleteCreate,
+    session: SessionDep,
+    current_user: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_admin),
+) -> dict[str, Any]:
+    normalized, errors = _validate_plugin_components(
+        session, namespace_id, body.harness_type, body.components
+    )
+    errors.extend(
+        item.model_dump()
+        for item in validate_config(body.adapter_config, is_profile=True)
+    )
+    if errors:
+        raise HTTPException(422, {"errors": errors})
+    plugin = Plugin(
+        namespace_id=namespace_id,
+        slug=body.slug,
+        name=body.name,
+        description=body.description,
+        created_by=current_user.id,
+    )
+    draft = PluginDraft(
+        plugin_id=plugin.id,
+        revision=1,
+        harness_type=body.harness_type,
+        adapter_schema_version=body.adapter_schema_version,
+        adapter_config=body.adapter_config,
+        components=normalized,
+        validated_revision=1,
+        validation_result={
+            "status": "validated",
+            "revision": 1,
+            "errors": [],
+            "dependency_graph": normalized,
+        },
+    )
+    session.add(plugin)
+    session.add(draft)
+    try:
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(409, "Plugin identifier already exists") from exc
+    return {"plugin": _identity_public(plugin), "draft": _plugin_draft_public(plugin, draft)}
 
 
 def _get_plugin(

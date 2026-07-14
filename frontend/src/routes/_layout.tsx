@@ -1,5 +1,10 @@
 import { useQuery } from "@tanstack/react-query"
-import { createFileRoute, Outlet, redirect } from "@tanstack/react-router"
+import {
+  createFileRoute,
+  Outlet,
+  redirect,
+  useRouterState,
+} from "@tanstack/react-router"
 import { useEffect, useState } from "react"
 import { UsersService } from "@/api/generatedCompat"
 import { tenantApi } from "@/api/tenantApi"
@@ -33,6 +38,11 @@ export const Route = createFileRoute("/_layout")({
 })
 
 function Layout() {
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  })
+  const isWorkspace =
+    pathname === "/workspace" || pathname.startsWith("/workspace/")
   const { data: namespacesData } = useQuery({
     queryKey: ["my-namespaces"],
     queryFn: tenantApi.readMyNamespaces,
@@ -77,7 +87,9 @@ function Layout() {
   return (
     <SidebarProvider>
       <AppSidebar />
-      <SidebarInset>
+      <SidebarInset
+        className={isWorkspace ? "h-svh min-w-0 overflow-hidden" : undefined}
+      >
         <header className="sticky top-0 z-10 flex h-16 shrink-0 items-center gap-2 border-b px-4">
           <SidebarTrigger className="-ml-1 text-muted-foreground" />
           <div className="ml-auto w-64">
@@ -102,12 +114,20 @@ function Layout() {
             </Select>
           </div>
         </header>
-        <main className="flex-1 p-6 md:p-8">
-          <div className="mx-auto max-w-7xl">
+        <main
+          className={
+            isWorkspace ? "min-h-0 flex-1 overflow-hidden" : "flex-1 p-6 md:p-8"
+          }
+        >
+          {isWorkspace ? (
             <Outlet />
-          </div>
+          ) : (
+            <div className="mx-auto max-w-7xl">
+              <Outlet />
+            </div>
+          )}
         </main>
-        <Footer />
+        {!isWorkspace && <Footer />}
       </SidebarInset>
     </SidebarProvider>
   )

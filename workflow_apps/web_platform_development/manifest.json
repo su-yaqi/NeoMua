@@ -1,0 +1,185 @@
+{
+  "slug": "web-platform-development",
+  "name": "Web 平台开发流",
+  "description": "从需求沟通到上线记录的 Web 平台研发流程，Agent 负责研发节点，人员负责验收与上线确认。",
+  "version": "1.0.1",
+  "sdk_version": "0.7.0",
+  "scope_type": "platform",
+  "project_mode": "required",
+  "nodes": [
+    {
+      "key": "requirements_communication",
+      "name": "需求沟通",
+      "type": "agent",
+      "confirmation_mode": "no_confirmation",
+      "input_schema": {"type": "object", "additionalProperties": true},
+      "output_schema": {"type": "object", "additionalProperties": true},
+      "runtime_policy": {},
+      "agent_role_key": "requirements_communication",
+      "skippable": false,
+      "side_effecting": false,
+      "join_policy": "all"
+    },
+    {
+      "key": "requirements_design",
+      "name": "需求设计",
+      "type": "agent",
+      "confirmation_mode": "no_confirmation",
+      "input_schema": {"type": "object", "additionalProperties": true},
+      "output_schema": {"type": "object", "additionalProperties": true},
+      "runtime_policy": {},
+      "agent_role_key": "requirements_design",
+      "skippable": false,
+      "side_effecting": false,
+      "join_policy": "all"
+    },
+    {
+      "key": "technical_solution",
+      "name": "技术方案",
+      "type": "agent",
+      "confirmation_mode": "no_confirmation",
+      "input_schema": {"type": "object", "additionalProperties": true},
+      "output_schema": {"type": "object", "additionalProperties": true},
+      "runtime_policy": {},
+      "agent_role_key": "technical_solution",
+      "skippable": false,
+      "side_effecting": false,
+      "join_policy": "all"
+    },
+    {
+      "key": "backend_development",
+      "name": "后端开发",
+      "type": "agent",
+      "confirmation_mode": "no_confirmation",
+      "input_schema": {"type": "object", "additionalProperties": true},
+      "output_schema": {"type": "object", "additionalProperties": true},
+      "runtime_policy": {},
+      "agent_role_key": "backend_development",
+      "skippable": false,
+      "side_effecting": false,
+      "join_policy": "all"
+    },
+    {
+      "key": "frontend_development",
+      "name": "前端开发",
+      "type": "agent",
+      "confirmation_mode": "no_confirmation",
+      "input_schema": {"type": "object", "additionalProperties": true},
+      "output_schema": {"type": "object", "additionalProperties": true},
+      "runtime_policy": {},
+      "agent_role_key": "frontend_development",
+      "skippable": false,
+      "side_effecting": false,
+      "join_policy": "all"
+    },
+    {
+      "key": "test_case_design",
+      "name": "测试用例",
+      "type": "agent",
+      "confirmation_mode": "no_confirmation",
+      "input_schema": {"type": "object", "additionalProperties": true},
+      "output_schema": {"type": "object", "additionalProperties": true},
+      "runtime_policy": {},
+      "agent_role_key": "test_case_design",
+      "skippable": false,
+      "side_effecting": false,
+      "join_policy": "all"
+    },
+    {
+      "key": "test_environment_deployment",
+      "name": "测试环境部署",
+      "type": "agent",
+      "confirmation_mode": "no_confirmation",
+      "input_schema": {"type": "object", "additionalProperties": true},
+      "output_schema": {"type": "object", "additionalProperties": true},
+      "runtime_policy": {"idempotency_proof_required": true},
+      "agent_role_key": "test_environment_deployment",
+      "skippable": false,
+      "side_effecting": true,
+      "join_policy": "all"
+    },
+    {
+      "key": "testing",
+      "name": "测试",
+      "type": "agent",
+      "confirmation_mode": "no_confirmation",
+      "input_schema": {"type": "object", "additionalProperties": true},
+      "output_schema": {"type": "object", "additionalProperties": true},
+      "runtime_policy": {},
+      "agent_role_key": "testing",
+      "skippable": false,
+      "side_effecting": false,
+      "join_policy": "all"
+    },
+    {
+      "key": "acceptance",
+      "name": "验收",
+      "type": "human",
+      "confirmation_mode": "process_confirmation",
+      "input_schema": {"type": "object", "additionalProperties": true},
+      "output_schema": {
+        "type": "object",
+        "required": ["accepted"],
+        "properties": {
+          "accepted": {"type": "boolean"},
+          "notes": {"type": "string"}
+        },
+        "additionalProperties": false
+      },
+      "runtime_policy": {},
+      "skippable": false,
+      "side_effecting": false,
+      "join_policy": "all"
+    },
+    {
+      "key": "go_live",
+      "name": "上线",
+      "type": "human",
+      "confirmation_mode": "process_confirmation",
+      "input_schema": {"type": "object", "additionalProperties": true},
+      "output_schema": {
+        "type": "object",
+        "required": ["environment", "result"],
+        "properties": {
+          "environment": {"type": "string"},
+          "result": {"type": "string"},
+          "notes": {"type": "string"}
+        },
+        "additionalProperties": false
+      },
+      "runtime_policy": {},
+      "skippable": false,
+      "side_effecting": false,
+      "join_policy": "all"
+    }
+  ],
+  "edges": [
+    {"source": "requirements_communication", "target": "requirements_design", "condition_key": "always", "condition_config": {}},
+    {"source": "requirements_design", "target": "technical_solution", "condition_key": "always", "condition_config": {}},
+    {"source": "technical_solution", "target": "backend_development", "condition_key": "always", "condition_config": {}},
+    {"source": "backend_development", "target": "frontend_development", "condition_key": "always", "condition_config": {}},
+    {"source": "frontend_development", "target": "test_case_design", "condition_key": "always", "condition_config": {}},
+    {"source": "test_case_design", "target": "test_environment_deployment", "condition_key": "always", "condition_config": {}},
+    {"source": "test_environment_deployment", "target": "testing", "condition_key": "always", "condition_config": {}},
+    {"source": "testing", "target": "acceptance", "condition_key": "always", "condition_config": {}},
+    {"source": "acceptance", "target": "go_live", "condition_key": "equals", "condition_config": {"field": "accepted", "value": true}}
+  ],
+  "entry_nodes": ["requirements_communication"],
+  "exit_nodes": ["go_live"],
+  "application": {
+    "component_key": "workflow.web_platform_development.v1_0_1",
+    "route_slug": "web-platform-development",
+    "build_digest": "4db7fcbbad28574018bdc030ad48819fbf23757f84ee9fa45fd06c851c786123",
+    "shell_version": "0.7.0"
+  },
+  "input_schema": {
+    "type": "object",
+    "required": ["goal"],
+    "properties": {
+      "goal": {"type": "string"},
+      "description": {"type": "string"}
+    },
+    "additionalProperties": false
+  },
+  "requirements": {"repositories": true}
+}

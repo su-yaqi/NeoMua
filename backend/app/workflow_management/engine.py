@@ -51,6 +51,7 @@ from app.workflow_management.models import (
     GateType,
     NamespaceWorkflowEnablement,
     WorkflowConfirmation,
+    WorkflowContextMode,
     WorkflowEdgeDefinition,
     WorkflowEvent,
     WorkflowExecutionStatus,
@@ -63,6 +64,7 @@ from app.workflow_management.models import (
     WorkflowNodeRevision,
     WorkflowNodeStatus,
     WorkflowNodeType,
+    WorkflowProjectMode,
     WorkflowTemplateVersion,
     WorkflowVersionStatus,
 )
@@ -311,6 +313,8 @@ def project_context_snapshot(session: Session, project: Project) -> dict[str, An
                         }
                     )
     snapshot = {
+        "context_mode": WorkflowContextMode.PROJECT.value,
+        "project_id": str(project.id),
         "repository_refs": repository_refs,
         "spec_refs": spec_refs,
         "content_refs": content_refs,
@@ -321,45 +325,91 @@ def project_context_snapshot(session: Session, project: Project) -> dict[str, An
 def preflight(
     session: Session,
     namespace_id: uuid.UUID,
-    project: Project,
+    project: Project | None,
     version: WorkflowTemplateVersion,
-    task_runtime_id: uuid.UUID | None,
+    node_bindings: dict[str, dict[str, uuid.UUID | None]],
+    *,
+    require_enabled: bool = True,
 ) -> dict[str, Any]:
     errors: list[dict[str, Any]] = []
-    if project.status == ProjectStatus.ARCHIVED:
+    raw_project_mode = version.manifest.get("project_mode")
+    try:
+        project_mode = WorkflowProjectMode(
+            raw_project_mode or WorkflowProjectMode.REQUIRED.value
+        )
+    except ValueError:
+        project_mode = None
+        errors.append(
+            {
+                "code": "template_project_mode_invalid",
+                "message": str(raw_project_mode),
+            }
+        )
+    if project_mode == WorkflowProjectMode.REQUIRED and project is None:
+        errors.append(
+            {
+                "code": "project_required",
+                "message": "This Workflow version requires a project",
+            }
+        )
+    if project_mode == WorkflowProjectMode.NONE and project is not None:
+        errors.append(
+            {
+                "code": "project_not_allowed",
+                "message": "This Workflow version does not accept project context",
+            }
+        )
+    if project is not None and project.status == ProjectStatus.ARCHIVED:
         errors.append({"code": "project_archived", "message": "Project is archived"})
     if version.status != WorkflowVersionStatus.ACTIVE:
         errors.append(
             {"code": "template_version_unavailable", "message": version.status.value}
         )
-    enablement = session.exec(
-        select(NamespaceWorkflowEnablement).where(
-            NamespaceWorkflowEnablement.namespace_id == namespace_id,
-            NamespaceWorkflowEnablement.template_version_id == version.id,
-            col(NamespaceWorkflowEnablement.enabled).is_(True),
-        )
-    ).first()
-    if enablement is None:
-        errors.append(
-            {
-                "code": "template_version_not_enabled",
-                "message": "Version is not enabled",
-            }
-        )
-    context_snapshot: dict[str, Any] | None = None
-    try:
-        context_snapshot = project_context_snapshot(session, project)
-    except HTTPException as exc:
-        errors.append({"code": "project_context_invalid", "message": exc.detail})
+    if require_enabled:
+        enablement = session.exec(
+            select(NamespaceWorkflowEnablement).where(
+                NamespaceWorkflowEnablement.namespace_id == namespace_id,
+                NamespaceWorkflowEnablement.template_version_id == version.id,
+                col(NamespaceWorkflowEnablement.enabled).is_(True),
+            )
+        ).first()
+        if enablement is None:
+            errors.append(
+                {
+                    "code": "template_version_not_enabled",
+                    "message": "Version is not enabled",
+                }
+            )
+    standalone_context = {"context_mode": WorkflowContextMode.STANDALONE.value}
+    context_snapshot: dict[str, Any] = {
+        **standalone_context,
+        "content_digest": canonical_digest(standalone_context),
+    }
+    if project is not None:
+        try:
+            context_snapshot = project_context_snapshot(session, project)
+        except HTTPException as exc:
+            errors.append({"code": "project_context_invalid", "message": exc.detail})
     definitions, _ = _definitions(session, version.id)
+    required_node_keys = {
+        definition.node_key
+        for definition in definitions
+        if definition.node_type != WorkflowNodeType.HUMAN
+    }
+    for node_key in sorted(required_node_keys - node_bindings.keys()):
+        errors.append({"code": "workflow_node_unconfigured", "node_key": node_key})
+    for node_key in sorted(node_bindings.keys() - required_node_keys):
+        errors.append({"code": "workflow_node_binding_unknown", "node_key": node_key})
     runtime_resolution: dict[str, Any] = {}
+    resolved_agent_bindings: dict[str, dict[str, Any]] = {}
     for definition in definitions:
-        explicit_runtime = definition.runtime_policy.get("runtime_id")
-        runtime_id = (
-            uuid.UUID(str(explicit_runtime))
-            if explicit_runtime
-            else task_runtime_id or project.default_runtime_id
-        )
+        if definition.node_type == WorkflowNodeType.HUMAN:
+            runtime_resolution[definition.node_key] = {}
+            continue
+        node_binding = node_bindings.get(definition.node_key)
+        if node_binding is None:
+            continue
+        runtime_id = node_binding.get("runtime_id")
         if runtime_id is None:
             errors.append(
                 {"code": "runtime_unresolved", "node_key": definition.node_key}
@@ -382,7 +432,10 @@ def preflight(
                     "message": message,
                 }
             )
-        if version.manifest.get("requirements", {}).get("repositories"):
+        if (
+            version.manifest.get("requirements", {}).get("repositories")
+            and project is not None
+        ):
             repositories = session.exec(
                 select(ProjectRepository).where(
                     ProjectRepository.project_id == project.id
@@ -401,22 +454,40 @@ def preflight(
                             "runtime_id": str(runtime.id),
                         }
                     )
+        configured_release_id = node_binding.get("agent_release_id")
         if definition.node_type == WorkflowNodeType.AGENT:
+            if (
+                definition.agent_release_id is not None
+                and configured_release_id is not None
+                and configured_release_id != definition.agent_release_id
+            ):
+                errors.append(
+                    {
+                        "code": "agent_release_fixed_by_package",
+                        "node_key": definition.node_key,
+                    }
+                )
+                continue
+            release_id = definition.agent_release_id or configured_release_id
+            if release_id is None:
+                errors.append(
+                    {
+                        "code": "agent_release_unconfigured",
+                        "node_key": definition.node_key,
+                    }
+                )
+                continue
             binding = session.exec(
                 select(RuntimeAgentRelease).where(
                     RuntimeAgentRelease.runtime_profile_id == runtime.id,
-                    RuntimeAgentRelease.current_release_id
-                    == definition.agent_release_id,
+                    RuntimeAgentRelease.current_release_id == release_id,
                 )
             ).first()
-            release = (
-                session.get(AgentRelease, definition.agent_release_id)
-                if definition.agent_release_id
-                else None
-            )
+            release = session.get(AgentRelease, release_id)
             if (
                 binding is None
                 or release is None
+                or release.namespace_id != namespace_id
                 or binding.applied_digest != release.resolved_spec_digest
                 or binding.materialization_digest != release.resolved_spec_digest
             ):
@@ -424,6 +495,7 @@ def preflight(
                     {
                         "code": "agent_release_not_active",
                         "node_key": definition.node_key,
+                        "role_key": definition.agent_role_key,
                     }
                 )
             else:
@@ -432,13 +504,47 @@ def preflight(
                     "agent_release_id": str(release.id),
                     "resolved_spec_digest": release.resolved_spec_digest,
                 }
+                role_key = definition.agent_role_key or definition.node_key
+                resolved = {
+                    "node_key": definition.node_key,
+                    "role_key": role_key,
+                    "runtime_id": str(runtime.id),
+                    "agent_release_id": str(release.id),
+                    "agent_id": str(release.agent_id),
+                    "release_version": release.version,
+                    "resolved_spec_digest": release.resolved_spec_digest,
+                }
+                previous_binding = resolved_agent_bindings.get(role_key)
+                if previous_binding is not None and previous_binding != resolved:
+                    errors.append(
+                        {
+                            "code": "agent_role_resolution_conflict",
+                            "role_key": role_key,
+                        }
+                    )
+                else:
+                    resolved_agent_bindings[role_key] = resolved
                 continue
+        elif configured_release_id is not None:
+            errors.append(
+                {
+                    "code": "agent_release_not_allowed",
+                    "node_key": definition.node_key,
+                }
+            )
+            continue
         runtime_resolution[definition.node_key] = {"runtime_id": str(runtime.id)}
     return {
         "passed": not errors,
         "errors": errors,
         "runtime_resolution": runtime_resolution,
+        "agent_bindings": resolved_agent_bindings,
         "project_context_snapshot": context_snapshot,
+        "context_mode": (
+            WorkflowContextMode.PROJECT
+            if project is not None
+            else WorkflowContextMode.STANDALONE
+        ),
         "package_digest": version.package_digest,
     }
 
@@ -515,7 +621,7 @@ def _run_context(
         workflow_instance_id=str(instance.id),
         node_key=node.node_key,
         runtime_id=str(node.resolved_runtime_id),
-        project_id=str(instance.project_id),
+        project_id=str(instance.project_id) if instance.project_id else None,
         input=input_snapshot,
         previous_output=previous.output if previous else None,
         change_summary={
@@ -756,15 +862,17 @@ def _execute_agent_node(
     input_snapshot: dict[str, Any],
     previous: WorkflowNodeRevision | None,
 ) -> None:
-    release = (
-        session.get(AgentRelease, definition.agent_release_id)
-        if definition.agent_release_id
-        else None
-    )
+    resolution = instance.runtime_resolution.get(node.node_key, {})
+    raw_release_id = resolution.get("agent_release_id")
+    try:
+        release_id = uuid.UUID(str(raw_release_id)) if raw_release_id else None
+    except ValueError:
+        release_id = None
+    release = session.get(AgentRelease, release_id) if release_id else None
     binding = session.exec(
         select(RuntimeAgentRelease).where(
             RuntimeAgentRelease.runtime_profile_id == node.resolved_runtime_id,
-            RuntimeAgentRelease.current_release_id == definition.agent_release_id,
+            RuntimeAgentRelease.current_release_id == release_id,
         )
     ).first()
     if (
@@ -849,7 +957,18 @@ def _execute_agent_node(
         "上游内容已更新，请结合更新重新完成当前节点。\n"
         if previous is not None
         else "请完成当前 Workflow 节点。\n"
-    ) + str(input_snapshot)
+    )
+    prompt += (
+        f"节点输入：{input_snapshot}\n"
+        f"请将最终结果提交为符合以下 JSON Schema 的 JSON 对象："
+        f"{definition.output_schema}。"
+    )
+    if definition.side_effecting:
+        prompt += (
+            "\n此节点会修改外部状态。执行前必须确认工具调用经过授权且具备幂等性；"
+            "最终结果还必须包含非空的 `_external_state_proof` 对象，记录幂等键、"
+            "目标环境和可核验的执行结果。该字段只用于执行安全审计，不属于业务输出。"
+        )
     message = ConversationMessage(
         conversation_id=conversation.id,
         sequence=next_message_sequence(session, conversation.id),
@@ -1233,6 +1352,7 @@ def _reconcile_runtime_executions(
                 instance.status = WorkflowInstanceStatus.FAILED
             else:
                 output = dict(output)
+                proof = output.pop("_external_state_proof", None)
                 schema_errors = validate_json_value(output, definition.output_schema)
                 if schema_errors:
                     execution.status = WorkflowExecutionStatus.FAILED
@@ -1243,8 +1363,9 @@ def _reconcile_runtime_executions(
                     node.status = WorkflowNodeStatus.FAILED
                     instance.status = WorkflowInstanceStatus.FAILED
                 else:
-                    proof = output.pop("_external_state_proof", None)
-                    if definition.side_effecting and not proof:
+                    if definition.side_effecting and not (
+                        isinstance(proof, dict) and proof
+                    ):
                         execution.status = (
                             WorkflowExecutionStatus.NEEDS_MANUAL_RESOLUTION
                         )
@@ -1316,7 +1437,8 @@ def reconcile_instance(session: Session, instance: WorkflowInstance) -> bool:
                 node.status = WorkflowNodeStatus.UPDATE_REQUIRED
                 changed = True
                 continue
-            output = task.final_result or {}
+            output = dict(task.final_result or {})
+            proof = output.pop("_external_state_proof", None)
             schema_errors = validate_json_value(output, definition.output_schema)
             if schema_errors:
                 execution.status = WorkflowExecutionStatus.FAILED
@@ -1325,6 +1447,15 @@ def reconcile_instance(session: Session, instance: WorkflowInstance) -> bool:
                     "errors": schema_errors,
                 }
                 node.status = WorkflowNodeStatus.FAILED
+                changed = True
+                continue
+            if definition.side_effecting and not (isinstance(proof, dict) and proof):
+                execution.status = WorkflowExecutionStatus.NEEDS_MANUAL_RESOLUTION
+                execution.error = {"code": "external_state_proof_missing"}
+                execution.completed_at = utcnow()
+                node.status = WorkflowNodeStatus.NEEDS_MANUAL_RESOLUTION
+                instance.status = WorkflowInstanceStatus.BLOCKED
+                session.add_all([execution, node, instance])
                 changed = True
                 continue
             input_snapshot = build_node_input(session, instance, node, edges)
@@ -1338,6 +1469,7 @@ def reconcile_instance(session: Session, instance: WorkflowInstance) -> bool:
                 None,
             )
             execution.status = WorkflowExecutionStatus.COMPLETED
+            execution.external_state_proof = proof
             execution.completed_at = utcnow()
             _start_exit_gate(
                 session,
@@ -1374,6 +1506,7 @@ def create_instance_nodes(
     definitions, edges = _definitions(session, instance.template_version_id)
     incoming_keys = {edge.target_node_key for edge in edges}
     for definition in definitions:
+        raw_runtime_id = runtime_resolution[definition.node_key].get("runtime_id")
         node = WorkflowNodeInstance(
             workflow_instance_id=instance.id,
             node_definition_id=definition.id,
@@ -1383,8 +1516,8 @@ def create_instance_nodes(
                 if definition.node_key not in incoming_keys
                 else WorkflowNodeStatus.INACTIVE
             ),
-            resolved_runtime_id=uuid.UUID(
-                runtime_resolution[definition.node_key]["runtime_id"]
+            resolved_runtime_id=(
+                uuid.UUID(str(raw_runtime_id)) if raw_runtime_id else None
             ),
         )
         session.add(node)

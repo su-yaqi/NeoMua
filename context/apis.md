@@ -106,6 +106,8 @@
 | PATCH | /llm/provider-configs/{config_id} | 更新当前空间的接入配置 |
 | POST | /llm/provider-configs/{config_id}/validate | 对当前配置执行连接校验 |
 | POST | /llm/provider-configs/{config_id}/sync-models | 拉取供应商模型并合并手工模型 |
+| POST | /llm/provider-configs/draft/validate | 使用未保存的地址、密钥和扩展参数校验连接 |
+| POST | /llm/provider-configs/draft/sync-models | 使用未保存配置同步模型预览，不产生数据库实体 |
 
 ### utils / private
 | Method | Path | 描述 |
@@ -151,6 +153,8 @@
 
 发布、激活、Plugin Version、retry/rollback 和任务创建使用 `Idempotency-Key`。MCP/Release Worker 领取与回传继续位于受独立服务凭证保护的 `/internal/runtime/*`；节点结果经已鉴权 WSS 转发。读接口不返回 secret value。
 
+v0.7 为 Agent、Skill、MCP 与 Plugin 增加 complete-create 接口，由一次请求原子创建身份与必要初始草稿/版本/Revision；失败不遗留只有名称和标识的半成品。用户输入字段仍使用稳定的 `slug` API 名称，但 UI 展示为“唯一标识”。
+
 ### project management（v0.6）
 
 | 资源 | 主要接口 |
@@ -162,25 +166,32 @@
 
 配置 mutation 仅 namespace Admin/Developer 可用。仓库验证只接受 Runtime 已上报的 workspace ref 与 commit，不在控制面匿名 clone 或猜测结果。
 
+`POST /projects/complete` 可在一次事务中创建项目、默认 Runtime、初始成员及可选仓库；`POST /spec-standards/complete` 同时创建标准身份与第一个不可变版本，避免不完整顶层实体。
+
 ### conversation management（v0.6）
 
 | 资源 | 主要接口 |
 |---|---|
 | 可用目录 | `/conversation-catalog/runtimes|models|agents` |
 | 会话 | `GET/POST /conversations`、`GET/PATCH /conversations/{id}`、`POST /conversations/{id}/derive` |
+| 配置修订 | `POST /conversations/{id}/configuration-revisions`，使用 `expected_revision` 更新模型或 Agent 参与配置 |
 | 消息/圆桌 | `GET/POST /conversations/{id}/messages`、`GET/POST /conversations/{id}/delegations` |
 | 附件 | `GET/POST /conversations/{id}/attachments`（严格扫描 UTF-8 文本、Markdown、JSON） |
 | 项目上下文 | `POST /conversations/{id}/context-snapshots` |
 
-创建、派生、消息与委派使用 `Idempotency-Key`。Chat 路径固定 provider/model 且不下发 Tool；Agent 路径只使用创建时固定、目标 Runtime 已激活的 Release。
+创建、派生、消息与委派使用 `Idempotency-Key`。项目与 Runtime 创建后固定；Chat 可为后续消息切换 provider/model 且不下发 Tool；Agent 可增减参与者并指定唯一组织 Agent。配置变更在存在在途轮次、修订冲突或目标失效时明确阻断。
 
 ### workflow management（v0.6）
 
 | 资源 | 主要接口 |
 |---|---|
 | 模板 | `/workflow-templates`、`/{id}/versions/{version_id}`、`/{id}/enablement`、`/{id}/preflight` |
+| 模板执行配置 | `GET/PUT /workflow-templates/{id}/versions/{version_id}/execution-configuration` |
 | 项目任务 | `GET/POST /projects/{id}/workflow-instances`、`GET /workflow-instances/{id}`、`POST /workflow-instances/{id}/cancel` |
+| 用户侧实例 | `GET/POST /workflow-instances`，可按 `template_id`/`template_version_id` 筛选 |
 | 节点 | `GET .../nodes/{key}`、`POST .../submit|confirm|skip|retry|messages` |
 | 恢复/审计 | `GET /workflow-instances/{id}/events`、`POST .../external-state-resolution` |
 
 节点 mutation 携带 `expected_revision`，冲突返回 409。外部状态证明接口还要求 `Idempotency-Key`，只有 namespace 管理角色可确认是否允许安全重试。
+
+模板执行配置保存时按 CAS 创建不可变修订：项目模式为 required 时必须选项目，每个非人工节点必须选择兼容 Runtime，Agent 节点还需选择该 Runtime 上已激活的精确 Release。用户创建实例只提交模板版本、名称和业务输入；服务端读取并冻结当前配置修订，不接受实例级 Runtime/Agent 覆盖。

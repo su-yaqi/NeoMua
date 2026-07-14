@@ -60,6 +60,14 @@ export interface LlmProviderModel {
   last_synced_at: string | null
 }
 
+export type LlmProviderModelPreview = Omit<LlmProviderModel, "id">
+
+export interface LlmProviderDraftResult {
+  validation_status: ProviderValidationStatus
+  validation_message: string
+  models: LlmProviderModelPreview[]
+}
+
 export interface LlmProviderConfig {
   id: string
   namespace_id: string
@@ -91,6 +99,17 @@ export interface LlmProviderConfigCreateBody {
   provider_slug: string
   base_url: string
   enabled: boolean
+  secret_inputs: Record<string, string>
+  extra_config: Record<string, string>
+  manual_models: LlmProviderModelInput[]
+  enabled_model_ids: string[]
+  validate_on_create?: boolean
+  sync_models_on_create?: boolean
+}
+
+export interface LlmProviderDraftBody {
+  provider_slug: string
+  base_url: string
   secret_inputs: Record<string, string>
   extra_config: Record<string, string>
   manual_models: LlmProviderModelInput[]
@@ -370,6 +389,13 @@ export const tenantApi = {
     )
     return data
   },
+  validateLlmProviderDraft: async (body: LlmProviderDraftBody) => {
+    const { data } = await api.post<LlmProviderDraftResult>(
+      "/api/v1/llm/provider-configs/draft/validate",
+      body,
+    )
+    return data
+  },
   syncLlmProviderConfigModels: async (
     configId: string,
     body: {
@@ -379,6 +405,13 @@ export const tenantApi = {
   ) => {
     const { data } = await api.post<LlmProviderConfig>(
       `/api/v1/llm/provider-configs/${configId}/sync-models`,
+      body,
+    )
+    return data
+  },
+  syncLlmProviderDraftModels: async (body: LlmProviderDraftBody) => {
+    const { data } = await api.post<LlmProviderDraftResult>(
+      "/api/v1/llm/provider-configs/draft/sync-models",
       body,
     )
     return data
@@ -688,6 +721,22 @@ export const agentsApi = {
     const { data } = await api.post<AgentDefinition>("/api/v1/agents", body)
     return data
   },
+  createComplete: async (body: {
+    slug: string
+    name: string
+    description?: string
+    harness_profile_id: string
+    provider_config_id: string
+    model_id: string
+    system_prompt: string
+    config: Record<string, unknown>
+  }) => {
+    const { data } = await api.post<{
+      agent: AgentDefinition
+      draft: AgentDraftPublic
+    }>("/api/v1/agents/complete", body)
+    return data
+  },
   copy: async (agentId: string, body: { slug: string; name: string }) => {
     const { data } = await api.post<AgentDefinition>(
       `/api/v1/agents/${agentId}/copy`,
@@ -899,6 +948,26 @@ const identityApi = (path: string) => ({
 
 export const skillsApi = {
   ...identityApi("/api/v1/skills"),
+  createComplete: async (body: {
+    slug: string
+    name: string
+    description?: string
+    version: string
+    file: File
+  }) => {
+    const form = new FormData()
+    form.append("slug", body.slug)
+    form.append("name", body.name)
+    if (body.description) form.append("description", body.description)
+    form.append("version", body.version)
+    form.append("file", body.file)
+    return (
+      await api.post<{ skill: ManagedIdentity; version: SkillVersion }>(
+        "/api/v1/skills/complete",
+        form,
+      )
+    ).data
+  },
   upload: async (skillId: string, version: string, file: File) => {
     const form = new FormData()
     form.append("version", version)
@@ -939,6 +1008,14 @@ export const toolsApi = {
 
 export const mcpServersApi = {
   ...identityApi("/api/v1/mcp-servers"),
+  createComplete: async (body: Record<string, unknown>) =>
+    (
+      await api.post<{
+        server: ManagedIdentity
+        revision: Record<string, unknown>
+        target: { id: string; runtime_profile_id: string; status: string }
+      }>("/api/v1/mcp-servers/complete", body)
+    ).data,
   revisions: async (serverId: string) =>
     (
       await api.get<{ data: Record<string, unknown>[]; count: number }>(
@@ -976,6 +1053,13 @@ export const mcpServersApi = {
 
 export const pluginsApi = {
   ...identityApi("/api/v1/plugins"),
+  createComplete: async (body: Record<string, unknown>) =>
+    (
+      await api.post<{
+        plugin: ManagedIdentity
+        draft: Record<string, unknown>
+      }>("/api/v1/plugins/complete", body)
+    ).data,
   getDraft: async (pluginId: string) =>
     (await api.get(`/api/v1/plugins/${pluginId}/draft`)).data,
   saveDraft: async (pluginId: string, body: Record<string, unknown>) =>
@@ -1139,6 +1223,21 @@ export interface ConversationAgentParticipant {
   agent_id: string
   agent_release_id: string
   resolved_spec_digest: string
+  runtime_agent_release_id: string
+  active: boolean
+}
+
+export interface ConversationConfigurationRevision {
+  id: string
+  conversation_id: string
+  revision: number
+  mode: "chat" | "agent"
+  provider_config_id: string | null
+  model_id: string | null
+  organizer_agent_id: string | null
+  participant_ids: string[]
+  created_by: string | null
+  created_at: string
 }
 
 export interface ConversationSummary {
@@ -1152,6 +1251,8 @@ export interface ConversationSummary {
   model_id: string | null
   project_id: string | null
   current_context_snapshot_id: string | null
+  current_configuration_revision_id: string | null
+  configuration: ConversationConfigurationRevision | null
   agents: ConversationAgentParticipant[]
   updated_at: string
 }
@@ -1163,6 +1264,7 @@ export interface ConversationMessage {
   author_id: string | null
   target_type: "main" | "agent" | "all" | "model" | "system"
   target_agent_id: string | null
+  configuration_revision_id: string | null
   payload: Record<string, unknown>
   status: "queued" | "running" | "completed" | "failed"
   error: Record<string, unknown> | null
@@ -1209,13 +1311,61 @@ export interface WorkflowNodeInstance {
   status: string
   expected_revision: number
   assignee_id: string | null
-  resolved_runtime_id: string
+  resolved_runtime_id: string | null
+}
+
+export interface WorkflowExecutionConfiguration {
+  id: string
+  template_version_id: string
+  revision_id: string
+  revision: number
+  project_id: string | null
+  content_digest: string
+  bindings: Array<{
+    node_key: string
+    runtime_id: string
+    agent_release_id: string | null
+    agent_id: string | null
+    agent_name: string | null
+    release_version: string | null
+    resolved_spec_digest: string | null
+  }>
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkflowExecutionConfigurationDetail {
+  template: {
+    id: string
+    name: string
+    description: string | null
+  }
+  version: {
+    id: string
+    version: string
+    manifest: Record<string, unknown>
+  }
+  nodes: Array<{
+    id: string
+    node_key: string
+    name: string
+    node_type: "human" | "agent" | "code"
+    agent_release_id: string | null
+    agent_role_key: string | null
+    side_effecting: boolean
+    position: number
+  }>
+  execution_configuration: WorkflowExecutionConfiguration | null
 }
 
 export interface WorkflowNodeDetail {
   node: WorkflowNodeInstance
   definition: {
     node_type: "human" | "agent" | "code"
+    node_key: string
+    name: string
+    agent_role_key: string | null
     confirmation_mode: "process" | "result" | "none"
     skippable: boolean
     side_effecting: boolean
@@ -1236,6 +1386,15 @@ export interface WorkflowNodeDetail {
   gates: Array<Record<string, unknown>>
   artifacts: Array<Record<string, unknown>>
   messages: ConversationMessage[]
+  agent: {
+    role_key: string | null
+    agent_id: string
+    agent_name: string | null
+    agent_release_id: string
+    release_version: string
+    runtime_id: string
+    resolved_spec_digest: string
+  } | null
 }
 
 export interface WorkflowEvent {
@@ -1260,8 +1419,10 @@ export interface WorkflowAttachment {
 
 export interface WorkflowInstance {
   id: string
-  project_id: string
+  context_mode: "project" | "standalone"
+  project_id: string | null
   template_version_id: string
+  execution_configuration_revision_id: string | null
   workflow_slug: string
   application: {
     component_key: string
@@ -1274,6 +1435,15 @@ export interface WorkflowInstance {
   status: string
   input: Record<string, unknown>
   runtime_resolution: Record<string, unknown>
+  agent_bindings: Array<{
+    role_key: string
+    runtime_id: string
+    agent_release_id: string
+    agent_id: string | null
+    agent_name: string | null
+    release_version: string | null
+    resolved_spec_digest: string
+  }>
   project_context_snapshot: Record<string, unknown>
   nodes: WorkflowNodeInstance[]
   created_at: string
@@ -1304,6 +1474,7 @@ export interface WorkflowTemplateCatalogItem {
       shell_version: string
     } | null
     enablement: { enabled: boolean; is_default: boolean }
+    execution_configuration: WorkflowExecutionConfiguration | null
   }>
 }
 
@@ -1445,6 +1616,16 @@ export const workspaceApi = {
         headers: { "Idempotency-Key": crypto.randomUUID() },
       })
     ).data,
+  updateConversationConfiguration: async (
+    conversationId: string,
+    body: Record<string, unknown>,
+  ) =>
+    (
+      await api.post<ConversationSummary>(
+        `/api/v1/conversations/${conversationId}/configuration-revisions`,
+        body,
+      )
+    ).data,
   listMessages: async (conversationId: string) =>
     (
       await api.get<{ data: ConversationMessage[]; count: number }>(
@@ -1529,6 +1710,28 @@ export const workspaceApi = {
   ) =>
     (await api.put(`/api/v1/workflow-templates/${templateId}/enablement`, body))
       .data,
+  getWorkflowExecutionConfiguration: async (
+    templateId: string,
+    versionId: string,
+  ) =>
+    (
+      await api.get<WorkflowExecutionConfigurationDetail>(
+        `/api/v1/workflow-templates/${templateId}/versions/${versionId}/execution-configuration`,
+      )
+    ).data,
+  updateWorkflowExecutionConfiguration: async (
+    templateId: string,
+    versionId: string,
+    body: Record<string, unknown>,
+  ) =>
+    (
+      await api.put<{
+        execution_configuration: WorkflowExecutionConfiguration
+      }>(
+        `/api/v1/workflow-templates/${templateId}/versions/${versionId}/execution-configuration`,
+        body,
+      )
+    ).data,
   listSpecStandards: async () =>
     (
       await api.get<{ data: SpecStandard[]; count: number }>(
@@ -1537,6 +1740,20 @@ export const workspaceApi = {
     ).data,
   createSpecStandard: async (body: Record<string, unknown>) =>
     (await api.post<SpecStandard>("/api/v1/spec-standards", body)).data,
+  createSpecStandardComplete: async (body: {
+    scope_type: "namespace" | "platform"
+    slug: string
+    name: string
+    description?: string | null
+    version: string
+    manifest: Record<string, unknown>
+  }) =>
+    (
+      await api.post<{
+        standard: SpecStandard
+        version: SpecStandardVersion
+      }>("/api/v1/spec-standards/complete", body)
+    ).data,
   listSpecStandardVersions: async (standardId: string) =>
     (
       await api.get<{ data: SpecStandardVersion[]; count: number }>(
@@ -1563,6 +1780,24 @@ export const workspaceApi = {
     (
       await api.get<{ data: WorkflowInstance[]; count: number }>(
         `/api/v1/projects/${projectId}/workflow-instances`,
+      )
+    ).data,
+  listVisibleWorkflowInstances: async (templateVersionId?: string) =>
+    (
+      await api.get<{ data: WorkflowInstance[]; count: number }>(
+        "/api/v1/workflow-instances",
+        {
+          params: templateVersionId
+            ? { template_version_id: templateVersionId }
+            : undefined,
+        },
+      )
+    ).data,
+  listWorkflowTemplateInstances: async (templateId: string) =>
+    (
+      await api.get<{ data: WorkflowInstance[]; count: number }>(
+        "/api/v1/workflow-instances",
+        { params: { template_id: templateId } },
       )
     ).data,
   getWorkflowInstance: async (instanceId: string) =>
@@ -1647,6 +1882,12 @@ export const workspaceApi = {
         body,
         { headers: { "Idempotency-Key": crypto.randomUUID() } },
       )
+    ).data,
+  createVisibleWorkflowInstance: async (body: Record<string, unknown>) =>
+    (
+      await api.post<WorkflowInstance>("/api/v1/workflow-instances", body, {
+        headers: { "Idempotency-Key": crypto.randomUUID() },
+      })
     ).data,
   submitWorkflowNode: async (
     instanceId: string,

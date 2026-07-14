@@ -20,6 +20,7 @@ from app.agent_management.models import (
     HarnessProfile,
 )
 from app.agent_management.schemas import (
+    AgentCompleteCreate,
     AgentCopy,
     AgentCreate,
     AgentDraftPublic,
@@ -52,7 +53,7 @@ from app.api.deps import (
     require_namespace_admin,
     require_namespace_runtime_user,
 )
-from app.models import LlmProviderConfig, NamespaceRole
+from app.models import LlmProviderConfig, LlmProviderModel, NamespaceRole
 
 router = APIRouter(tags=["agent-management"])
 
@@ -210,6 +211,58 @@ def create_agent_endpoint(
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
     return _agent_public(agent)
+
+
+@router.post("/agents/complete", status_code=201)
+def create_agent_complete(
+    body: AgentCompleteCreate,
+    session: SessionDep,
+    current_user: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_admin),
+) -> dict[str, Any]:
+    config_errors = validate_config(body.config, is_profile=False)
+    if config_errors:
+        raise HTTPException(
+            422, {"errors": [item.model_dump() for item in config_errors]}
+        )
+    profile = session.get(HarnessProfile, body.harness_profile_id)
+    if profile is None or profile.namespace_id != namespace_id or profile.archived:
+        raise HTTPException(422, "Active Harness profile is required")
+    provider = session.get(LlmProviderConfig, body.provider_config_id)
+    if provider is None or provider.namespace_id != namespace_id or not provider.enabled:
+        raise HTTPException(422, "Enabled provider config is required")
+    model = session.exec(
+        select(LlmProviderModel).where(
+            LlmProviderModel.provider_config_id == provider.id,
+            LlmProviderModel.model_id == body.model_id,
+            LlmProviderModel.is_enabled.is_(True),
+        )
+    ).first()
+    if model is None:
+        raise HTTPException(422, "Enabled model is required")
+    try:
+        agent = create_agent(
+            session,
+            namespace_id,
+            slug=body.slug,
+            name=body.name,
+            description=body.description,
+            user_id=current_user.id,
+        )
+        draft = _get_draft(session, agent)
+        draft.harness_profile_id = profile.id
+        draft.provider_config_id = provider.id
+        draft.model_id = model.model_id
+        draft.system_prompt = body.system_prompt
+        draft.config = body.config
+        session.add(draft)
+        session.commit()
+        session.refresh(agent)
+        session.refresh(draft)
+    except ValueError as exc:
+        session.rollback()
+        raise HTTPException(409, str(exc)) from exc
+    return {"agent": _agent_public(agent), "draft": _draft_public(draft)}
 
 
 @router.post("/agents/{agent_id}/copy", response_model=AgentPublic, status_code=201)

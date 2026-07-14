@@ -3,7 +3,7 @@ import { mockV06Member, v06UserId } from "./utils/v06"
 
 test.use({ storageState: { cookies: [], origins: [] } })
 
-test("roundtable shows recovered SSE messages and full delegation timeline", async ({
+test("roundtable shows recovered SSE messages and expandable delegation records", async ({
   page,
 }) => {
   await mockV06Member(page)
@@ -109,7 +109,8 @@ test("roundtable shows recovered SSE messages and full delegation timeline", asy
   await expect(
     page.getByText("协作者完整结果", { exact: false }).first(),
   ).toBeVisible()
-  await expect(page.getByText("完整委派时间线", { exact: true })).toBeVisible()
+  await expect(page.getByText("完整 Agent 委派记录（1）")).toBeVisible()
+  await page.getByText("完整 Agent 委派记录（1）").click()
   await expect(page.getByText("Delegation delegation-1")).toBeVisible()
   await expect(page.getByText("Agent Task agent-task-1")).toBeVisible()
 })

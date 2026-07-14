@@ -14,6 +14,7 @@ from app.conversation_management.models import (
     Conversation,
     ConversationAgent,
     ConversationAgentRole,
+    ConversationConfigurationRevision,
     ConversationContextSnapshot,
     ConversationEvent,
     ConversationMessage,
@@ -202,6 +203,106 @@ def add_conversation_agent(
     )
     session.add(participant)
     return participant
+
+
+def create_configuration_revision(
+    session: Session,
+    conversation: Conversation,
+    creator_id: uuid.UUID | None,
+    *,
+    provider_config_id: uuid.UUID | None = None,
+    model_id: str | None = None,
+    organizer_agent_id: uuid.UUID | None = None,
+    participant_ids: list[uuid.UUID] | None = None,
+) -> ConversationConfigurationRevision:
+    latest = session.exec(
+        select(func.max(ConversationConfigurationRevision.revision)).where(
+            ConversationConfigurationRevision.conversation_id == conversation.id
+        )
+    ).one()
+    revision = ConversationConfigurationRevision(
+        conversation_id=conversation.id,
+        revision=int(latest or 0) + 1,
+        mode=conversation.mode,
+        provider_config_id=provider_config_id,
+        model_id=model_id,
+        organizer_agent_id=organizer_agent_id,
+        participant_ids=[str(value) for value in (participant_ids or [])],
+        created_by=creator_id,
+    )
+    session.add(revision)
+    session.flush()
+    conversation.current_configuration_revision_id = revision.id
+    conversation.provider_config_id = provider_config_id
+    conversation.model_id = model_id
+    conversation.updated_at = utcnow()
+    session.add(conversation)
+    return revision
+
+
+def ensure_current_configuration(
+    session: Session,
+    conversation: Conversation,
+    creator_id: uuid.UUID | None = None,
+) -> ConversationConfigurationRevision:
+    if conversation.current_configuration_revision_id is not None:
+        current = session.get(
+            ConversationConfigurationRevision,
+            conversation.current_configuration_revision_id,
+        )
+        if current is not None:
+            return current
+    if conversation.mode.value == "chat":
+        if conversation.provider_config_id is None or conversation.model_id is None:
+            raise HTTPException(409, "Conversation model route is incomplete")
+        return create_configuration_revision(
+            session,
+            conversation,
+            creator_id,
+            provider_config_id=conversation.provider_config_id,
+            model_id=conversation.model_id,
+        )
+    participants = list(
+        session.exec(
+            select(ConversationAgent).where(
+                ConversationAgent.conversation_id == conversation.id
+            )
+        ).all()
+    )
+    organizer = next(
+        (item for item in participants if item.role == ConversationAgentRole.MAIN),
+        None,
+    )
+    if organizer is None:
+        raise HTTPException(409, "Agent conversation has no organizer")
+    return create_configuration_revision(
+        session,
+        conversation,
+        creator_id,
+        organizer_agent_id=organizer.id,
+        participant_ids=[item.id for item in participants],
+    )
+
+
+def configuration_public(
+    revision: ConversationConfigurationRevision,
+) -> dict[str, Any]:
+    return {
+        "id": str(revision.id),
+        "conversation_id": str(revision.conversation_id),
+        "revision": revision.revision,
+        "mode": revision.mode.value,
+        "provider_config_id": (
+            str(revision.provider_config_id) if revision.provider_config_id else None
+        ),
+        "model_id": revision.model_id,
+        "organizer_agent_id": (
+            str(revision.organizer_agent_id) if revision.organizer_agent_id else None
+        ),
+        "participant_ids": revision.participant_ids,
+        "created_by": str(revision.created_by) if revision.created_by else None,
+        "created_at": revision.created_at.isoformat(),
+    }
 
 
 def create_context_snapshot(
@@ -398,6 +499,11 @@ def append_message_event(
             "target_agent_id": (
                 str(message.target_agent_id) if message.target_agent_id else None
             ),
+            "configuration_revision_id": (
+                str(message.configuration_revision_id)
+                if message.configuration_revision_id
+                else None
+            ),
             "task_id": str(message.task_id) if message.task_id else None,
             "error": message.error,
         },
@@ -410,6 +516,15 @@ def target_participants(
     target_type: MessageTargetType,
     target_agent_id: uuid.UUID | None,
 ) -> list[ConversationAgent]:
+    current = (
+        session.get(
+            ConversationConfigurationRevision,
+            conversation.current_configuration_revision_id,
+        )
+        if conversation.current_configuration_revision_id
+        else None
+    )
+    active_ids = set(current.participant_ids) if current is not None else None
     participants = list(
         session.exec(
             select(ConversationAgent).where(
@@ -417,6 +532,8 @@ def target_participants(
             )
         ).all()
     )
+    if active_ids is not None:
+        participants = [item for item in participants if str(item.id) in active_ids]
     if target_type == MessageTargetType.MAIN:
         selected = [
             item for item in participants if item.role == ConversationAgentRole.MAIN
@@ -473,6 +590,35 @@ def create_agent_task(
             raise HTTPException(409, "Target node Runtime is unavailable")
         node_id = node.id
     resolved_spec = release.resolved_spec
+    configuration = (
+        session.get(
+            ConversationConfigurationRevision,
+            user_message.configuration_revision_id,
+        )
+        if user_message.configuration_revision_id
+        else None
+    )
+    organizer_id = (
+        configuration.organizer_agent_id
+        if configuration is not None
+        else next(
+            (
+                item.id
+                for item in session.exec(
+                    select(ConversationAgent).where(
+                        ConversationAgent.conversation_id == conversation.id,
+                        ConversationAgent.role == ConversationAgentRole.MAIN,
+                    )
+                ).all()
+            ),
+            None,
+        )
+    )
+    roundtable_role = (
+        ConversationAgentRole.MAIN
+        if participant.id == organizer_id
+        else ConversationAgentRole.COLLABORATOR
+    )
     effective_prompt = prompt
     if user_message.context_snapshot_id is not None:
         snapshot = session.get(
@@ -495,13 +641,20 @@ def create_agent_task(
         )
     system_prompt = resolved_spec["system_prompt"]
     roundtable_participants: list[dict[str, str]] = []
-    if participant.role == ConversationAgentRole.MAIN:
+    if roundtable_role == ConversationAgentRole.MAIN:
+        participant_ids = (
+            set(configuration.participant_ids) if configuration is not None else None
+        )
         collaborators = session.exec(
             select(ConversationAgent).where(
                 ConversationAgent.conversation_id == conversation.id,
                 ConversationAgent.role == ConversationAgentRole.COLLABORATOR,
             )
         ).all()
+        if participant_ids is not None:
+            collaborators = [
+                item for item in collaborators if str(item.id) in participant_ids
+            ]
         roundtable_participants = [
             {
                 "conversation_agent_id": str(item.id),
@@ -582,7 +735,10 @@ def create_agent_task(
             ),
             "working_directory": runtime.config.get("cwd"),
             "timeout_seconds": int(runtime.config.get("timeout_seconds", 3600)),
-            "roundtable_role": participant.role.value,
+            "conversation_configuration_revision_id": (
+                str(configuration.id) if configuration is not None else None
+            ),
+            "roundtable_role": roundtable_role.value,
             "roundtable_participants": roundtable_participants,
         },
         agent_release_id=release.id,
@@ -672,6 +828,7 @@ def create_runtime_delegation(
         target_type=MessageTargetType.AGENT,
         target_agent_id=target.id,
         context_snapshot_id=source_message.context_snapshot_id,
+        configuration_revision_id=source_message.configuration_revision_id,
         payload={
             "content": content,
             "delegated": True,
@@ -769,6 +926,7 @@ def reconcile_agent_messages(session: Session, conversation: Conversation) -> bo
                         author_id=participant.id if participant else None,
                         target_type=MessageTargetType.SYSTEM,
                         context_snapshot_id=message.context_snapshot_id,
+                        configuration_revision_id=message.configuration_revision_id,
                         payload=task.final_result or {},
                         status=MessageStatus.COMPLETED,
                         task_id=task.id,
@@ -847,6 +1005,7 @@ def reconcile_agent_messages(session: Session, conversation: Conversation) -> bo
                         author_id=delegation.target_agent_id,
                         target_type=MessageTargetType.MAIN,
                         context_snapshot_id=delegated_message.context_snapshot_id,
+                        configuration_revision_id=delegated_message.configuration_revision_id,
                         payload=task.final_result or {},
                         status=MessageStatus.COMPLETED,
                         task_id=task.id,
@@ -908,6 +1067,41 @@ def conversation_public(session: Session, conversation: Conversation) -> dict[st
             ConversationAgent.conversation_id == conversation.id
         )
     ).all()
+    current = (
+        session.get(
+            ConversationConfigurationRevision,
+            conversation.current_configuration_revision_id,
+        )
+        if conversation.current_configuration_revision_id
+        else None
+    )
+    active_ids = set(current.participant_ids) if current is not None else {
+        str(item.id) for item in agents
+    }
+    organizer_id = (
+        str(current.organizer_agent_id)
+        if current is not None and current.organizer_agent_id
+        else next(
+            (
+                str(item.id)
+                for item in agents
+                if item.role == ConversationAgentRole.MAIN
+            ),
+            None,
+        )
+    )
+    public_agents = [
+        {
+            **item.model_dump(mode="json"),
+            "active": str(item.id) in active_ids,
+            "role": (
+                ConversationAgentRole.MAIN
+                if str(item.id) == organizer_id
+                else ConversationAgentRole.COLLABORATOR
+            ),
+        }
+        for item in agents
+    ]
     return {
         "id": conversation.id,
         "namespace_id": conversation.namespace_id,
@@ -923,7 +1117,9 @@ def conversation_public(session: Session, conversation: Conversation) -> dict[st
         "model_id": conversation.model_id,
         "idempotency_key": conversation.idempotency_key,
         "current_context_snapshot_id": conversation.current_context_snapshot_id,
-        "agents": agents,
+        "current_configuration_revision_id": conversation.current_configuration_revision_id,
+        "configuration": configuration_public(current) if current else None,
+        "agents": public_agents,
         "created_at": conversation.created_at,
         "updated_at": conversation.updated_at,
         "archived_at": conversation.archived_at,

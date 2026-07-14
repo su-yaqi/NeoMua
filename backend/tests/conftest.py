@@ -42,6 +42,7 @@ from app.conversation_management.models import (
     Conversation,
     ConversationAgent,
     ConversationAttachment,
+    ConversationConfigurationRevision,
     ConversationContextSnapshot,
     ConversationEvent,
     ConversationMessage,
@@ -76,13 +77,17 @@ from app.runtime.models import (
     RuntimeSecret,
 )
 from app.workflow_management.models import (
+    NamespaceWorkflowConfiguration,
     NamespaceWorkflowEnablement,
     WorkflowArtifact,
     WorkflowAttachment,
     WorkflowConfirmation,
     WorkflowEvent,
+    WorkflowExecutionConfigurationRevision,
+    WorkflowExecutionNodeBinding,
     WorkflowGateResult,
     WorkflowInstance,
+    WorkflowInstanceAgentBinding,
     WorkflowNodeExecution,
     WorkflowNodeInstance,
     WorkflowNodeRevision,
@@ -114,14 +119,27 @@ def isolate_runtime_data(db: Session) -> Generator[None, None, None]:
         db.execute(delete(WorkflowNodeRevision))
         db.execute(delete(WorkflowNodeInstance))
         db.execute(delete(WorkflowEvent))
+        db.execute(delete(WorkflowInstanceAgentBinding))
         db.execute(delete(WorkflowInstance))
+        db.execute(delete(WorkflowExecutionNodeBinding))
+        db.execute(
+            update(NamespaceWorkflowConfiguration).values(current_revision_id=None)
+        )
+        db.execute(delete(WorkflowExecutionConfigurationRevision))
+        db.execute(delete(NamespaceWorkflowConfiguration))
         db.execute(delete(NamespaceWorkflowEnablement))
         db.execute(delete(AgentDelegation))
         db.execute(delete(ConversationAttachment))
         db.execute(delete(ConversationEvent))
         db.execute(delete(ConversationMessage))
-        db.execute(update(Conversation).values(current_context_snapshot_id=None))
+        db.execute(
+            update(Conversation).values(
+                current_context_snapshot_id=None,
+                current_configuration_revision_id=None,
+            )
+        )
         db.execute(delete(ConversationContextSnapshot))
+        db.execute(delete(ConversationConfigurationRevision))
         db.execute(delete(ConversationAgent))
         db.execute(delete(Conversation))
         db.execute(delete(ProjectSpecBinding))

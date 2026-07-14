@@ -8,7 +8,7 @@ class WorkflowRunContext:
     workflow_instance_id: str
     node_key: str
     runtime_id: str
-    project_id: str
+    project_id: str | None
     input: dict[str, Any]
     previous_output: dict[str, Any] | None
     change_summary: dict[str, Any]
@@ -39,6 +39,11 @@ EDGE_CONDITIONS: dict[str, EdgeCondition] = {
 FRONTEND_COMPONENTS: set[str] = {
     "workflow.project_delivery",
     "workflow.project_delivery.v1_0_3",
+    "workflow.project_delivery.v1_0_4",
+    "workflow.project_delivery.v1_0_5",
+    "workflow.project_delivery.v1_0_6",
+    "workflow.web_platform_development.v1_0_0",
+    "workflow.web_platform_development.v1_0_1",
 }
 
 

@@ -9,6 +9,8 @@
 | PATCH | /llm/provider-configs/{config_id} | 更新接入配置 |
 | POST | /llm/provider-configs/{config_id}/validate | 连接校验 |
 | POST | /llm/provider-configs/{config_id}/sync-models | 同步模型列表 |
+| POST | /llm/provider-configs/draft/validate | 使用未保存配置校验连接 |
+| POST | /llm/provider-configs/draft/sync-models | 使用未保存配置同步模型预览 |
 
 ## 接口详情
 
@@ -68,6 +70,12 @@
 - **Method**：POST
 - **Path**：`/api/v1/llm/provider-configs/{config_id}/sync-models`
 - **描述**：若供应商支持模型发现，则请求其模型目录并和前端提交的手工模型集合合并；不支持时返回 `unsupported` 状态并仅保留手工模型。
+- **权限**：空间管理员或超级管理员
+
+### 保存前校验与同步
+- **Method**：POST
+- **Path**：`/api/v1/llm/provider-configs/draft/validate`、`/api/v1/llm/provider-configs/draft/sync-models`
+- **描述**：直接使用新建弹窗中的供应商、地址、明文密钥、扩展配置和手工模型执行探活或模型发现；结果只作为当前草稿预览，不创建配置、不落库明文密钥。正式保存可携带预检/同步标志，由服务端重新执行相应远程操作后在同一事务中持久化，避免信任过期的前端结果。
 - **权限**：空间管理员或超级管理员
 
 ## 权限与上下文

@@ -18,8 +18,10 @@ from app.conversation_management.models import (
     AgentDelegation,
     AttachmentScanStatus,
     Conversation,
+    ConversationAgent,
     ConversationAgentRole,
     ConversationAttachment,
+    ConversationConfigurationRevision,
     ConversationContextSnapshot,
     ConversationEvent,
     ConversationMessage,
@@ -32,6 +34,7 @@ from app.conversation_management.models import (
 )
 from app.conversation_management.schemas import (
     ContextRefresh,
+    ConversationConfigurationUpdate,
     ConversationCreate,
     ConversationDerive,
     ConversationMessageCreate,
@@ -42,9 +45,12 @@ from app.conversation_management.service import (
     append_conversation_event,
     append_message_event,
     canonical_digest,
+    configuration_public,
     conversation_public,
     create_agent_task,
+    create_configuration_revision,
     create_context_snapshot,
+    ensure_current_configuration,
     next_message_sequence,
     reconcile_agent_messages,
     require_conversation_access,
@@ -361,6 +367,8 @@ def create_conversation(
                     else ConversationAgentRole.COLLABORATOR,
                     current_user.id,
                 )
+        session.flush()
+        ensure_current_configuration(session, conversation, current_user.id)
         if project is not None:
             create_context_snapshot(session, conversation, current_user.id)
         session.commit()
@@ -379,6 +387,165 @@ def create_conversation(
         if concurrent and concurrent.creation_fingerprint == fingerprint:
             return conversation_public(session, concurrent)
         raise HTTPException(409, "Conversation creation conflict") from exc
+    session.refresh(conversation)
+    return conversation_public(session, conversation)
+
+
+@router.get("/conversations/{conversation_id}/configuration-revisions")
+def list_configuration_revisions(
+    conversation_id: uuid.UUID,
+    session: SessionDep,
+    current_user: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_member),
+) -> dict[str, Any]:
+    conversation = require_conversation_access(
+        session, conversation_id, namespace_id, current_user
+    )
+    rows = session.exec(
+        select(ConversationConfigurationRevision)
+        .where(
+            ConversationConfigurationRevision.conversation_id == conversation.id
+        )
+        .order_by(col(ConversationConfigurationRevision.revision))
+    ).all()
+    return {
+        "data": [configuration_public(row) for row in rows],
+        "count": len(rows),
+        "current_configuration_revision_id": conversation.current_configuration_revision_id,
+    }
+
+
+@router.post("/conversations/{conversation_id}/configuration-revisions", status_code=201)
+def update_configuration(
+    conversation_id: uuid.UUID,
+    body: ConversationConfigurationUpdate,
+    session: SessionDep,
+    current_user: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_member),
+) -> dict[str, Any]:
+    conversation = require_conversation_access(
+        session, conversation_id, namespace_id, current_user, participate=True
+    )
+    conversation = session.exec(
+        select(Conversation).where(Conversation.id == conversation.id).with_for_update()
+    ).one()
+    active = session.exec(
+        select(ConversationMessage).where(
+            ConversationMessage.conversation_id == conversation.id,
+            col(ConversationMessage.status).in_(
+                [MessageStatus.QUEUED, MessageStatus.RUNNING]
+            ),
+        )
+    ).first()
+    if active is not None:
+        raise HTTPException(
+            409,
+            {"code": "conversation_turn_in_progress", "message_id": str(active.id)},
+        )
+    current = ensure_current_configuration(session, conversation, current_user.id)
+    if current.revision != body.expected_revision:
+        raise HTTPException(
+            409,
+            {
+                "code": "configuration_revision_conflict",
+                "current": configuration_public(current),
+            },
+        )
+    if conversation.mode == ConversationMode.CHAT:
+        if (
+            body.provider_config_id is None
+            or body.model_id is None
+            or body.participant_runtime_agent_release_ids
+            or body.organizer_runtime_agent_release_id is not None
+        ):
+            raise HTTPException(422, "Chat configuration requires only a model")
+        validate_chat_route(
+            session,
+            conversation.namespace_id,
+            conversation.runtime_id,
+            body.provider_config_id,
+            body.model_id,
+        )
+        revision = create_configuration_revision(
+            session,
+            conversation,
+            current_user.id,
+            provider_config_id=body.provider_config_id,
+            model_id=body.model_id,
+        )
+    else:
+        binding_ids = body.participant_runtime_agent_release_ids
+        organizer_binding_id = body.organizer_runtime_agent_release_id
+        if (
+            body.provider_config_id is not None
+            or body.model_id is not None
+            or not binding_ids
+            or organizer_binding_id is None
+            or organizer_binding_id not in binding_ids
+            or len(binding_ids) != len(set(binding_ids))
+        ):
+            raise HTTPException(
+                422,
+                "Agent configuration requires unique participants and one organizer",
+            )
+        existing = session.exec(
+            select(ConversationAgent).where(
+                ConversationAgent.conversation_id == conversation.id
+            )
+        ).all()
+        by_binding = {item.runtime_agent_release_id: item for item in existing}
+        selected: list[ConversationAgent] = []
+        for binding_id in binding_ids:
+            binding, release = validate_agent_binding(
+                session, conversation.namespace_id, conversation.runtime_id, binding_id
+            )
+            participant = by_binding.get(binding_id)
+            if participant is None:
+                participant = add_conversation_agent(
+                    session,
+                    conversation,
+                    binding,
+                    release,
+                    ConversationAgentRole.COLLABORATOR,
+                    current_user.id,
+                )
+                session.flush()
+                by_binding[binding_id] = participant
+            elif (
+                participant.agent_release_id != release.id
+                or participant.resolved_spec_digest != release.resolved_spec_digest
+            ):
+                raise HTTPException(
+                    409,
+                    "A historical Agent participant now points to a different Release; create a new conversation",
+                )
+            selected.append(participant)
+        organizer = by_binding[organizer_binding_id]
+        old_main = next(
+            (item for item in existing if item.role == ConversationAgentRole.MAIN),
+            None,
+        )
+        if old_main is not None and old_main.id != organizer.id:
+            old_main.role = ConversationAgentRole.COLLABORATOR
+            session.add(old_main)
+            session.flush()
+        organizer.role = ConversationAgentRole.MAIN
+        session.add(organizer)
+        session.flush()
+        revision = create_configuration_revision(
+            session,
+            conversation,
+            current_user.id,
+            organizer_agent_id=organizer.id,
+            participant_ids=[item.id for item in selected],
+        )
+    append_conversation_event(
+        session,
+        conversation.id,
+        "configuration_changed",
+        configuration_public(revision),
+    )
+    session.commit()
     session.refresh(conversation)
     return conversation_public(session, conversation)
 
@@ -548,18 +715,32 @@ async def _execute_chat_message(
     conversation: Conversation,
     assistant: ConversationMessage,
 ) -> None:
-    if conversation.provider_config_id is None or conversation.model_id is None:
-        raise HTTPException(409, "Conversation model route is incomplete")
+    configuration = (
+        session.get(
+            ConversationConfigurationRevision,
+            assistant.configuration_revision_id,
+        )
+        if assistant.configuration_revision_id
+        else None
+    )
+    if (
+        configuration is None
+        or configuration.conversation_id != conversation.id
+        or configuration.mode != ConversationMode.CHAT
+        or configuration.provider_config_id is None
+        or configuration.model_id is None
+    ):
+        raise HTTPException(409, "Message model configuration is incomplete")
     validate_chat_route(
         session,
         conversation.namespace_id,
         conversation.runtime_id,
-        conversation.provider_config_id,
-        conversation.model_id,
+        configuration.provider_config_id,
+        configuration.model_id,
     )
     messages, system = _chat_history(session, conversation)
     body: dict[str, Any] = {
-        "model": conversation.model_id,
+        "model": configuration.model_id,
         "max_tokens": 4096,
         "messages": messages,
     }
@@ -569,7 +750,7 @@ async def _execute_chat_message(
         conversation.namespace_id,
         conversation.runtime_id,
         assistant.id,
-        conversation.model_id,
+        configuration.model_id,
     )
     try:
         async with httpx.AsyncClient(timeout=120) as client:
@@ -593,6 +774,8 @@ async def _execute_chat_message(
             raise ValueError("Model response contains no text content")
         assistant.payload = {
             "content": content,
+            "provider_config_id": str(configuration.provider_config_id),
+            "model_id": configuration.model_id,
             "model_response": {
                 "id": payload.get("id"),
                 "model": payload.get("model"),
@@ -661,6 +844,9 @@ async def create_message(
             409,
             {"code": "conversation_turn_in_progress", "message_id": str(active.id)},
         )
+    configuration = ensure_current_configuration(
+        session, locked, current_user.id
+    )
     if conversation.mode == ConversationMode.CHAT:
         if body.target_type != MessageTargetType.MODEL:
             raise HTTPException(422, "Chat messages must target the fixed model")
@@ -681,6 +867,7 @@ async def create_message(
         target_type=body.target_type,
         target_agent_id=body.target_agent_id,
         context_snapshot_id=conversation.current_context_snapshot_id,
+        configuration_revision_id=configuration.id,
         payload={
             "content": body.content,
             "attachment_ids": [str(value.id) for value in attachments],
@@ -703,6 +890,7 @@ async def create_message(
             author_type=MessageAuthorType.MODEL,
             target_type=MessageTargetType.SYSTEM,
             context_snapshot_id=conversation.current_context_snapshot_id,
+            configuration_revision_id=configuration.id,
             payload={},
             status=MessageStatus.RUNNING,
             reply_to_id=user_message.id,
@@ -943,6 +1131,7 @@ def derive_conversation(
     session.add(derived)
     try:
         session.flush()
+        ensure_current_configuration(session, derived, current_user.id)
         if source.project_id:
             create_context_snapshot(session, derived, current_user.id)
         session.commit()
