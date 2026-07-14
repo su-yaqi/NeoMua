@@ -1,5 +1,6 @@
 import { createFileRoute, Outlet, useRouterState } from "@tanstack/react-router"
 import { mcpServersApi } from "@/api/tenantApi"
+import { CreateMcpCompleteDialog } from "@/components/Agents/CompleteCapabilityDialogs"
 import IdentityManager from "@/components/Agents/IdentityManager"
 import useAuth from "@/hooks/useAuth"
 
@@ -23,6 +24,9 @@ function Page() {
       queryKey="mcp-servers"
       api={mcpServersApi}
       canManage={Boolean(user?.is_superuser || role === "admin")}
+      createLabel="新建 MCP Server"
+      identifierLabel="MCP 标识"
+      createAction={<CreateMcpCompleteDialog />}
       onSelect={(item) =>
         window.location.assign(`/system/mcp-servers/${item.id}`)
       }

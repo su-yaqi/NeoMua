@@ -225,3 +225,14 @@ RuntimeProfile N ---- N AgentRelease (via RuntimeAgentRelease)
 `conversation.current_context_snapshot_id` 与 `workflow_node_instance.current_revision_id` 使用具名 `use_alter` 外键，既保留当前指针，也让空库迁移可确定排序。删除历史模板、版本、Release 或已引用标准均由 `RESTRICT` 阻止。
 
 `conversation_event` 与 `workflow_event` 均以聚合内单调 `sequence` 作为 SSE 恢复游标。`conversation_attachment` 与 `workflow_attachment` 只接受严格扫描后的 UTF-8 TXT/Markdown/JSON，数据库保存不可变摘要和受控存储引用，公开 API 不返回 `storage_ref`。
+
+## v0.7 会话与 Workflow 配置修订
+
+| 聚合 | 新增/调整 | 关键约束 |
+|------|-----------|----------|
+| 会话配置 | `conversation_configuration_revision`；`conversation.current_configuration_revision_id`；`conversation_message.configuration_revision_id`；`conversation_agent` 增加 active/配置修订生命周期字段 | 项目与 Runtime 在会话创建后不可修改；Chat 修订模型，Agent 修订参与者和唯一组织 Agent；历史消息固定其实际使用的修订 |
+| Workflow 上下文 | `workflow_instance.context_mode`、可空 `project_id`、`project_context_snapshot` | 模板 `project_mode` 决定项目必选、可选或禁用；独立实例不伪造项目，项目实例冻结创建时项目配置 |
+| Workflow Agent | `workflow_node_definition.agent_role_key`、`workflow_instance_agent_binding` | Agent 节点声明逻辑角色；实例绑定精确 Runtime、Agent Release 与 Resolved Spec digest |
+| Workflow 执行配置 | `namespace_workflow_configuration`、`workflow_execution_configuration_revision`、`workflow_execution_node_binding`；`workflow_instance.execution_configuration_revision_id` | 每个 namespace/模板版本只有一个当前配置指针；保存使用 expected revision 并创建不可变新修订；每个非人工节点必须明确 Runtime，Agent 节点还必须明确 Release；实例创建时冻结当前修订 |
+
+迁移链在 v0.7 依次加入会话配置修订、独立 Workflow 上下文、Agent 角色绑定和模板执行配置，当前 Alembic head 为 `c4d8a2f7e106`。

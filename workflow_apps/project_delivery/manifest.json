@@ -2,9 +2,10 @@
   "slug": "project-delivery",
   "name": "项目交付协作",
   "description": "通过人工澄清、确定性整理和结果确认完成一项项目交付。",
-  "version": "1.0.3",
-  "sdk_version": "0.6.0",
+  "version": "1.0.6",
+  "sdk_version": "0.7.0",
   "scope_type": "platform",
+  "project_mode": "required",
   "nodes": [
     {
       "key": "clarify",
@@ -76,10 +77,10 @@
   "entry_nodes": ["clarify"],
   "exit_nodes": ["prepare"],
   "application": {
-    "component_key": "workflow.project_delivery.v1_0_3",
+    "component_key": "workflow.project_delivery.v1_0_6",
     "route_slug": "project-delivery",
-    "build_digest": "3ed37a82a37d6430bb20fe96f4fb794c6cb0725ef3ec2c197729c70d22fcb72c",
-    "shell_version": "0.6.0"
+    "build_digest": "ee3fd0f922292fffca96e4fcfcf562d7caa37a5d1db7ac010ca9442070c19daf",
+    "shell_version": "0.7.0"
   },
   "input_schema": {
     "type": "object",

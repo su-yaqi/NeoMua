@@ -23,16 +23,24 @@ class EnablementUpdate(StrictBody):
 
 
 class WorkflowPreflight(StrictBody):
-    project_id: uuid.UUID
     template_version_id: uuid.UUID
-    runtime_id: uuid.UUID | None = None
+
+
+class WorkflowExecutionNodeBindingInput(StrictBody):
+    runtime_id: uuid.UUID
+    agent_release_id: uuid.UUID | None = None
+
+
+class WorkflowExecutionConfigurationUpdate(StrictBody):
+    expected_revision: int = Field(ge=0)
+    project_id: uuid.UUID | None = None
+    node_bindings: dict[str, WorkflowExecutionNodeBindingInput]
 
 
 class WorkflowInstanceCreate(StrictBody):
     title: str = Field(min_length=1, max_length=255)
     template_version_id: uuid.UUID
     input: dict[str, Any]
-    runtime_id: uuid.UUID | None = None
 
 
 class NodeMutation(StrictBody):

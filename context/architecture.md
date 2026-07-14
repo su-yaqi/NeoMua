@@ -44,8 +44,8 @@ backend routes --> deps / crud --> models --> db
 - `runtime_management` 的控制面仍位于 FastAPI；`runtime-worker` 独占平台 Claude SDK/CLI 生命周期并领取持久化 `runtime_job`；`model-gateway` 提供 Anthropic Messages API 并做供应商转换。
 - `agent_management` 拥有 Agent/Harness 草稿、Skill/Tool/MCP/Plugin、canonical Resolver/Claude Adapter、Release/Activation 和 Tool Approval；运行时只能消费签名且已激活的 ResolvedAgentSpec，不读取草稿。
 - `project_management` 拥有项目、成员、多仓库、Spec 位置和不可变标准版本绑定；仓库可用性必须来自目标 Runtime 的显式工作区证明。
-- `conversation_management` 固定会话创建时的 Runtime、模型或 Agent Release。项目上下文按 commit、Spec 版本和摘要追加快照，历史消息不被刷新改写；消息和委派事件通过数据库游标及可恢复 SSE 交付。
-- `workflow_management` 从仓库内 `workflow_apps/<slug>` 校验并注册不可变 Package；数据库持久化有限 DAG 的实例、节点修订、执行轮次、Gate、确认、附件、产物和事件。
+- `conversation_management` 固定会话创建时的项目与 Runtime；模型或 Agent 参与者/组织 Agent 通过追加式配置修订调整，仅影响后续消息。项目上下文按 commit、Spec 版本和摘要追加快照，历史消息与其配置修订不被改写；消息和委派事件通过数据库游标及可恢复 SSE 交付。
+- `workflow_management` 从仓库内 `workflow_apps/<slug>` 校验并注册不可变 Package；节点定义与执行逻辑属于代码包，项目及节点 Runtime/Agent 属于模板执行配置。数据库持久化配置修订、有限 DAG 实例、节点修订、执行轮次、Gate、确认、附件、产物和事件。
 - 节点守护进程只建立出站 WSS，使用短期握手签名、20 秒心跳、60 秒离线阈值和数据库连接代次；离线不删除配对。
 - 节点直连仅接受经节点实测通过的 Anthropic Messages API；非兼容供应商必须经 Model Gateway。
 
@@ -60,9 +60,10 @@ backend routes --> deps / crud --> models --> db
 - 单体服务 + Compose 编排：当前规模下优先简化开发、测试和部署链路。
 - 能力不可变与目标显式性：Skill/Plugin Version、MCP Revision、Agent Release 均按精确版本冻结；激活前按具体 Runtime target 校验，不做模型、Harness、Tool 或权限降级。
 - MCP secret 分域：平台 target 使用 AES-GCM 密文；节点 target 只保存 `secret_ref`，本地 Keychain 指纹通过心跳上报，变化或移除使 target `stale`。
-- Workflow 解析顺序固定为“节点 Runtime > 任务 Runtime > 项目默认 Runtime”；缺失能力、仓库证明、Validator 或外部状态时停止，不更换目标或自动重试。
+- Workflow 新实例必须引用模板当前完整的不可变执行配置修订；每个可执行节点使用该修订明确指定的 Runtime，Agent 节点同时固定精确 Agent Release。缺失配置、能力、仓库证明、Validator 或外部状态时停止，不从实例参数或项目默认值猜测目标，也不自动重试。
 - 仓库探测、Workflow Validator 和 Handler 统一使用 `runtime_job`。平台 Worker 或节点按租约领取并回写结果，FastAPI 只做入队、对账和状态推进，不以进程内后台任务替代持久执行。
 - Workflow 前端只按任务固定的 `workflow_application.component_key` 从编译时注册表加载。未知 key 明确阻断；数据库不保存模块 URL，也不加载远程 JavaScript 或通用降级页面。
+- 用户侧 Workflow 采用统一应用外壳：`/workflows` 是卡片目录，`/apps/:workflowSlug` 提供应用切换和实例列表；新建页与实例详情由固定版本组件独立实现，不以通用表单替代不可用组件。
 - 有副作用的节点必须返回完成证明。状态不确定时进入 `needs_manual_resolution`，仅 namespace Admin/Developer 提交审计证据且证明未执行或已补偿后才允许重试。
 
 ## 部署拓扑

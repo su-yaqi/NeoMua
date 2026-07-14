@@ -61,7 +61,7 @@ export default function AgentList({ canManage }: { canManage: boolean }) {
             <TableHeader>
               <TableRow>
                 <TableHead>名称</TableHead>
-                <TableHead>Slug</TableHead>
+                <TableHead>Agent 标识</TableHead>
                 <TableHead>Harness</TableHead>
                 <TableHead>模型</TableHead>
                 <TableHead>草稿修订</TableHead>

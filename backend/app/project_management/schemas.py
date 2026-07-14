@@ -13,12 +13,22 @@ class StrictBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class ProjectInitialRepositoryCreate(StrictBody):
+    remote_url: str = Field(min_length=1, max_length=2048)
+    purpose: str = Field(min_length=1)
+    default_branch: str | None = Field(default=None, max_length=255)
+    credential_ref: str | None = Field(default=None, max_length=512)
+
+
 class ProjectCreate(StrictBody):
     slug: str = Field(min_length=1, max_length=128, pattern=r"^[a-z0-9][a-z0-9-]*$")
     name: str = Field(min_length=1, max_length=255)
     description: str | None = None
     default_runtime_id: uuid.UUID | None = None
-    member_ids: list[uuid.UUID] = []
+    member_ids: list[uuid.UUID] = Field(default_factory=list)
+    initial_repositories: list[ProjectInitialRepositoryCreate] = Field(
+        default_factory=list, max_length=10
+    )
 
 
 class ProjectUpdate(StrictBody):
@@ -78,6 +88,12 @@ class SpecStandardVersionCreate(StrictBody):
     version: str = Field(min_length=1, max_length=64)
     manifest: dict[str, Any]
     content_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    storage_ref: str | None = Field(default=None, max_length=1024)
+
+
+class SpecStandardCompleteCreate(SpecStandardCreate):
+    version: str = Field(min_length=1, max_length=64)
+    manifest: dict[str, Any]
     storage_ref: str | None = Field(default=None, max_length=1024)
 
 

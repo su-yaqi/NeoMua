@@ -1,5 +1,6 @@
 import { createFileRoute, Outlet, useRouterState } from "@tanstack/react-router"
 import { pluginsApi } from "@/api/tenantApi"
+import { CreatePluginCompleteDialog } from "@/components/Agents/CompleteCapabilityDialogs"
 import IdentityManager from "@/components/Agents/IdentityManager"
 import useAuth from "@/hooks/useAuth"
 
@@ -23,6 +24,9 @@ function Page() {
       queryKey="plugins"
       api={pluginsApi}
       canManage={Boolean(user?.is_superuser || role === "admin")}
+      createLabel="新建 Plugin"
+      identifierLabel="Plugin 标识"
+      createAction={<CreatePluginCompleteDialog />}
       onSelect={(item) => window.location.assign(`/system/plugins/${item.id}`)}
     />
   )

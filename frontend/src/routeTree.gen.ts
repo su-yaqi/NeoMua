@@ -16,6 +16,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as LayoutRouteImport } from './routes/_layout'
 import { Route as LayoutIndexRouteImport } from './routes/_layout/index'
 import { Route as LayoutWorkspaceRouteImport } from './routes/_layout/workspace'
+import { Route as LayoutWorkflowsRouteImport } from './routes/_layout/workflows'
 import { Route as LayoutSettingsRouteImport } from './routes/_layout/settings'
 import { Route as LayoutProjectsRouteImport } from './routes/_layout/projects'
 import { Route as LayoutItemsRouteImport } from './routes/_layout/items'
@@ -40,12 +41,14 @@ import { Route as LayoutSystemPluginsPluginIdRouteImport } from './routes/_layou
 import { Route as LayoutSystemMcpServersMcpServerIdRouteImport } from './routes/_layout/system.mcp-servers.$mcpServerId'
 import { Route as LayoutSystemAgentsAgentIdRouteImport } from './routes/_layout/system.agents.$agentId'
 import { Route as LayoutSystemAgentActivationsActivationIdRouteImport } from './routes/_layout/system.agent-activations.$activationId'
+import { Route as LayoutAppsWorkflowSlugNewRouteImport } from './routes/_layout/apps_.$workflowSlug.new'
 import { Route as LayoutSystemRuntimesTasksTaskIdRouteImport } from './routes/_layout/system.runtimes_.tasks.$taskId'
 import { Route as LayoutSystemRuntimesReleasesReleaseIdRouteImport } from './routes/_layout/system.runtimes_.releases.$releaseId'
 import { Route as LayoutSystemRuntimesNodesNodeIdRouteImport } from './routes/_layout/system.runtimes_.nodes.$nodeId'
 import { Route as LayoutSystemNamespacesNamespaceIdMembersRouteImport } from './routes/_layout/system.namespaces.$namespaceId.members'
 import { Route as LayoutAppsWorkflowSlugTasksInstanceIdRouteImport } from './routes/_layout/apps_.$workflowSlug.tasks.$instanceId'
 import { Route as LayoutSystemAgentsAgentIdReleasesReleaseIdRouteImport } from './routes/_layout/system.agents.$agentId.releases.$releaseId'
+import { Route as LayoutSystemWorkflowsTemplateIdVersionsVersionIdConfigurationRouteImport } from './routes/_layout/system.workflows_.$templateId.versions.$versionId.configuration'
 
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
@@ -79,6 +82,11 @@ const LayoutIndexRoute = LayoutIndexRouteImport.update({
 const LayoutWorkspaceRoute = LayoutWorkspaceRouteImport.update({
   id: '/workspace',
   path: '/workspace',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutWorkflowsRoute = LayoutWorkflowsRouteImport.update({
+  id: '/workflows',
+  path: '/workflows',
   getParentRoute: () => LayoutRoute,
 } as any)
 const LayoutSettingsRoute = LayoutSettingsRouteImport.update({
@@ -210,6 +218,12 @@ const LayoutSystemAgentActivationsActivationIdRoute =
     path: '/system/agent-activations/$activationId',
     getParentRoute: () => LayoutRoute,
   } as any)
+const LayoutAppsWorkflowSlugNewRoute =
+  LayoutAppsWorkflowSlugNewRouteImport.update({
+    id: '/apps_/$workflowSlug/new',
+    path: '/apps/$workflowSlug/new',
+    getParentRoute: () => LayoutRoute,
+  } as any)
 const LayoutSystemRuntimesTasksTaskIdRoute =
   LayoutSystemRuntimesTasksTaskIdRouteImport.update({
     id: '/system/runtimes_/tasks/$taskId',
@@ -246,6 +260,14 @@ const LayoutSystemAgentsAgentIdReleasesReleaseIdRoute =
     path: '/releases/$releaseId',
     getParentRoute: () => LayoutSystemAgentsAgentIdRoute,
   } as any)
+const LayoutSystemWorkflowsTemplateIdVersionsVersionIdConfigurationRoute =
+  LayoutSystemWorkflowsTemplateIdVersionsVersionIdConfigurationRouteImport.update(
+    {
+      id: '/system/workflows_/$templateId/versions/$versionId/configuration',
+      path: '/system/workflows/$templateId/versions/$versionId/configuration',
+      getParentRoute: () => LayoutRoute,
+    } as any,
+  )
 
 export interface FileRoutesByFullPath {
   '/': typeof LayoutIndexRoute
@@ -257,6 +279,7 @@ export interface FileRoutesByFullPath {
   '/items': typeof LayoutItemsRoute
   '/projects': typeof LayoutProjectsRoute
   '/settings': typeof LayoutSettingsRoute
+  '/workflows': typeof LayoutWorkflowsRoute
   '/workspace': typeof LayoutWorkspaceRoute
   '/apps/$workflowSlug': typeof LayoutAppsWorkflowSlugRoute
   '/projects/$projectId': typeof LayoutProjectsProjectIdRoute
@@ -271,6 +294,7 @@ export interface FileRoutesByFullPath {
   '/system/spec-standards': typeof LayoutSystemSpecStandardsRoute
   '/system/tools': typeof LayoutSystemToolsRoute
   '/system/workflows': typeof LayoutSystemWorkflowsRoute
+  '/apps/$workflowSlug/new': typeof LayoutAppsWorkflowSlugNewRoute
   '/system/agent-activations/$activationId': typeof LayoutSystemAgentActivationsActivationIdRoute
   '/system/agents/$agentId': typeof LayoutSystemAgentsAgentIdRouteWithChildren
   '/system/mcp-servers/$mcpServerId': typeof LayoutSystemMcpServersMcpServerIdRoute
@@ -284,6 +308,7 @@ export interface FileRoutesByFullPath {
   '/system/runtimes/releases/$releaseId': typeof LayoutSystemRuntimesReleasesReleaseIdRoute
   '/system/runtimes/tasks/$taskId': typeof LayoutSystemRuntimesTasksTaskIdRoute
   '/system/agents/$agentId/releases/$releaseId': typeof LayoutSystemAgentsAgentIdReleasesReleaseIdRoute
+  '/system/workflows/$templateId/versions/$versionId/configuration': typeof LayoutSystemWorkflowsTemplateIdVersionsVersionIdConfigurationRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -294,6 +319,7 @@ export interface FileRoutesByTo {
   '/items': typeof LayoutItemsRoute
   '/projects': typeof LayoutProjectsRoute
   '/settings': typeof LayoutSettingsRoute
+  '/workflows': typeof LayoutWorkflowsRoute
   '/workspace': typeof LayoutWorkspaceRoute
   '/': typeof LayoutIndexRoute
   '/apps/$workflowSlug': typeof LayoutAppsWorkflowSlugRoute
@@ -309,6 +335,7 @@ export interface FileRoutesByTo {
   '/system/spec-standards': typeof LayoutSystemSpecStandardsRoute
   '/system/tools': typeof LayoutSystemToolsRoute
   '/system/workflows': typeof LayoutSystemWorkflowsRoute
+  '/apps/$workflowSlug/new': typeof LayoutAppsWorkflowSlugNewRoute
   '/system/agent-activations/$activationId': typeof LayoutSystemAgentActivationsActivationIdRoute
   '/system/agents/$agentId': typeof LayoutSystemAgentsAgentIdRouteWithChildren
   '/system/mcp-servers/$mcpServerId': typeof LayoutSystemMcpServersMcpServerIdRoute
@@ -322,6 +349,7 @@ export interface FileRoutesByTo {
   '/system/runtimes/releases/$releaseId': typeof LayoutSystemRuntimesReleasesReleaseIdRoute
   '/system/runtimes/tasks/$taskId': typeof LayoutSystemRuntimesTasksTaskIdRoute
   '/system/agents/$agentId/releases/$releaseId': typeof LayoutSystemAgentsAgentIdReleasesReleaseIdRoute
+  '/system/workflows/$templateId/versions/$versionId/configuration': typeof LayoutSystemWorkflowsTemplateIdVersionsVersionIdConfigurationRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -334,6 +362,7 @@ export interface FileRoutesById {
   '/_layout/items': typeof LayoutItemsRoute
   '/_layout/projects': typeof LayoutProjectsRoute
   '/_layout/settings': typeof LayoutSettingsRoute
+  '/_layout/workflows': typeof LayoutWorkflowsRoute
   '/_layout/workspace': typeof LayoutWorkspaceRoute
   '/_layout/': typeof LayoutIndexRoute
   '/_layout/apps/$workflowSlug': typeof LayoutAppsWorkflowSlugRoute
@@ -349,6 +378,7 @@ export interface FileRoutesById {
   '/_layout/system/spec-standards': typeof LayoutSystemSpecStandardsRoute
   '/_layout/system/tools': typeof LayoutSystemToolsRoute
   '/_layout/system/workflows': typeof LayoutSystemWorkflowsRoute
+  '/_layout/apps_/$workflowSlug/new': typeof LayoutAppsWorkflowSlugNewRoute
   '/_layout/system/agent-activations/$activationId': typeof LayoutSystemAgentActivationsActivationIdRoute
   '/_layout/system/agents/$agentId': typeof LayoutSystemAgentsAgentIdRouteWithChildren
   '/_layout/system/mcp-servers/$mcpServerId': typeof LayoutSystemMcpServersMcpServerIdRoute
@@ -362,6 +392,7 @@ export interface FileRoutesById {
   '/_layout/system/runtimes_/releases/$releaseId': typeof LayoutSystemRuntimesReleasesReleaseIdRoute
   '/_layout/system/runtimes_/tasks/$taskId': typeof LayoutSystemRuntimesTasksTaskIdRoute
   '/_layout/system/agents/$agentId/releases/$releaseId': typeof LayoutSystemAgentsAgentIdReleasesReleaseIdRoute
+  '/_layout/system/workflows_/$templateId/versions/$versionId/configuration': typeof LayoutSystemWorkflowsTemplateIdVersionsVersionIdConfigurationRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -375,6 +406,7 @@ export interface FileRouteTypes {
     | '/items'
     | '/projects'
     | '/settings'
+    | '/workflows'
     | '/workspace'
     | '/apps/$workflowSlug'
     | '/projects/$projectId'
@@ -389,6 +421,7 @@ export interface FileRouteTypes {
     | '/system/spec-standards'
     | '/system/tools'
     | '/system/workflows'
+    | '/apps/$workflowSlug/new'
     | '/system/agent-activations/$activationId'
     | '/system/agents/$agentId'
     | '/system/mcp-servers/$mcpServerId'
@@ -402,6 +435,7 @@ export interface FileRouteTypes {
     | '/system/runtimes/releases/$releaseId'
     | '/system/runtimes/tasks/$taskId'
     | '/system/agents/$agentId/releases/$releaseId'
+    | '/system/workflows/$templateId/versions/$versionId/configuration'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -412,6 +446,7 @@ export interface FileRouteTypes {
     | '/items'
     | '/projects'
     | '/settings'
+    | '/workflows'
     | '/workspace'
     | '/'
     | '/apps/$workflowSlug'
@@ -427,6 +462,7 @@ export interface FileRouteTypes {
     | '/system/spec-standards'
     | '/system/tools'
     | '/system/workflows'
+    | '/apps/$workflowSlug/new'
     | '/system/agent-activations/$activationId'
     | '/system/agents/$agentId'
     | '/system/mcp-servers/$mcpServerId'
@@ -440,6 +476,7 @@ export interface FileRouteTypes {
     | '/system/runtimes/releases/$releaseId'
     | '/system/runtimes/tasks/$taskId'
     | '/system/agents/$agentId/releases/$releaseId'
+    | '/system/workflows/$templateId/versions/$versionId/configuration'
   id:
     | '__root__'
     | '/_layout'
@@ -451,6 +488,7 @@ export interface FileRouteTypes {
     | '/_layout/items'
     | '/_layout/projects'
     | '/_layout/settings'
+    | '/_layout/workflows'
     | '/_layout/workspace'
     | '/_layout/'
     | '/_layout/apps/$workflowSlug'
@@ -466,6 +504,7 @@ export interface FileRouteTypes {
     | '/_layout/system/spec-standards'
     | '/_layout/system/tools'
     | '/_layout/system/workflows'
+    | '/_layout/apps_/$workflowSlug/new'
     | '/_layout/system/agent-activations/$activationId'
     | '/_layout/system/agents/$agentId'
     | '/_layout/system/mcp-servers/$mcpServerId'
@@ -479,6 +518,7 @@ export interface FileRouteTypes {
     | '/_layout/system/runtimes_/releases/$releaseId'
     | '/_layout/system/runtimes_/tasks/$taskId'
     | '/_layout/system/agents/$agentId/releases/$releaseId'
+    | '/_layout/system/workflows_/$templateId/versions/$versionId/configuration'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -538,6 +578,13 @@ declare module '@tanstack/react-router' {
       path: '/workspace'
       fullPath: '/workspace'
       preLoaderRoute: typeof LayoutWorkspaceRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/workflows': {
+      id: '/_layout/workflows'
+      path: '/workflows'
+      fullPath: '/workflows'
+      preLoaderRoute: typeof LayoutWorkflowsRouteImport
       parentRoute: typeof LayoutRoute
     }
     '/_layout/settings': {
@@ -708,6 +755,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutSystemAgentActivationsActivationIdRouteImport
       parentRoute: typeof LayoutRoute
     }
+    '/_layout/apps_/$workflowSlug/new': {
+      id: '/_layout/apps_/$workflowSlug/new'
+      path: '/apps/$workflowSlug/new'
+      fullPath: '/apps/$workflowSlug/new'
+      preLoaderRoute: typeof LayoutAppsWorkflowSlugNewRouteImport
+      parentRoute: typeof LayoutRoute
+    }
     '/_layout/system/runtimes_/tasks/$taskId': {
       id: '/_layout/system/runtimes_/tasks/$taskId'
       path: '/system/runtimes/tasks/$taskId'
@@ -749,6 +803,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/system/agents/$agentId/releases/$releaseId'
       preLoaderRoute: typeof LayoutSystemAgentsAgentIdReleasesReleaseIdRouteImport
       parentRoute: typeof LayoutSystemAgentsAgentIdRoute
+    }
+    '/_layout/system/workflows_/$templateId/versions/$versionId/configuration': {
+      id: '/_layout/system/workflows_/$templateId/versions/$versionId/configuration'
+      path: '/system/workflows/$templateId/versions/$versionId/configuration'
+      fullPath: '/system/workflows/$templateId/versions/$versionId/configuration'
+      preLoaderRoute: typeof LayoutSystemWorkflowsTemplateIdVersionsVersionIdConfigurationRouteImport
+      parentRoute: typeof LayoutRoute
     }
   }
 }
@@ -836,6 +897,7 @@ interface LayoutRouteChildren {
   LayoutItemsRoute: typeof LayoutItemsRoute
   LayoutProjectsRoute: typeof LayoutProjectsRoute
   LayoutSettingsRoute: typeof LayoutSettingsRoute
+  LayoutWorkflowsRoute: typeof LayoutWorkflowsRoute
   LayoutWorkspaceRoute: typeof LayoutWorkspaceRoute
   LayoutIndexRoute: typeof LayoutIndexRoute
   LayoutAppsWorkflowSlugRoute: typeof LayoutAppsWorkflowSlugRoute
@@ -851,6 +913,7 @@ interface LayoutRouteChildren {
   LayoutSystemSpecStandardsRoute: typeof LayoutSystemSpecStandardsRoute
   LayoutSystemToolsRoute: typeof LayoutSystemToolsRoute
   LayoutSystemWorkflowsRoute: typeof LayoutSystemWorkflowsRoute
+  LayoutAppsWorkflowSlugNewRoute: typeof LayoutAppsWorkflowSlugNewRoute
   LayoutSystemAgentActivationsActivationIdRoute: typeof LayoutSystemAgentActivationsActivationIdRoute
   LayoutSystemRuntimesArtifactsRoute: typeof LayoutSystemRuntimesArtifactsRoute
   LayoutWorkspaceConversationsConversationIdRoute: typeof LayoutWorkspaceConversationsConversationIdRoute
@@ -858,6 +921,7 @@ interface LayoutRouteChildren {
   LayoutSystemRuntimesNodesNodeIdRoute: typeof LayoutSystemRuntimesNodesNodeIdRoute
   LayoutSystemRuntimesReleasesReleaseIdRoute: typeof LayoutSystemRuntimesReleasesReleaseIdRoute
   LayoutSystemRuntimesTasksTaskIdRoute: typeof LayoutSystemRuntimesTasksTaskIdRoute
+  LayoutSystemWorkflowsTemplateIdVersionsVersionIdConfigurationRoute: typeof LayoutSystemWorkflowsTemplateIdVersionsVersionIdConfigurationRoute
 }
 
 const LayoutRouteChildren: LayoutRouteChildren = {
@@ -865,6 +929,7 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutItemsRoute: LayoutItemsRoute,
   LayoutProjectsRoute: LayoutProjectsRoute,
   LayoutSettingsRoute: LayoutSettingsRoute,
+  LayoutWorkflowsRoute: LayoutWorkflowsRoute,
   LayoutWorkspaceRoute: LayoutWorkspaceRoute,
   LayoutIndexRoute: LayoutIndexRoute,
   LayoutAppsWorkflowSlugRoute: LayoutAppsWorkflowSlugRoute,
@@ -880,6 +945,7 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutSystemSpecStandardsRoute: LayoutSystemSpecStandardsRoute,
   LayoutSystemToolsRoute: LayoutSystemToolsRoute,
   LayoutSystemWorkflowsRoute: LayoutSystemWorkflowsRoute,
+  LayoutAppsWorkflowSlugNewRoute: LayoutAppsWorkflowSlugNewRoute,
   LayoutSystemAgentActivationsActivationIdRoute:
     LayoutSystemAgentActivationsActivationIdRoute,
   LayoutSystemRuntimesArtifactsRoute: LayoutSystemRuntimesArtifactsRoute,
@@ -891,6 +957,8 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutSystemRuntimesReleasesReleaseIdRoute:
     LayoutSystemRuntimesReleasesReleaseIdRoute,
   LayoutSystemRuntimesTasksTaskIdRoute: LayoutSystemRuntimesTasksTaskIdRoute,
+  LayoutSystemWorkflowsTemplateIdVersionsVersionIdConfigurationRoute:
+    LayoutSystemWorkflowsTemplateIdVersionsVersionIdConfigurationRoute,
 }
 
 const LayoutRouteWithChildren =

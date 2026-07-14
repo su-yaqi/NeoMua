@@ -72,6 +72,17 @@ class WorkflowInstanceStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+class WorkflowContextMode(str, Enum):
+    PROJECT = "project"
+    STANDALONE = "standalone"
+
+
+class WorkflowProjectMode(str, Enum):
+    REQUIRED = "required"
+    OPTIONAL = "optional"
+    NONE = "none"
+
+
 class WorkflowNodeStatus(str, Enum):
     INACTIVE = "inactive"
     READY = "ready"
@@ -235,6 +246,7 @@ class WorkflowNodeDefinition(SQLModel, table=True):
     agent_release_id: uuid.UUID | None = Field(
         default=None, foreign_key="agent_release.id", ondelete="RESTRICT"
     )
+    agent_role_key: str | None = Field(default=None, max_length=128)
     handler_key: str | None = Field(default=None, max_length=255)
     entry_validator_key: str | None = Field(default=None, max_length=255)
     exit_validator_key: str | None = Field(default=None, max_length=255)
@@ -320,6 +332,104 @@ class NamespaceWorkflowEnablement(SQLModel, table=True):
     )
 
 
+class NamespaceWorkflowConfiguration(SQLModel, table=True):
+    __tablename__ = "namespace_workflow_configuration"
+    __table_args__ = (
+        UniqueConstraint(
+            "namespace_id",
+            "template_version_id",
+            name="uq_namespace_workflow_configuration_version",
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    namespace_id: uuid.UUID = Field(
+        foreign_key="namespace.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    template_version_id: uuid.UUID = Field(
+        foreign_key="workflow_template_version.id",
+        nullable=False,
+        ondelete="RESTRICT",
+        index=True,
+    )
+    current_revision_id: uuid.UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            Uuid,
+            ForeignKey(
+                "workflow_execution_configuration_revision.id",
+                name="fk_namespace_workflow_configuration_current_revision",
+                ondelete="RESTRICT",
+                use_alter=True,
+            ),
+            nullable=True,
+        ),
+    )
+    updated_by: uuid.UUID | None = Field(
+        default=None, foreign_key="user.id", ondelete="SET NULL"
+    )
+    updated_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+
+
+class WorkflowExecutionConfigurationRevision(SQLModel, table=True):
+    __tablename__ = "workflow_execution_configuration_revision"
+    __table_args__ = (
+        UniqueConstraint(
+            "configuration_id",
+            "revision",
+            name="uq_workflow_execution_configuration_revision",
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    configuration_id: uuid.UUID = Field(
+        foreign_key="namespace_workflow_configuration.id",
+        nullable=False,
+        ondelete="CASCADE",
+        index=True,
+    )
+    revision: int
+    project_id: uuid.UUID | None = Field(
+        default=None, foreign_key="project.id", ondelete="RESTRICT", index=True
+    )
+    content_digest: str = Field(max_length=64)
+    created_by: uuid.UUID | None = Field(
+        default=None, foreign_key="user.id", ondelete="SET NULL"
+    )
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+
+
+class WorkflowExecutionNodeBinding(SQLModel, table=True):
+    __tablename__ = "workflow_execution_node_binding"
+    __table_args__ = (
+        UniqueConstraint(
+            "configuration_revision_id",
+            "node_key",
+            name="uq_workflow_execution_configuration_node",
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    configuration_revision_id: uuid.UUID = Field(
+        foreign_key="workflow_execution_configuration_revision.id",
+        nullable=False,
+        ondelete="CASCADE",
+        index=True,
+    )
+    node_key: str = Field(max_length=128)
+    runtime_profile_id: uuid.UUID = Field(
+        foreign_key="runtime_profile.id", nullable=False, ondelete="RESTRICT"
+    )
+    agent_release_id: uuid.UUID | None = Field(
+        default=None, foreign_key="agent_release.id", ondelete="RESTRICT"
+    )
+    resolved_spec_digest: str | None = Field(default=None, max_length=64)
+
+
 class WorkflowInstance(SQLModel, table=True):
     __tablename__ = "workflow_instance"
     __table_args__ = (
@@ -332,11 +442,29 @@ class WorkflowInstance(SQLModel, table=True):
     namespace_id: uuid.UUID = Field(
         foreign_key="namespace.id", nullable=False, ondelete="CASCADE", index=True
     )
-    project_id: uuid.UUID = Field(
-        foreign_key="project.id", nullable=False, ondelete="RESTRICT", index=True
+    context_mode: WorkflowContextMode = Field(
+        default=WorkflowContextMode.PROJECT,
+        sa_type=SAEnum(
+            WorkflowContextMode,
+            name="workflowcontextmode",
+            values_callable=lambda values: [value.value for value in values],
+        ),
+    )
+    project_id: uuid.UUID | None = Field(
+        default=None,
+        foreign_key="project.id",
+        nullable=True,
+        ondelete="RESTRICT",
+        index=True,
     )
     template_version_id: uuid.UUID = Field(
         foreign_key="workflow_template_version.id", nullable=False, ondelete="RESTRICT"
+    )
+    execution_configuration_revision_id: uuid.UUID | None = Field(
+        default=None,
+        foreign_key="workflow_execution_configuration_revision.id",
+        ondelete="RESTRICT",
+        index=True,
     )
     package_digest: str = Field(max_length=64)
     title: str = Field(max_length=255)
@@ -372,6 +500,36 @@ class WorkflowInstance(SQLModel, table=True):
     )
     completed_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     cancelled_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+
+
+class WorkflowInstanceAgentBinding(SQLModel, table=True):
+    __tablename__ = "workflow_instance_agent_binding"
+    __table_args__ = (
+        UniqueConstraint(
+            "workflow_instance_id",
+            "role_key",
+            name="uq_workflow_instance_agent_role",
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    workflow_instance_id: uuid.UUID = Field(
+        foreign_key="workflow_instance.id",
+        nullable=False,
+        ondelete="CASCADE",
+        index=True,
+    )
+    role_key: str = Field(max_length=128)
+    runtime_profile_id: uuid.UUID = Field(
+        foreign_key="runtime_profile.id", nullable=False, ondelete="RESTRICT"
+    )
+    agent_release_id: uuid.UUID = Field(
+        foreign_key="agent_release.id", nullable=False, ondelete="RESTRICT"
+    )
+    resolved_spec_digest: str = Field(max_length=64)
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
 
 
 class WorkflowNodeInstance(SQLModel, table=True):
@@ -419,8 +577,11 @@ class WorkflowNodeInstance(SQLModel, table=True):
         default=None, foreign_key="user.id", ondelete="SET NULL"
     )
     latest_input_digest: str | None = Field(default=None, max_length=64)
-    resolved_runtime_id: uuid.UUID = Field(
-        foreign_key="runtime_profile.id", nullable=False, ondelete="RESTRICT"
+    resolved_runtime_id: uuid.UUID | None = Field(
+        default=None,
+        foreign_key="runtime_profile.id",
+        nullable=True,
+        ondelete="RESTRICT",
     )
     created_at: datetime = Field(
         default_factory=utcnow, sa_type=DateTime(timezone=True)

@@ -33,7 +33,8 @@ export default function RuntimeAgentMatrix() {
                       {String(row.runtime_name)} · {String(row.runtime_type)}
                     </td>
                     <td>
-                      {String(row.agent_name)} ({String(row.agent_slug)})
+                      {String(row.agent_name)} · Agent 标识：
+                      {String(row.agent_slug)}
                     </td>
                     <td>v{String(row.current_release_version)}</td>
                     <td>

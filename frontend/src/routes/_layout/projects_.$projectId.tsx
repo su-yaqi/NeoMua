@@ -121,7 +121,7 @@ function ProjectDetailPage() {
             </Badge>
           </div>
           <p className="text-muted-foreground">
-            {project.data.description || project.data.slug}
+            {project.data.description || `项目标识：${project.data.slug}`}
           </p>
         </div>
         {!readOnly && (

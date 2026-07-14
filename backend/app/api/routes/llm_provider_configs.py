@@ -13,9 +13,11 @@ from app.llm_provider_service import (
     list_provider_catalog_items,
     merge_provider_models,
     open_secret_payload,
+    sanitize_error_text,
     seal_secret_payload,
     to_provider_config_public,
     validate_provider_connection,
+    validate_provider_connection_inputs,
     validate_secret_inputs,
 )
 from app.models import (
@@ -25,6 +27,9 @@ from app.models import (
     LlmProviderConfigPublic,
     LlmProviderConfigsPublic,
     LlmProviderConfigUpdate,
+    LlmProviderDraftRequest,
+    LlmProviderDraftResult,
+    LlmProviderModelPreview,
     LlmProviderSyncModelsRequest,
     ProviderValidationStatus,
 )
@@ -43,6 +48,23 @@ def _require_namespace_config(
     if config is None or config.namespace_id != namespace_id:
         raise HTTPException(status_code=404, detail="LLM provider config not found")
     return config
+
+
+def _prepare_draft_provider(
+    draft_in: LlmProviderDraftRequest,
+) -> tuple[Any, str, dict[str, str]]:
+    try:
+        definition = get_provider_definition(draft_in.provider_slug)
+        secret_inputs = validate_secret_inputs(definition, draft_in.secret_inputs)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        base_url = canonical_endpoint(draft_in.base_url)
+    except EndpointValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return definition, base_url, secret_inputs
 
 
 @router.get("/providers/catalog", response_model=LlmProviderCatalogPublic)
@@ -84,6 +106,36 @@ def create_provider_config(
     except EndpointValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    discovered_models: list[dict[str, Any]] | None = None
+    validation_status = ProviderValidationStatus.UNVERIFIED
+    validation_message: str | None = None
+    last_validated_at: datetime | None = None
+
+    if config_in.sync_models_on_create:
+        last_validated_at = datetime.now(timezone.utc)
+        if definition.supports_model_discovery:
+            try:
+                discovered_models = fetch_provider_models(
+                    definition,
+                    base_url=base_url,
+                    secret_inputs=secret_inputs,
+                )
+                validation_status = ProviderValidationStatus.SUCCESS
+                validation_message = "模型列表同步成功"
+            except Exception as exc:
+                detail = f"模型列表同步失败: {sanitize_error_text(str(exc))}"
+                raise HTTPException(status_code=502, detail=detail) from exc
+        else:
+            validation_status = ProviderValidationStatus.UNSUPPORTED
+            validation_message = "当前供应商暂不支持自动拉取模型列表"
+    elif config_in.validate_on_create:
+        last_validated_at = datetime.now(timezone.utc)
+        validation_status, validation_message = validate_provider_connection_inputs(
+            definition,
+            base_url=base_url,
+            secret_inputs=secret_inputs,
+        )
+
     config = LlmProviderConfig(
         namespace_id=namespace_id,
         config_name=config_in.config_name,
@@ -96,7 +148,9 @@ def create_provider_config(
         extra_config=config_in.extra_config,
         supports_health_check=definition.supports_health_check,
         supports_model_discovery=definition.supports_model_discovery,
-        validation_status=ProviderValidationStatus.UNVERIFIED,
+        validation_status=validation_status,
+        validation_message=validation_message,
+        last_validated_at=last_validated_at,
         enabled=config_in.enabled,
         created_by=current_user.id,
         updated_by=current_user.id,
@@ -105,7 +159,7 @@ def create_provider_config(
 
     merged_models = merge_provider_models(
         [],
-        discovered_models=None,
+        discovered_models=discovered_models,
         manual_models=config_in.manual_models,
         enabled_model_ids=config_in.enabled_model_ids,
     )
@@ -118,6 +172,63 @@ def create_provider_config(
         session=session, config_id=config.id, namespace_id=namespace_id
     )
     return to_provider_config_public(config)
+
+
+@router.post("/provider-configs/draft/validate", response_model=LlmProviderDraftResult)
+def validate_draft_provider_config(
+    draft_in: LlmProviderDraftRequest,
+    _: uuid.UUID = Depends(require_namespace_admin),
+) -> Any:
+    definition, base_url, secret_inputs = _prepare_draft_provider(draft_in)
+    status, message = validate_provider_connection_inputs(
+        definition,
+        base_url=base_url,
+        secret_inputs=secret_inputs,
+    )
+    return LlmProviderDraftResult(
+        validation_status=status,
+        validation_message=message,
+        models=[],
+    )
+
+
+@router.post(
+    "/provider-configs/draft/sync-models", response_model=LlmProviderDraftResult
+)
+def sync_draft_provider_models(
+    draft_in: LlmProviderDraftRequest,
+    _: uuid.UUID = Depends(require_namespace_admin),
+) -> Any:
+    definition, base_url, secret_inputs = _prepare_draft_provider(draft_in)
+    discovered_models: list[dict[str, Any]] | None = None
+
+    if definition.supports_model_discovery:
+        try:
+            discovered_models = fetch_provider_models(
+                definition,
+                base_url=base_url,
+                secret_inputs=secret_inputs,
+            )
+            validation_status = ProviderValidationStatus.SUCCESS
+            validation_message = "模型列表同步成功"
+        except Exception as exc:
+            validation_status = ProviderValidationStatus.FAILED
+            validation_message = f"模型列表同步失败: {sanitize_error_text(str(exc))}"
+    else:
+        validation_status = ProviderValidationStatus.UNSUPPORTED
+        validation_message = "当前供应商暂不支持自动拉取模型列表"
+
+    merged_models = merge_provider_models(
+        [],
+        discovered_models=discovered_models,
+        manual_models=draft_in.manual_models,
+        enabled_model_ids=draft_in.enabled_model_ids,
+    )
+    return LlmProviderDraftResult(
+        validation_status=validation_status,
+        validation_message=validation_message,
+        models=[LlmProviderModelPreview.model_validate(item) for item in merged_models],
+    )
 
 
 @router.patch("/provider-configs/{config_id}", response_model=LlmProviderConfigPublic)

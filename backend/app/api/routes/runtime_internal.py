@@ -17,6 +17,7 @@ from app.api.deps import SessionDep
 from app.conversation_management.models import (
     AgentDelegation,
     Conversation,
+    ConversationConfigurationRevision,
     ConversationMessage,
     ConversationMode,
     MessageAuthorType,
@@ -503,19 +504,29 @@ def resolve_route(
         conversation = (
             session.get(Conversation, message.conversation_id) if message else None
         )
+        configuration = (
+            session.get(
+                ConversationConfigurationRevision,
+                message.configuration_revision_id,
+            )
+            if message and message.configuration_revision_id
+            else None
+        )
         if (
             message is None
             or conversation is None
+            or configuration is None
             or conversation.namespace_id != runtime.namespace_id
             or conversation.runtime_id != runtime.id
             or conversation.mode != ConversationMode.CHAT
-            or conversation.model_id != model_id
+            or configuration.conversation_id != conversation.id
+            or configuration.model_id != model_id
             or message.author_type != MessageAuthorType.MODEL
             or message.status != MessageStatus.RUNNING
-            or conversation.provider_config_id is None
+            or configuration.provider_config_id is None
         ):
             raise HTTPException(403, "Chat route is not active or is out of scope")
-        chat_provider_id = conversation.provider_config_id
+        chat_provider_id = configuration.provider_config_id
     if runtime.route_mode == RuntimeRouteMode.DIRECT_ANTHROPIC:
         secret = session.exec(
             select(RuntimeSecret).where(RuntimeSecret.runtime_profile_id == runtime.id)
@@ -540,6 +551,6 @@ def resolve_route(
     return {
         "provider_kind": provider_kind,
         "base_url": provider.base_url,
-        "model_id": runtime.model_id,
+        "model_id": model_id,
         "secret_inputs": open_secret_payload(provider.secret_ciphertext),
     }

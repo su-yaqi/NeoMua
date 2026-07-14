@@ -65,7 +65,7 @@ def _context(raw: dict[str, Any]) -> WorkflowRunContext:
         workflow_instance_id=str(raw["workflow_instance_id"]),
         node_key=str(raw["node_key"]),
         runtime_id=str(raw["runtime_id"]),
-        project_id=str(raw["project_id"]),
+        project_id=(str(raw["project_id"]) if raw.get("project_id") else None),
         input=dict(raw["input"]),
         previous_output=(
             dict(raw["previous_output"])

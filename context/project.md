@@ -12,7 +12,7 @@ NeoMua
 - 支持账号认证、个人设置、平台用户管理和基础业务条目管理。
 - 支持按空间组织用户，并为后续多租户业务扩展预留统一入口。
 - 支持按空间声明、验证、发布并激活不可变 Agent 能力组合，任务只消费目标当前已激活 Release。
-- 支持项目上下文、固定模型/Agent 会话，以及由代码发布的可恢复 Workflow 项目任务。
+- 支持项目上下文、可修订模型/Agent 会话，以及由代码发布、由模板配置执行资源的可恢复 Workflow 业务任务。
 
 ## 技术栈
 | 层次 | 技术选型 |
@@ -50,7 +50,10 @@ NeoMua
 - v0.5 已实现声明式 Skill 与 Plugin、不可变 MCP Revision、目标凭证/校验/Tool 快照、canonical ResolvedAgentSpec、签名 Agent Release、逐目标 Activation/Retry/Rollback 和 frozen Task snapshot。
 - `neomua` Operator CLI 使用轮换 refresh session 与系统 Keychain，复用正式 API，支持 dry-run、幂等 mutation、结构化退出码和节点本地 MCP secret 管理。
 - v0.6 已实现 AI 工作台、项目配置、Spec 标准、可恢复会话事件流、持久 Runtime Job、固定版本 Workflow 应用与项目任务状态机；不确定的 Runtime、Git、前端组件或外部副作用会阻断并暴露诊断。
-- v0.6 最终门禁为 Backend 226、Runtime Worker 14、Node Runtime 26、Workflow Package 3 和 Playwright 71 项通过；完整 Docker 开发栈健康。
+- v0.7 将 AI 工作台收敛为 Chat/Agent 双栏会话，项目和 Runtime 创建后固定，模型或 Agent 参与配置通过不可变修订在后续消息生效；Workflow 移至独立用户菜单，并形成“应用目录—实例列表—应用专属创建/详情”的统一外壳。
+- Workflow 节点定义和执行继续固化在代码包中，项目及每个可执行节点的 Runtime/Agent 改由模板执行配置管理并生成不可变修订；流程实例只填写任务名称和业务目标。
+- Agent、Skill、MCP、Plugin、项目和 Spec 标准的新建流程已收敛为一次完成必要初始配置；用户界面以“唯一标识”替代 Slug。大模型配置可在保存前直接校验连接并同步模型预览。
+- v0.7 最终门禁为 Backend 231、Runtime Worker 14、Node Runtime 26、其余 Python 23 和 Playwright 74 项通过；Ruff、Biome、TypeScript/Vite、Alembic 差异检查及完整测试环境健康检查通过。
 
 ## 版本状态
 | 版本 | 状态 | 说明 |
@@ -61,3 +64,4 @@ NeoMua
 | v0.4 | 已完成 | Agent Runtime、节点守护进程、可靠任务执行与签名内容分发 |
 | v0.5 | 已完成 | 受管 Agent 能力、统一运行时装配、Release/Activation、Tool 审批与 Operator CLI |
 | v0.6 | 已完成 | 项目上下文、Chat/多 Agent 工作台、代码化 Workflow 应用与协作任务执行 |
+| v0.7 | 已完成 | Chat/Agent 工作台、完整创建体验、独立 Workflow 应用与模板执行配置 |

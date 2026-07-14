@@ -273,8 +273,8 @@ export default function AgentCapabilities({
                       })
                     }
                   />
-                  {String(item.server_slug)} revision {String(item.revision)} ·{" "}
-                  {String(item.transport)}
+                  MCP 标识：{String(item.server_slug)} · Revision{" "}
+                  {String(item.revision)} · {String(item.transport)}
                 </label>
                 {!hasVerifiedTarget && (
                   <p className="text-xs text-destructive">

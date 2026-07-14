@@ -183,8 +183,8 @@ export default function AgentEditor({
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">{agent.name}</h1>
-          <p className="text-sm text-muted-foreground font-mono">
-            {agent.slug}
+          <p className="text-sm text-muted-foreground">
+            Agent 标识：<span className="font-mono">{agent.slug}</span>
           </p>
         </div>
         <div className="flex items-center gap-2">

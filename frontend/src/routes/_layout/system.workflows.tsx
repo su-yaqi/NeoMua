@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, Link } from "@tanstack/react-router"
 import { toast } from "sonner"
 import { workspaceApi } from "@/api/tenantApi"
 import { Badge } from "@/components/ui/badge"
@@ -56,31 +56,65 @@ function WorkflowManagementPage() {
             <p className="text-sm text-muted-foreground">
               {template.description}
             </p>
-            {template.versions.map(({ version, enablement }) => (
-              <div
-                key={version.id}
-                className="flex items-center justify-between rounded-md border p-3"
-              >
-                <div>
-                  <p className="font-medium">{version.version}</p>
-                  <p className="font-mono text-xs text-muted-foreground">
-                    {version.package_digest}
-                  </p>
-                </div>
-                <Button
-                  variant={enablement.enabled ? "outline" : "default"}
-                  onClick={() =>
-                    update.mutate({
-                      templateId: template.id,
-                      versionId: version.id,
-                      enabled: !enablement.enabled,
-                    })
-                  }
+            {template.versions.map(
+              ({ version, enablement, execution_configuration }) => (
+                <div
+                  key={version.id}
+                  className="flex items-center justify-between rounded-md border p-3"
                 >
-                  {enablement.enabled ? "停用" : "启用并设为默认"}
-                </Button>
-              </div>
-            ))}
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-medium">{version.version}</p>
+                      <Badge variant="outline">
+                        {version.manifest.project_mode === "optional"
+                          ? "项目可选"
+                          : version.manifest.project_mode === "none"
+                            ? "无需项目"
+                            : "必须关联项目"}
+                      </Badge>
+                    </div>
+                    <p className="font-mono text-xs text-muted-foreground">
+                      {version.package_digest}
+                    </p>
+                    <Badge
+                      className="mt-2"
+                      variant={
+                        execution_configuration ? "secondary" : "destructive"
+                      }
+                    >
+                      {execution_configuration
+                        ? `执行配置 r${execution_configuration.revision}`
+                        : "执行配置未完成"}
+                    </Badge>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="outline" asChild>
+                      <Link
+                        to="/system/workflows/$templateId/versions/$versionId/configuration"
+                        params={{
+                          templateId: template.id,
+                          versionId: version.id,
+                        }}
+                      >
+                        配置执行节点
+                      </Link>
+                    </Button>
+                    <Button
+                      variant={enablement.enabled ? "outline" : "default"}
+                      onClick={() =>
+                        update.mutate({
+                          templateId: template.id,
+                          versionId: version.id,
+                          enabled: !enablement.enabled,
+                        })
+                      }
+                    >
+                      {enablement.enabled ? "停用" : "启用并设为默认"}
+                    </Button>
+                  </div>
+                </div>
+              ),
+            )}
           </CardContent>
         </Card>
       ))}

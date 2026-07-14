@@ -39,6 +39,7 @@ from app.project_management.schemas import (
     SpecBindingUpdate,
     SpecLocationCreate,
     SpecLocationUpdate,
+    SpecStandardCompleteCreate,
     SpecStandardCreate,
     SpecStandardVersionCreate,
     SpecVersionDeprecate,
@@ -126,6 +127,12 @@ def create_project(
             [
                 ProjectMember(project_id=project.id, user_id=user_id)
                 for user_id in member_ids
+            ]
+        )
+        session.add_all(
+            [
+                ProjectRepository(project_id=project.id, **repository.model_dump())
+                for repository in body.initial_repositories
             ]
         )
         session.commit()
@@ -508,6 +515,55 @@ def create_spec_standard(
         raise _integrity_error(exc, "Spec standard slug already exists in this scope")
     session.refresh(standard)
     return standard
+
+
+@router.post("/spec-standards/complete", status_code=201)
+def create_spec_standard_complete(
+    body: SpecStandardCompleteCreate,
+    session: SessionDep,
+    current_user: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_member),
+) -> dict[str, Any]:
+    if body.scope_type == SpecScopeType.PLATFORM:
+        if not current_user.is_superuser:
+            raise HTTPException(403, "Platform Spec standards require a superuser")
+        standard_namespace_id = None
+    else:
+        if not can_manage_namespace(session, namespace_id, current_user):
+            raise HTTPException(
+                403, "Namespace admin or developer privilege required"
+            )
+        standard_namespace_id = namespace_id
+    validate_spec_standard_manifest(body.manifest)
+    content_digest = canonical_spec_manifest_digest(body.manifest)
+    standard = SpecStandard(
+        scope_type=body.scope_type,
+        namespace_id=standard_namespace_id,
+        slug=body.slug,
+        name=body.name,
+        description=body.description,
+        created_by=current_user.id,
+    )
+    version = SpecStandardVersion(
+        standard_id=standard.id,
+        version=body.version,
+        manifest=body.manifest,
+        content_digest=content_digest,
+        storage_ref=body.storage_ref,
+        created_by=current_user.id,
+    )
+    session.add(standard)
+    session.add(version)
+    try:
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        raise _integrity_error(
+            exc, "Spec standard identifier, version, or digest already exists"
+        )
+    session.refresh(standard)
+    session.refresh(version)
+    return {"standard": standard, "version": version}
 
 
 @router.get("/spec-standards/{standard_id}/versions")

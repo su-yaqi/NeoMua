@@ -17,6 +17,14 @@ class AgentCreate(StrictRequest):
     description: str | None = None
 
 
+class AgentCompleteCreate(AgentCreate):
+    harness_profile_id: uuid.UUID
+    provider_config_id: uuid.UUID
+    model_id: str = Field(min_length=1, max_length=255)
+    system_prompt: str = ""
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
 class AgentCopy(StrictRequest):
     slug: str = Field(min_length=1, max_length=128, pattern=r"^[a-z0-9][a-z0-9-]*$")
     name: str = Field(min_length=1, max_length=255)

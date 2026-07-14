@@ -159,6 +159,19 @@ class Conversation(SQLModel, table=True):
             nullable=True,
         ),
     )
+    current_configuration_revision_id: uuid.UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            Uuid,
+            ForeignKey(
+                "conversation_configuration_revision.id",
+                name="fk_conversation_current_configuration_revision",
+                ondelete="RESTRICT",
+                use_alter=True,
+            ),
+            nullable=True,
+        ),
+    )
     created_at: datetime = Field(
         default_factory=utcnow, sa_type=DateTime(timezone=True)
     )
@@ -205,6 +218,47 @@ class ConversationAgent(SQLModel, table=True):
         foreign_key="agent_session.id", nullable=False, ondelete="RESTRICT"
     )
     resolved_spec_digest: str = Field(max_length=64)
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+
+
+class ConversationConfigurationRevision(SQLModel, table=True):
+    __tablename__ = "conversation_configuration_revision"
+    __table_args__ = (
+        UniqueConstraint(
+            "conversation_id",
+            "revision",
+            name="uq_conversation_configuration_revision",
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    conversation_id: uuid.UUID = Field(
+        foreign_key="conversation.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    revision: int
+    mode: ConversationMode = Field(
+        sa_type=SAEnum(
+            ConversationMode,
+            name="conversationmode",
+            values_callable=lambda values: [value.value for value in values],
+            create_type=False,
+        )
+    )
+    provider_config_id: uuid.UUID | None = Field(
+        default=None, foreign_key="llm_provider_config.id", ondelete="RESTRICT"
+    )
+    model_id: str | None = Field(default=None, max_length=255)
+    organizer_agent_id: uuid.UUID | None = Field(
+        default=None, foreign_key="conversation_agent.id", ondelete="RESTRICT"
+    )
+    participant_ids: list[str] = Field(
+        default_factory=list, sa_column=Column(POSTGRES_JSON, nullable=False)
+    )
+    created_by: uuid.UUID | None = Field(
+        default=None, foreign_key="user.id", ondelete="SET NULL"
+    )
     created_at: datetime = Field(
         default_factory=utcnow, sa_type=DateTime(timezone=True)
     )
@@ -282,6 +336,11 @@ class ConversationMessage(SQLModel, table=True):
     context_snapshot_id: uuid.UUID | None = Field(
         default=None,
         foreign_key="conversation_context_snapshot.id",
+        ondelete="RESTRICT",
+    )
+    configuration_revision_id: uuid.UUID | None = Field(
+        default=None,
+        foreign_key="conversation_configuration_revision.id",
         ondelete="RESTRICT",
     )
     payload: dict[str, Any] = Field(

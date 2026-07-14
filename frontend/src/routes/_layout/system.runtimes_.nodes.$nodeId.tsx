@@ -114,7 +114,7 @@ function RuntimeNodePage() {
             mcpTargets.data.map((target) => (
               <div className="rounded border p-3" key={String(target.id)}>
                 <p className="font-medium">
-                  {String(target.server_slug)} revision{" "}
+                  MCP 标识：{String(target.server_slug)} · Revision{" "}
                   {String(target.revision)}
                 </p>
                 <p className="text-sm">
