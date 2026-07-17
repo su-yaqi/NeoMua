@@ -31,4 +31,4 @@ v0.8 Skill 正式接口：
 
 内部 claim/result API 只接受 `X-Runtime-Token`；节点 MCP 校验和 deployment 结果通过设备鉴权 WSS 回传。任意响应、manifest 和任务 snapshot 均不得包含 secret value。
 
-v0.9 的 Agent Release 不固定 Runtime、engine 或供应商路由；Activation 目标必须是 Runtime Instance。Precheck 应同时验证在线状态、applied 配置、Adapter、能力/安全上限、Skill、MCP 和模型目录。当前开发快照缺少独立 compatibility API，且 precheck 对在线/过期状态和部分安全策略的验证不完整，发布前仍需整改。
+v0.9 的 Agent Release 不固定 Runtime、engine 或供应商路由；Activation 目标必须是 Runtime Instance。Precheck 同时验证在线状态、applied 配置、Adapter、能力/安全上限、Skill、MCP 和当前模型目录；过期能力或 Binding 不会进入兼容目录。`GET /agent-releases/{release_id}/compatibility` 提供相同事实源的独立兼容性诊断。

@@ -473,6 +473,35 @@ class AgentTaskModelUsage(SQLModel, table=True):
     )
 
 
+class AgentTaskModelCallUsage(SQLModel, table=True):
+    __tablename__ = "agent_task_model_call_usage"
+    __table_args__ = (
+        UniqueConstraint(
+            "task_id", "call_sequence", name="uq_agent_task_model_call_usage"
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    task_id: uuid.UUID = Field(
+        foreign_key="agent_task.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    runtime_model_binding_id: uuid.UUID = Field(
+        foreign_key="runtime_model_binding.id", nullable=False, ondelete="RESTRICT"
+    )
+    call_sequence: int
+    event_sequence: int
+    usage: dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(POSTGRES_JSON, nullable=False)
+    )
+    status: str = Field(max_length=32)
+    error: dict[str, Any] | None = Field(
+        default=None, sa_column=Column(POSTGRES_JSON, nullable=True)
+    )
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+
+
 class RuntimeJob(SQLModel, table=True):
     __tablename__ = "runtime_job"
     __table_args__ = (
@@ -836,6 +865,10 @@ class RuntimeModelBinding(SQLModel, table=True):
         ),
     )
     validation_fingerprint: str | None = Field(default=None, max_length=64)
+    validated_capability_fingerprint: str | None = Field(default=None, max_length=64)
+    validation_expires_at: datetime | None = Field(
+        default=None, sa_type=DateTime(timezone=True)
+    )
     last_validated_at: datetime | None = Field(
         default=None, sa_type=DateTime(timezone=True)
     )

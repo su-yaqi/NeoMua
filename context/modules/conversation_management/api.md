@@ -4,4 +4,4 @@
 
 会话创建后固定项目与 Runtime Instance。`POST /conversations/{id}/configuration-revisions` 使用 `expected_revision` 追加配置修订：Chat 选择 exact Runtime Model Binding；Agent 参与者选择 exact binding 或严格的 `agent_preference`，并指定其中唯一一个组织 Agent。存在在途轮次、目标未激活、模型不可用/歧义或 CAS 冲突时返回明确错误，不隐式应用部分配置。每条消息保存实际使用的 `configuration_revision_id` 和冻结执行证据。
 
-当前 `conversation_agent` 的 `(conversation_id, agent_id)` 唯一约束仍禁止同一 Release 作为多个独立角色出现，与 v0.9 PRD 不一致，属于待整改项。
+`conversation_agent` 以参与者实例 ID 区分角色，不再按 `(conversation_id, agent_id)` 限制唯一；同一 Agent/Release 可作为多个独立角色出现。配置更新在同一 Release 存在多个参与者时要求提交 `conversation_agent_id`，避免歧义修改。

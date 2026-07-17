@@ -508,10 +508,24 @@ def _backfill() -> None:
     now = sa.func.now()
     provider_models = connection.execute(
         sa.text(
-            "SELECT m.id, m.model_id, m.display_name, c.namespace_id, c.provider_slug "
+            "SELECT m.id, m.model_id, m.display_name, m.source_type, m.sync_status, "
+            "c.namespace_id, c.provider_slug "
             "FROM llm_provider_model m JOIN llm_provider_config c ON c.id = m.provider_config_id"
         )
     ).all()
+    ambiguous_models = [
+        row
+        for row in provider_models
+        if row.source_type != "discovered"
+        or row.sync_status != "active"
+        or str(row.provider_slug).lower() == "custom"
+    ]
+    if ambiguous_models:
+        identifiers = ", ".join(str(row.id) for row in ambiguous_models[:20])
+        raise RuntimeError(
+            "v0.9 model identity migration requires Admin confirmation for "
+            f"manual, stale, or custom models: {identifiers}"
+        )
     definitions: dict[tuple[object, str, str], uuid.UUID] = {}
     for row in provider_models:
         key = (row.namespace_id, str(row.provider_slug).lower(), row.model_id)
@@ -575,7 +589,6 @@ def _backfill() -> None:
                 "capabilities": capabilities,
             }
         )
-        verified = bool((row.config or {}).get("compatibility_verified"))
         connection.execute(
             sa.text(
                 "INSERT INTO runtime_instance "
@@ -590,8 +603,8 @@ def _backfill() -> None:
                 "location": row.runtime_type,
                 "name": row.node_name or "Platform Claude Code",
                 "installation_key": f"legacy-runtime-profile:{row.id}",
-                "status": "available" if verified else "discovered",
-                "enabled": verified,
+                "status": "discovered",
+                "enabled": False,
                 "last_seen_at": row.last_seen_at,
                 "created_at": row.created_at,
                 "updated_at": row.updated_at,
@@ -601,7 +614,7 @@ def _backfill() -> None:
             sa.text(
                 "INSERT INTO runtime_configuration_revision "
                 "(id, runtime_instance_id, revision, executable, arguments, working_directory_policy, environment_allowlist, security_policy, resource_limits, configuration_digest, status, error, created_by, created_at, applied_at) "
-                "VALUES (:id, :runtime_id, 1, 'claude', :arguments, 'workspace', :environment, :security, :limits, :digest, 'applied', NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                "VALUES (:id, :runtime_id, 1, 'claude', :arguments, 'workspace', :environment, :security, :limits, :digest, 'desired', NULL, NULL, CURRENT_TIMESTAMP, NULL)"
             ),
             {
                 "id": config_id,
@@ -630,7 +643,7 @@ def _backfill() -> None:
         )
         connection.execute(
             sa.text(
-                "UPDATE runtime_instance SET desired_configuration_revision_id = :config_id, applied_configuration_revision_id = :config_id, current_capability_report_id = :report_id WHERE id = :runtime_id"
+                "UPDATE runtime_instance SET desired_configuration_revision_id = :config_id, applied_configuration_revision_id = NULL, current_capability_report_id = NULL WHERE id = :runtime_id"
             ),
             {"config_id": config_id, "report_id": report_id, "runtime_id": runtime_id},
         )
@@ -677,15 +690,6 @@ def _backfill() -> None:
                 )
         route_type = "provider_config" if row.provider_config_id else "legacy_direct"
         binding_id = uuid.uuid4()
-        evidence_digest = _digest(
-            {
-                "runtime_instance_id": str(runtime_id),
-                "model_definition_id": str(model_definition_id),
-                "engine_model_id": row.model_id,
-                "route_type": route_type,
-                "route_key": str(row.provider_config_id or row.id),
-            }
-        )
         connection.execute(
             sa.text(
                 "INSERT INTO runtime_model_binding "
@@ -702,9 +706,9 @@ def _backfill() -> None:
                 "route_type": route_type,
                 "route_key": str(row.provider_config_id or row.id),
                 "engine_model_id": row.model_id,
-                "status": "available" if verified else "declared",
-                "fingerprint": evidence_digest if verified else None,
-                "validated_at": row.updated_at if verified else None,
+                "status": "declared",
+                "fingerprint": None,
+                "validated_at": None,
             },
         )
 

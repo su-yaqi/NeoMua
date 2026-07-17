@@ -13,7 +13,9 @@
 - `/llm/model-definitions` 保存稳定模型身份；`/runtimes/{id}/model-bindings` 保存具体 Runtime 上的 provider/runtime-native 路由，验证通过后才进入执行目录。
 - 新 Task 必须选择 exact binding 或把 Agent 偏好唯一解析到该 Runtime 的 Binding，并冻结配置、能力、模型目录和 effective spec 摘要。
 
-当前 v0.9 快照尚未完成可信本地证据和全部安全上限执行：Node `model_evidence` 仍回显任务快照，环境/网络/资源限制没有在执行器完整落地，离线与过期依赖也未统一从目录失效。以上接口不能据此宣称运行时已满足生产安全门禁。
+Runtime Worker 与 Node Runtime 从本地 applied 配置、实际 Adapter、能力缓存和已验证模型路由生成 `model_evidence`，控制面精确核对后才允许首次模型调用。环境变量按运维级 `NEOMUA_RUNTIME_ENV_ALLOWLIST` 与配置 allowlist 的交集下传，应用 secret 和模型凭据始终排除；工作目录、权限、Tool/MCP、能力、超时和模型路由在执行边界复核。当前无法可靠执行的隔离、restricted network、CPU、内存、并发或未知策略会使配置应用失败，不会降级。
+
+平台 Worker 和 Node 每 20 秒上报本地能力事实；Node 离线、报告超过 5 分钟、配置/能力指纹变化、Provider/模型停用或验证到期都会使 Binding 从目录、Activation precheck 和任务创建中失效。
 
 ## Skill 同步与使用
 

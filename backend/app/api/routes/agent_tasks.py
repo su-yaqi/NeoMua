@@ -19,6 +19,7 @@ from app.core.config import settings
 from app.models import NamespaceRole
 from app.runtime.catalog import (
     RuntimeCatalogError,
+    available_model_bindings,
     canonical_digest,
     current_runtime_evidence,
     resolve_model_binding,
@@ -29,6 +30,7 @@ from app.runtime.models import (
     AgentEvent,
     AgentEventType,
     AgentTask,
+    AgentTaskModelCallUsage,
     AgentTaskModelUsage,
     AgentTaskSkillUsage,
     ModelSelectionMode,
@@ -91,6 +93,7 @@ class TaskPublic(BaseModel):
     updated_at: datetime
     skill_usage: list[dict[str, Any]] = Field(default_factory=list)
     model_usage: dict[str, Any] | None = None
+    model_call_usage: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class TasksPublic(BaseModel):
@@ -105,6 +108,11 @@ def _public(task: AgentTask, session: SessionDep) -> TaskPublic:
     model_usage = session.exec(
         select(AgentTaskModelUsage).where(AgentTaskModelUsage.task_id == task.id)
     ).first()
+    model_call_usage = session.exec(
+        select(AgentTaskModelCallUsage)
+        .where(AgentTaskModelCallUsage.task_id == task.id)
+        .order_by(col(AgentTaskModelCallUsage.call_sequence))
+    ).all()
     return TaskPublic(
         id=task.id,
         runtime_profile_id=task.runtime_profile_id,
@@ -120,6 +128,7 @@ def _public(task: AgentTask, session: SessionDep) -> TaskPublic:
         updated_at=task.updated_at,
         skill_usage=[item.model_dump(mode="json") for item in skill_usage],
         model_usage=model_usage.model_dump(mode="json") if model_usage else None,
+        model_call_usage=[item.model_dump(mode="json") for item in model_call_usage],
     )
 
 
@@ -168,7 +177,7 @@ def _validated_v09_working_directory(
 ) -> str | None:
     policy = configuration.working_directory_policy
     if requested is None:
-        if policy == "required":
+        if policy == "project":
             raise HTTPException(422, "Runtime requires an explicit working directory")
         return None
     roots = configuration.security_policy.get("allowed_working_roots", [])
@@ -258,13 +267,11 @@ def _v09_task_material(
     if body.model_selection_mode == ModelSelectionMode.AGENT_PREFERENCE:
         if preferred_model_id != model_binding.model_definition_id:
             raise HTTPException(409, "agent_preference_binding_mismatch")
-        matching = session.exec(
-            select(RuntimeModelBinding).where(
-                RuntimeModelBinding.runtime_instance_id == runtime.id,
-                RuntimeModelBinding.model_definition_id == preferred_model_id,
-                RuntimeModelBinding.status == "available",
-            )
-        ).all()
+        matching = [
+            item
+            for item in available_model_bindings(session, runtime.id)
+            if item.model_definition_id == preferred_model_id
+        ]
         if len(matching) != 1 or matching[0].id != model_binding.id:
             raise HTTPException(409, "agent_preference_not_uniquely_resolved")
         selection_source = ModelSelectionSource.AGENT_PREFERENCE
@@ -281,6 +288,12 @@ def _v09_task_material(
     runtime_permission_modes = set(
         configuration.security_policy.get("permission_modes", [])
     )
+    if not runtime_permission_modes and configuration.security_policy.get(
+        "permission_mode"
+    ):
+        runtime_permission_modes.add(
+            str(configuration.security_policy["permission_mode"])
+        )
     permission_mode = str(policies.get("permission_mode", "default"))
     if runtime_permission_modes and permission_mode not in runtime_permission_modes:
         raise HTTPException(409, "agent_permission_exceeds_runtime_policy")
@@ -293,6 +306,21 @@ def _v09_task_material(
     }
     if not required_tool_keys.issubset(allowed_tool_keys):
         raise HTTPException(409, "runtime_tool_capability_changed")
+    require_approval_tools = [
+        item["key"] for item in tools if item.get("policy") == "require_approval"
+    ]
+    if require_approval_tools and not capability.capabilities.get(
+        "supports_per_tool_approval", False
+    ):
+        raise HTTPException(409, "runtime_tool_approval_unsupported")
+    if resolved_spec.get("mcp_servers") and not capability.capabilities.get(
+        "supports_mcp_injection", False
+    ):
+        raise HTTPException(409, "runtime_mcp_injection_unsupported")
+    required_capabilities = policies.get("required_capabilities", {})
+    for key, required in required_capabilities.items():
+        if required and capability.capabilities.get(key) is not True:
+            raise HTTPException(409, f"runtime_capability_required:{key}")
     working_directory = _validated_v09_working_directory(
         body.working_directory, configuration=configuration, node=node
     )
@@ -339,7 +367,9 @@ def _v09_task_material(
         "resolved_spec_schema_version": release.resolved_spec_schema_version
         if release
         else None,
-        "system_prompt": body.system_prompt or resolved_spec.get("system_prompt"),
+        "system_prompt": (
+            resolved_spec.get("system_prompt") if release else body.system_prompt
+        ),
         "permission_mode": permission_mode,
         "tools": [item["key"] for item in tools],
         "allowed_tools": [
@@ -352,14 +382,23 @@ def _v09_task_material(
             for item in tools
             if item.get("policy") in {"deny", "disabled", "forbidden"}
         ],
-        "require_approval_tools": [
-            item["key"] for item in tools if item.get("policy") == "require_approval"
-        ],
+        "require_approval_tools": require_approval_tools,
+        "required_capabilities": required_capabilities,
         "skills": resolved_spec.get("skills", []),
         "plugins": resolved_spec.get("plugins", []),
         "mcp_servers": resolved_spec.get("mcp_servers", []),
         "working_directory": working_directory,
-        "timeout_seconds": int(policies.get("timeout_seconds", 3600)),
+        "allowed_working_roots": configuration.security_policy.get(
+            "allowed_working_roots", []
+        ),
+        "timeout_seconds": min(
+            int(policies.get("timeout_seconds", 3600)),
+            int(
+                configuration.resource_limits.get(
+                    "max_timeout_seconds", policies.get("timeout_seconds", 3600)
+                )
+            ),
+        ),
         "effective_spec_digest": effective_digest,
     }
     usage = AgentTaskModelUsage(

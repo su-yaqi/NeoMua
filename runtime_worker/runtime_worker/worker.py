@@ -5,6 +5,7 @@ import logging
 import os
 import random
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,7 @@ from workflow_runtime.executor import execute_runtime_job
 from runtime_worker.agent_shell import EngineShell, RunCommand
 from runtime_worker.mcp_manager import McpRuntimeManager
 from runtime_worker.release_store import AgentReleaseStore, canonical_bytes
+from runtime_worker.runtime_configuration import RuntimeConfigurationStore
 from runtime_worker.skill_store import SkillCacheMiss, SkillStore
 
 logger = logging.getLogger(__name__)
@@ -46,6 +48,7 @@ class RuntimeWorker:
         release_store: AgentReleaseStore | None = None,
         skill_store: SkillStore | None = None,
         mcp_manager: McpRuntimeManager | None = None,
+        runtime_configuration_store: RuntimeConfigurationStore | None = None,
     ) -> None:
         self.client = client
         self.headers = {"X-Runtime-Token": internal_token}
@@ -58,6 +61,8 @@ class RuntimeWorker:
         self.release_store = release_store
         self.skill_store = skill_store
         self.mcp_manager = mcp_manager
+        self.runtime_configuration_store = runtime_configuration_store
+        self._last_capability_heartbeat = 0.0
 
     async def validate_mcp_once(self) -> bool:
         if self.mcp_manager is None:
@@ -118,17 +123,8 @@ class RuntimeWorker:
         try:
             if not isinstance(engine, dict):
                 raise ValueError(f"Runtime engine is not installed: {engine_type}")
-            executable_name = Path(str(payload["executable"])).name
-            allowed_names = {
-                "claude_code": {"claude", "claude-code"},
-                "codex": {"codex"},
-            }.get(engine_type, set())
-            if executable_name not in allowed_names:
-                raise ValueError("configured executable does not match Runtime engine")
-            if payload.get("arguments"):
-                raise ValueError(
-                    "adapter_contract_unsupported: configured base arguments"
-                )
+            if self.runtime_configuration_store is None:
+                raise ValueError("Runtime configuration store is unavailable")
             capabilities = {
                 "tools": list(engine.get("builtin_tools", [])),
                 "permission_modes": list(engine.get("permission_modes", [])),
@@ -142,13 +138,21 @@ class RuntimeWorker:
                     engine.get("supports_mcp_injection", False)
                 ),
             }
+            applied = self.runtime_configuration_store.apply(
+                payload,
+                engine_version=engine.get("cli_version"),
+                adapter_version=str(
+                    engine.get("adapter_version") or engine.get("harness_version")
+                ),
+                capabilities=capabilities,
+                discovered_models=[],
+            )
             body = {
                 "status": "applied",
-                "engine_version": engine.get("cli_version"),
-                "adapter_version": engine.get("adapter_version")
-                or engine.get("harness_version"),
-                "capabilities": capabilities,
-                "discovered_models": [],
+                "engine_version": applied.engine_version,
+                "adapter_version": applied.adapter_version,
+                "capabilities": applied.capabilities,
+                "discovered_models": applied.discovered_models,
             }
         except (KeyError, TypeError, ValueError) as exc:
             body = {
@@ -184,6 +188,24 @@ class RuntimeWorker:
         self._classify_response(reported)
         return True
 
+    async def heartbeat_capabilities_once(self) -> bool:
+        if self.runtime_configuration_store is None:
+            return False
+        now = time.monotonic()
+        if now - self._last_capability_heartbeat < 20:
+            return False
+        response = await self.client.post(
+            "/api/v1/internal/runtime/capabilities/heartbeat",
+            headers=self.headers,
+            json={
+                "worker_id": self.worker_id,
+                "evidence": self.runtime_configuration_store.capability_evidence(),
+            },
+        )
+        self._classify_response(response)
+        self._last_capability_heartbeat = now
+        return True
+
     async def validate_native_model_once(self) -> bool:
         response = await self.client.post(
             "/api/v1/internal/runtime/model-validations/claim",
@@ -198,8 +220,16 @@ class RuntimeWorker:
         terminal = False
         error: str | None = None
         try:
+            if self.runtime_configuration_store is None:
+                raise ValueError("Runtime configuration store is unavailable")
+            configuration = self.runtime_configuration_store.get(
+                str(payload["runtime_instance_id"])
+            )
+            if configuration is None:
+                raise ValueError("Runtime configuration is not applied locally")
             command = RunCommand(
                 engine_type=str(payload["engine_type"]),
+                executable=configuration.execution_path(),
                 prompt="Reply with OK.",
                 model=str(payload["engine_model_id"]),
                 permission_mode="plan",
@@ -213,6 +243,13 @@ class RuntimeWorker:
                     terminal = True
             if error or not terminal:
                 raise ValueError(error or "Runtime engine returned no terminal result")
+            if self.runtime_configuration_store is None:
+                raise ValueError("Runtime configuration store is unavailable")
+            self.runtime_configuration_store.record_validated_model(
+                str(payload["runtime_instance_id"]),
+                str(payload["engine_model_id"]),
+                str(payload["route_key"]),
+            )
             body: dict[str, Any] = {
                 "status": "succeeded",
                 "evidence": {"event_count": sequence, "terminal_result": True},
@@ -542,8 +579,28 @@ class RuntimeWorker:
         task_id: str,
         revision: int,
         preparation: dict[str, Any],
+        command: RunCommand,
     ) -> dict[str, str]:
-        evidence = dict(preparation)
+        if self.runtime_configuration_store is None:
+            raise PermanentWorkerError("Runtime configuration store is unavailable")
+        configuration = self.runtime_configuration_store.get(
+            str(preparation["runtime_instance_id"])
+        )
+        if configuration is None:
+            raise PermanentWorkerError("Runtime configuration is not applied locally")
+        evidence = configuration.validate_task_snapshot(
+            {
+                **preparation,
+                "route_key": preparation["route_reference"],
+                "permission_mode": command.permission_mode,
+                "timeout_seconds": command.timeout_seconds,
+                "allowed_tools": command.allowed_tools,
+                "require_approval_tools": command.require_approval_tools,
+                "mcp_servers": command.mcp_servers,
+                "required_capabilities": command.required_capabilities,
+            }
+        )
+        command.executable = configuration.execution_path()
         engine_type = str(evidence["engine_type"])
         if self.harness_capabilities is not None:
             detected = self.harness_capabilities.get(engine_type)
@@ -557,12 +614,13 @@ class RuntimeWorker:
                 expected_engine_version is not None
                 and actual_engine_version != expected_engine_version
             ):
-                evidence["engine_version"] = actual_engine_version
+                raise PermanentWorkerError("Runtime engine version changed")
             actual_adapter_version = detected.get("adapter_version") or detected.get(
                 "harness_version"
             )
             if actual_adapter_version is not None:
-                evidence["adapter_version"] = actual_adapter_version
+                if actual_adapter_version != evidence["adapter_version"]:
+                    raise PermanentWorkerError("Runtime adapter version changed")
         response = await self.client.post(
             f"/api/v1/internal/runtime/tasks/{task_id}/model-prepared",
             headers=self.headers,
@@ -595,22 +653,36 @@ class RuntimeWorker:
             command = RunCommand(**payload["command"])
             task_id = str(payload["task_id"])
             revision = int(payload["revision"])
-            if payload.get("requires_model_preparation"):
-                preparation = payload.get("model_preparation")
-                if not isinstance(preparation, dict):
-                    raise ValueError("model_preparation is missing")
-                command.env.update(
-                    await self._prepare_task_model(task_id, revision, preparation)
-                )
-            command.task_revision = revision
-            command.approval_callback = self._request_tool_approval
-            command.delegation_callback = self._request_agent_delegation
             if payload.get("mcp_runtime_configs"):
                 if self.mcp_manager is None:
                     raise TransientWorkerError("MCP Runtime Manager is unavailable")
                 command.mcp_servers = self.mcp_manager.execution_configs(
                     payload["mcp_runtime_configs"]
                 )
+            if payload.get("requires_model_preparation"):
+                preparation = payload.get("model_preparation")
+                if not isinstance(preparation, dict):
+                    raise ValueError("model_preparation is missing")
+                command.env.update(
+                    await self._prepare_task_model(
+                        task_id, revision, preparation, command
+                    )
+                )
+                assert self.runtime_configuration_store is not None
+                configuration = self.runtime_configuration_store.get(
+                    str(preparation["runtime_instance_id"])
+                )
+                if configuration is None:
+                    raise ValueError("Runtime configuration is not applied locally")
+                command.env = {
+                    **configuration.task_environment(
+                        self.runtime_configuration_store.source_environment
+                    ),
+                    **command.env,
+                }
+            command.task_revision = revision
+            command.approval_callback = self._request_tool_approval
+            command.delegation_callback = self._request_agent_delegation
             release_binding = payload.get("release_binding")
             if release_binding:
                 if self.release_store is None:
@@ -881,6 +953,7 @@ class RuntimeWorker:
         while True:
             try:
                 validated_mcp = await self.validate_mcp_once()
+                capability_heartbeat = await self.heartbeat_capabilities_once()
                 applied_configuration = await self.apply_configuration_once()
                 validated_model = await self.validate_native_model_once()
                 synced_skill = await self.sync_skill_once()
@@ -896,6 +969,7 @@ class RuntimeWorker:
                     and not validated_model
                     and not synced_skill
                     and not ran_runtime_job
+                    and not capability_heartbeat
                 ):
                     await asyncio.sleep(2)
             except PermanentWorkerError:

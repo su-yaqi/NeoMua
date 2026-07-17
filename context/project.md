@@ -59,8 +59,8 @@ NeoMua
 - v0.8 集中验证已通过：Alembic 升级至 `e8a1c4b7d902`，Backend 231、Runtime Worker 与 Node Runtime 40、Playwright 74 项通过，前端生产构建、Ruff 与差异格式检查通过。
 - v0.9 将机器与执行引擎拆分为 Runtime Node 和一对多 Runtime Instance；Claude Code、Codex 等 Harness 收敛为 Runtime 内部引擎适配器，不再提供 Agent 侧 Harness 配置写入。
 - Runtime Instance 通过修订、能力报告、模型目录与已验证绑定声明可执行模型；Agent Release 只声明稳定模型偏好和引擎中立策略。Conversation、Agent 组与 Workflow 在不可变配置中选择具体模型或严格解析 Agent 偏好，任务启动前冻结 Runtime、引擎、模型、路由和能力证据，禁止隐式默认、模糊匹配或静默回退。
-- v0.9 当前开发快照的自动化验证已通过：Backend 210、Runtime Worker 16、Node Runtime 26、Playwright 74 项通过，前端生产构建、Ruff 与差异格式检查通过；数据库迁移目标 head 为 `fb4e6f8a0b23`。
-- 2026-07-17 的需求一致性与代码安全审阅未通过发布门禁：Runtime 本地模型证据仍由服务端快照回显，部分 Runtime 安全上限未落地，离线/过期依赖、迁移歧义与冻结行为仍有缺口。详见 `context/audit-2026-07-17-v0.9.md`。
+- v0.9 需求一致性与安全整改复核已通过：Runtime 模型证据来自本地 applied 配置和已验证路由；安全策略在执行边界应用，无法可靠执行的策略明确阻断；离线/过期依赖、迁移歧义、冻结行为、逐次用量和并发语义均已关闭。
+- v0.9 集中验证为 Backend 213、Runtime Worker 19、Node Runtime 27、Playwright 74 项通过；前端生产构建、Ruff、变更范围 Biome、Alembic upgrade/check 与差异格式检查通过，数据库 head 为 `fc5a7b9d1e34`。按用户要求当前不合并主分支。
 
 ## 版本状态
 | 版本 | 状态 | 说明 |
@@ -73,4 +73,4 @@ NeoMua
 | v0.6 | 已完成 | 项目上下文、Chat/多 Agent 工作台、代码化 Workflow 应用与协作任务执行 |
 | v0.7 | 已完成 | Chat/Agent 工作台、完整创建体验、独立 Workflow 应用与模板执行配置 |
 | v0.8 | 已完成 | Skill 文件工作台、不可变发布版本、身份绑定、Runtime 异步同步与任务使用审计 |
-| v0.9 | 待整改、未合并 | Runtime Instance 等主体结构已实现；P0/P1 发布阻断项尚未关闭，不能标记为已完成 |
+| v0.9 | 整改完成、待合并 | Runtime Instance、可信执行证据与安全边界已通过复核；按用户要求尚未合并主分支 |

@@ -42,4 +42,4 @@
 
 ## 完成情况
 
-v0.9 已按上述职责边界完成数据库、后端、Runtime Worker、Node Runtime、前端和端到端链路改造。数据库已升级至 `fb4e6f8a0b23`，Alembic 模型差异检查无待生成操作；Backend 210、Runtime Worker 与 Node Runtime 42、Playwright 74 项全部通过，前端生产构建、Python Ruff 和差异格式检查通过。详细内容见 `context/changelogs/v0.9.md`。
+v0.9 已按上述职责边界完成数据库、后端、Runtime Worker、Node Runtime、前端和端到端链路改造，并关闭需求一致性与安全审阅发现的 P0/P1/P2 缺口。数据库已升级至 `fc5a7b9d1e34`，Alembic 模型差异检查无待生成操作；Backend 213、Runtime Worker 19、Node Runtime 27、Playwright 74 项全部通过，前端生产构建、Python Ruff、变更范围 Biome 和差异格式检查通过。当前按用户要求尚未合并主分支，详细内容见 `context/changelogs/v0.9.md`。

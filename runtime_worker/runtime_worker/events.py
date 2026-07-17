@@ -78,6 +78,7 @@ def normalize_message(message: Any, sequence: int) -> dict[str, Any]:
         payload = {
             "session_id": getattr(message, "session_id", None),
             "result": message.result,
+            "usage": _value(getattr(message, "usage", {})),
         }
     elif hasattr(message, "content"):
         event_type = "assistant_message"

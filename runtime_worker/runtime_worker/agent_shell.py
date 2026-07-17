@@ -24,6 +24,7 @@ class RunCommand:
     prompt: str
     model: str
     engine_type: str = "claude_code"
+    executable: str | None = None
     system_prompt: str | None = None
     permission_mode: str = "default"
     tools: list[str] = field(default_factory=list)
@@ -31,11 +32,13 @@ class RunCommand:
     disallowed_tools: list[str] = field(default_factory=list)
     cwd: str | None = None
     env: dict[str, str] = field(default_factory=dict)
+    environment_allowlist: list[str] = field(default_factory=list)
     sdk_session_id: str | None = None
     start_sequence: int = 0
     timeout_seconds: int = 3600
     task_revision: int = 1
     require_approval_tools: list[str] = field(default_factory=list)
+    required_capabilities: dict[str, bool] = field(default_factory=dict)
     add_dirs: list[str] = field(default_factory=list)
     skills: list[str] = field(default_factory=list)
     mcp_servers: dict[str, Any] = field(default_factory=dict)
@@ -155,6 +158,7 @@ class AgentShell:
 
         return ClaudeAgentOptions(
             model=command.model,
+            cli_path=command.executable,
             system_prompt=command.system_prompt,
             tools=command.tools,
             allowed_tools=allowed_tools,
@@ -246,9 +250,10 @@ class CodexShell:
     async def run_session(
         self, command: RunCommand, *, task_id: str | None = None
     ) -> AsyncIterator[dict[str, Any]]:
-        if not self.executable:
+        executable = command.executable or self.executable
+        if not executable:
             raise ValueError("codex executable is not installed")
-        argv = self.build_argv(command, self.executable)
+        argv = self.build_argv(command, executable)
         process = await asyncio.create_subprocess_exec(
             *argv,
             cwd=command.cwd,

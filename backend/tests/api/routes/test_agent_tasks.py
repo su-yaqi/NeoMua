@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
@@ -10,6 +11,7 @@ from app.runtime.catalog import canonical_digest
 from app.runtime.models import (
     AgentEvent,
     AgentEventType,
+    AgentTask,
     RuntimeCapabilityReport,
     RuntimeConfigurationRevision,
     RuntimeConfigurationStatus,
@@ -21,6 +23,7 @@ from app.runtime.models import (
     RuntimeModelBindingStatus,
     RuntimeModelRouteType,
 )
+from app.runtime.policy import TaskStatus
 from app.runtime.repository import append_and_apply_event
 from tests.api.routes.test_namespaces import create_namespace, namespace_headers
 from tests.utils.user import authentication_token_from_email, create_random_user
@@ -63,7 +66,7 @@ def ready_runtime(db: Session, namespace_id: uuid.UUID) -> tuple[RuntimeInstance
         engine_version="1.0.0",
         adapter_version="1.0.0",
         configuration_digest=configuration.configuration_digest,
-        capabilities={"tools": []},
+        capabilities={"tools": [], "supports_per_tool_approval": True},
         discovered_models=[],
         capability_fingerprint=canonical_digest({"capability": str(runtime.id)}),
     )
@@ -76,6 +79,9 @@ def ready_runtime(db: Session, namespace_id: uuid.UUID) -> tuple[RuntimeInstance
         engine_model_id=definition.model_key,
         status=RuntimeModelBindingStatus.AVAILABLE,
         validation_fingerprint=canonical_digest({"binding": str(runtime.id)}),
+        validated_capability_fingerprint=capability.capability_fingerprint,
+        last_validated_at=datetime.now(timezone.utc),
+        validation_expires_at=datetime.now(timezone.utc) + timedelta(hours=24),
     )
     db.add_all([capability, binding])
     db.flush()
@@ -113,6 +119,11 @@ def test_v09_task_freezes_exact_model_and_emits_binding_evidence(
     assert body["model_usage"]["runtime_model_binding_id"] == str(binding.id)
 
     task_id = uuid.UUID(body["id"])
+    task = db.get(AgentTask, task_id)
+    assert task is not None
+    task.status = TaskStatus.DISPATCHED
+    db.add(task)
+    db.commit()
     append_and_apply_event(
         db,
         task_id,
@@ -125,6 +136,35 @@ def test_v09_task_freezes_exact_model_and_emits_binding_evidence(
         select(AgentEvent).where(AgentEvent.task_id == task_id, AgentEvent.sequence == 1)
     ).one()
     assert event.payload["model_execution"]["runtime_model_binding_id"] == str(binding.id)
+    append_and_apply_event(
+        db,
+        task_id,
+        2,
+        AgentEventType.RESULT,
+        {
+            "result": "Done",
+            "usage": {"input_tokens": 12, "output_tokens": 4},
+        },
+    )
+    db.commit()
+    read = client.get(
+        f"{settings.API_V1_STR}/runtime-tasks/{task_id}",
+        headers=namespace_headers(superuser_token_headers, namespace.id),
+    )
+    assert read.status_code == 200, read.text
+    assert read.json()["model_call_usage"] == [
+        {
+            "id": read.json()["model_call_usage"][0]["id"],
+            "task_id": str(task_id),
+            "runtime_model_binding_id": str(binding.id),
+            "call_sequence": 1,
+            "event_sequence": 2,
+            "usage": {"input_tokens": 12, "output_tokens": 4},
+            "status": "succeeded",
+            "error": None,
+            "created_at": read.json()["model_call_usage"][0]["created_at"],
+        }
+    ]
 
 
 def test_runtime_profile_task_write_is_rejected(
@@ -147,6 +187,33 @@ def test_runtime_profile_task_write_is_rejected(
     )
     assert response.status_code == 422
     assert "read-only" in response.text
+
+
+def test_v09_task_rejects_stale_model_binding(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    namespace = create_namespace(db)
+    runtime, binding = ready_runtime(db, namespace.id)
+    binding.validation_expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    db.add(binding)
+    db.commit()
+    response = client.post(
+        f"{settings.API_V1_STR}/runtime-tasks",
+        headers={
+            **namespace_headers(superuser_token_headers, namespace.id),
+            "Idempotency-Key": "stale-binding-task",
+        },
+        json={
+            "runtime_instance_id": str(runtime.id),
+            "runtime_model_binding_id": str(binding.id),
+            "model_selection_mode": "exact",
+            "prompt": "Must not run",
+        },
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "model_binding_validation_stale"
 
 
 def test_developer_cannot_dispatch_admin_v09_task(

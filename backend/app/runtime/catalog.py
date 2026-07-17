@@ -3,12 +3,13 @@
 import hashlib
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlmodel import Session, col, select
 
 from app.models import LlmModelDefinition, LlmProviderConfig, LlmProviderModel
+from app.runtime.connections import node_is_online
 from app.runtime.models import (
     ModelSelectionMode,
     ModelSelectionSource,
@@ -16,9 +17,14 @@ from app.runtime.models import (
     RuntimeConfigurationRevision,
     RuntimeInstance,
     RuntimeInstanceStatus,
+    RuntimeLocationType,
     RuntimeModelBinding,
     RuntimeModelBindingStatus,
+    RuntimeNode,
 )
+
+CAPABILITY_MAX_AGE = timedelta(minutes=5)
+BINDING_VALIDATION_MAX_AGE = timedelta(hours=24)
 
 
 class RuntimeCatalogError(ValueError):
@@ -52,14 +58,7 @@ def configuration_payload(row: RuntimeConfigurationRevision) -> dict[str, Any]:
 
 
 def model_catalog_fingerprint(session: Session, runtime_id: uuid.UUID) -> str:
-    rows = session.exec(
-        select(RuntimeModelBinding)
-        .where(
-            RuntimeModelBinding.runtime_instance_id == runtime_id,
-            RuntimeModelBinding.status == RuntimeModelBindingStatus.AVAILABLE,
-        )
-        .order_by(col(RuntimeModelBinding.id))
-    ).all()
+    rows = available_model_bindings(session, runtime_id)
     return canonical_digest(
         [
             {
@@ -78,19 +77,31 @@ def model_catalog_fingerprint(session: Session, runtime_id: uuid.UUID) -> str:
 def available_model_bindings(
     session: Session, runtime_id: uuid.UUID
 ) -> list[RuntimeModelBinding]:
-    return list(
-        session.exec(
-            select(RuntimeModelBinding)
-            .where(
-                RuntimeModelBinding.runtime_instance_id == runtime_id,
-                RuntimeModelBinding.status == RuntimeModelBindingStatus.AVAILABLE,
-            )
-            .order_by(col(RuntimeModelBinding.engine_model_id))
-        ).all()
-    )
+    runtime = session.get(RuntimeInstance, runtime_id)
+    if runtime is None:
+        return []
+    try:
+        _, capability, _ = current_runtime_evidence(
+            session, runtime, include_catalog=False
+        )
+    except RuntimeCatalogError:
+        return []
+    rows = session.exec(
+        select(RuntimeModelBinding)
+        .where(
+            RuntimeModelBinding.runtime_instance_id == runtime_id,
+            RuntimeModelBinding.status == RuntimeModelBindingStatus.AVAILABLE,
+        )
+        .order_by(col(RuntimeModelBinding.engine_model_id))
+    ).all()
+    return [
+        row
+        for row in rows
+        if model_binding_is_current(session, row, capability.capability_fingerprint)
+    ]
 
 
-def validate_runtime_ready(_session: Session, runtime: RuntimeInstance) -> None:
+def validate_runtime_ready(session: Session, runtime: RuntimeInstance) -> None:
     if not runtime.enabled or runtime.status != RuntimeInstanceStatus.AVAILABLE:
         raise RuntimeCatalogError(
             "runtime_unavailable", "Runtime is not enabled and available"
@@ -103,6 +114,53 @@ def validate_runtime_ready(_session: Session, runtime: RuntimeInstance) -> None:
     if runtime.current_capability_report_id is None:
         raise RuntimeCatalogError(
             "runtime_capability_missing", "Runtime has no current capability report"
+        )
+    if runtime.location_type == RuntimeLocationType.NODE:
+        node = (
+            session.get(RuntimeNode, runtime.runtime_node_id)
+            if runtime.runtime_node_id
+            else None
+        )
+        if node is None or not node_is_online(node):
+            raise RuntimeCatalogError(
+                "runtime_node_offline", "Runtime Node is offline"
+            )
+
+
+def model_binding_is_current(
+    session: Session,
+    binding: RuntimeModelBinding,
+    capability_fingerprint: str,
+) -> bool:
+    now = utcnow()
+    if (
+        binding.status != RuntimeModelBindingStatus.AVAILABLE
+        or binding.validation_fingerprint is None
+        or binding.last_validated_at is None
+        or binding.last_validated_at < now - BINDING_VALIDATION_MAX_AGE
+        or (
+            binding.validation_expires_at is not None
+            and binding.validation_expires_at <= now
+        )
+        or binding.validated_capability_fingerprint != capability_fingerprint
+    ):
+        return False
+    try:
+        validate_model_binding_route(session, binding)
+    except RuntimeCatalogError:
+        return False
+    return True
+
+
+def validate_model_binding_current(
+    session: Session,
+    binding: RuntimeModelBinding,
+    capability_fingerprint: str,
+) -> None:
+    if not model_binding_is_current(session, binding, capability_fingerprint):
+        raise RuntimeCatalogError(
+            "model_binding_validation_stale",
+            "Model binding validation is stale or its dependencies changed",
         )
 
 
@@ -130,10 +188,10 @@ def resolve_model_binding(
                 "model_binding_wrong_runtime",
                 "Model binding does not belong to the selected Runtime",
             )
-        if binding.status != RuntimeModelBindingStatus.AVAILABLE:
-            raise RuntimeCatalogError(
-                "model_binding_unavailable", "Model binding is not available"
-            )
+        _, capability, _ = current_runtime_evidence(session, runtime)
+        validate_model_binding_current(
+            session, binding, capability.capability_fingerprint
+        )
         source = (
             ModelSelectionSource.EXACT
             if preferred_model_definition_id in {None, binding.model_definition_id}
@@ -150,13 +208,11 @@ def resolve_model_binding(
         raise RuntimeCatalogError(
             "agent_preference_missing", "Agent Release has no model preference"
         )
-    rows = session.exec(
-        select(RuntimeModelBinding).where(
-            RuntimeModelBinding.runtime_instance_id == runtime.id,
-            RuntimeModelBinding.model_definition_id == preferred_model_definition_id,
-            RuntimeModelBinding.status == RuntimeModelBindingStatus.AVAILABLE,
-        )
-    ).all()
+    rows = [
+        row
+        for row in available_model_bindings(session, runtime.id)
+        if row.model_definition_id == preferred_model_definition_id
+    ]
     if not rows:
         raise RuntimeCatalogError(
             "agent_preference_unavailable",
@@ -212,7 +268,10 @@ def validate_model_binding_route(
 
 
 def current_runtime_evidence(
-    session: Session, runtime: RuntimeInstance
+    session: Session,
+    runtime: RuntimeInstance,
+    *,
+    include_catalog: bool = True,
 ) -> tuple[RuntimeConfigurationRevision, RuntimeCapabilityReport, str]:
     validate_runtime_ready(session, runtime)
     configuration = session.get(
@@ -229,4 +288,14 @@ def current_runtime_evidence(
         raise RuntimeCatalogError(
             "runtime_capability_missing", "Current Runtime capability report is missing"
         )
-    return configuration, capability, model_catalog_fingerprint(session, runtime.id)
+    if capability.reported_at < utcnow() - CAPABILITY_MAX_AGE:
+        raise RuntimeCatalogError(
+            "runtime_capability_stale", "Runtime capability report has expired"
+        )
+    if capability.configuration_digest != configuration.configuration_digest:
+        raise RuntimeCatalogError(
+            "runtime_capability_configuration_mismatch",
+            "Runtime capability report does not match the applied configuration",
+        )
+    catalog = model_catalog_fingerprint(session, runtime.id) if include_catalog else ""
+    return configuration, capability, catalog

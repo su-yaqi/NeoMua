@@ -667,6 +667,47 @@ export type BodyWorkflowsUploadWorkflowAttachment = {
 };
 
 /**
+ * CapabilityHeartbeatEvidence
+ */
+export type CapabilityHeartbeatEvidence = {
+    /**
+     * Runtime Instance Id
+     */
+    runtime_instance_id: string;
+    engine_type: RuntimeEngineType;
+    /**
+     * Engine Version
+     */
+    engine_version?: string | null;
+    /**
+     * Adapter Version
+     */
+    adapter_version: string;
+    /**
+     * Configuration Digest
+     */
+    configuration_digest: string;
+    /**
+     * Capability Fingerprint
+     */
+    capability_fingerprint: string;
+};
+
+/**
+ * CapabilityHeartbeatInput
+ */
+export type CapabilityHeartbeatInput = {
+    /**
+     * Worker Id
+     */
+    worker_id: string;
+    /**
+     * Evidence
+     */
+    evidence: Array<CapabilityHeartbeatEvidence>;
+};
+
+/**
  * ClaimInput
  */
 export type ClaimInput = {
@@ -803,6 +844,10 @@ export type ContextRefresh = {
  */
 export type ConversationAgentInput = {
     /**
+     * Conversation Agent Id
+     */
+    conversation_agent_id?: string | null;
+    /**
      * Runtime Agent Release Id
      */
     runtime_agent_release_id: string;
@@ -833,6 +878,10 @@ export type ConversationConfigurationUpdate = {
      * Organizer Runtime Agent Release Id
      */
     organizer_runtime_agent_release_id?: string | null;
+    /**
+     * Organizer Conversation Agent Id
+     */
+    organizer_conversation_agent_id?: string | null;
     chat_model_selection?: ModelSelectionInput | null;
     /**
      * Participant Selections
@@ -4417,6 +4466,12 @@ export type AppApiRoutesAgentTasksTaskPublic = {
     model_usage?: {
         [key: string]: unknown;
     } | null;
+    /**
+     * Model Call Usage
+     */
+    model_call_usage?: Array<{
+        [key: string]: unknown;
+    }>;
 };
 
 /**
@@ -7968,6 +8023,41 @@ export type InternalRuntimeInstancesClaimRuntimeConfigurationResponses = {
 };
 
 export type InternalRuntimeInstancesClaimRuntimeConfigurationResponse = InternalRuntimeInstancesClaimRuntimeConfigurationResponses[keyof InternalRuntimeInstancesClaimRuntimeConfigurationResponses];
+
+export type InternalRuntimeInstancesHeartbeatRuntimeCapabilitiesData = {
+    body: CapabilityHeartbeatInput;
+    headers?: {
+        /**
+         * X-Runtime-Token
+         */
+        'X-Runtime-Token'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/internal/runtime/capabilities/heartbeat';
+};
+
+export type InternalRuntimeInstancesHeartbeatRuntimeCapabilitiesErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type InternalRuntimeInstancesHeartbeatRuntimeCapabilitiesError = InternalRuntimeInstancesHeartbeatRuntimeCapabilitiesErrors[keyof InternalRuntimeInstancesHeartbeatRuntimeCapabilitiesErrors];
+
+export type InternalRuntimeInstancesHeartbeatRuntimeCapabilitiesResponses = {
+    /**
+     * Response Internal-Runtime-Instances-Heartbeat Runtime Capabilities
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: number;
+    };
+};
+
+export type InternalRuntimeInstancesHeartbeatRuntimeCapabilitiesResponse = InternalRuntimeInstancesHeartbeatRuntimeCapabilitiesResponses[keyof InternalRuntimeInstancesHeartbeatRuntimeCapabilitiesResponses];
 
 export type InternalRuntimeInstancesReportRuntimeConfigurationResultData = {
     body: ConfigurationResultInput;
@@ -12407,6 +12497,51 @@ export type AgentReleasesGetResolvedSpecResponses = {
 };
 
 export type AgentReleasesGetResolvedSpecResponse = AgentReleasesGetResolvedSpecResponses[keyof AgentReleasesGetResolvedSpecResponses];
+
+export type AgentReleasesReleaseRuntimeCompatibilityData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Release Id
+         */
+        release_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/agent-releases/{release_id}/compatibility';
+};
+
+export type AgentReleasesReleaseRuntimeCompatibilityErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentReleasesReleaseRuntimeCompatibilityError = AgentReleasesReleaseRuntimeCompatibilityErrors[keyof AgentReleasesReleaseRuntimeCompatibilityErrors];
+
+export type AgentReleasesReleaseRuntimeCompatibilityResponses = {
+    /**
+     * Response Agent-Releases-Release Runtime Compatibility
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentReleasesReleaseRuntimeCompatibilityResponse = AgentReleasesReleaseRuntimeCompatibilityResponses[keyof AgentReleasesReleaseRuntimeCompatibilityResponses];
 
 export type AgentReleasesPrecheckActivationData = {
     body: ActivationCreate;

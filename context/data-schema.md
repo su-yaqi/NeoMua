@@ -255,4 +255,4 @@ Skill 草稿每个 Skill 只允许一条；文件路径在草稿内唯一并拒�
 | Workflow Agent | `workflow_node_definition.agent_role_key`、`workflow_instance_agent_binding` | Agent 节点声明逻辑角色；实例绑定精确 Runtime、Agent Release 与 Resolved Spec digest |
 | Workflow 执行配置 | `namespace_workflow_configuration`、`workflow_execution_configuration_revision`、`workflow_execution_node_binding`；`workflow_instance.execution_configuration_revision_id` | 每个 namespace/模板版本只有一个当前配置指针；保存使用 expected revision 并创建不可变新修订；每个非人工节点必须明确 Runtime，Agent 节点还必须明确 Release；实例创建时冻结当前修订 |
 
-迁移链在 v0.7 依次加入会话配置修订、独立 Workflow 上下文、Agent 角色绑定和模板执行配置。v0.8 新增 Skill 草稿/文件/current-version 审计、Runtime Skill 状态/attempt 和任务使用证据，并迁移 Skill 身份绑定。v0.9 新增 Runtime Instance、配置/能力报告、稳定模型定义与 Binding、Activation precheck 及 Task 模型证据；当前目标 Alembic head 为 `fb4e6f8a0b23`。旧模型身份自动回填仍有歧义阻断缺口，详见 v0.9 审计。
+迁移链在 v0.7 依次加入会话配置修订、独立 Workflow 上下文、Agent 角色绑定和模板执行配置。v0.8 新增 Skill 草稿/文件/current-version 审计、Runtime Skill 状态/attempt 和任务使用证据，并迁移 Skill 身份绑定。v0.9 新增 Runtime Instance、配置/能力报告、稳定模型定义与 Binding、Activation precheck、Binding 验证有效期和逐次 Task 模型调用证据；当前目标 Alembic head 为 `fc5a7b9d1e34`。旧模型只在来源可证明时迁移，未知或歧义记录会阻断升级并要求 Admin 确认。

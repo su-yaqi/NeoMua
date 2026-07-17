@@ -510,6 +510,9 @@ def claim_platform_task(body: ClaimInput, session: SessionDep) -> dict[str, Any]
                 "require_approval_tools": snapshot.get(
                     "require_approval_tools", []
                 ),
+                "required_capabilities": snapshot.get(
+                    "required_capabilities", {}
+                ),
                 "cwd": snapshot.get("working_directory"),
                 "env": {},
                 "sdk_session_id": agent_session.sdk_session_id

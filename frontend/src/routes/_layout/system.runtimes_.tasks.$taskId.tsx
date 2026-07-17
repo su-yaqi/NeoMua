@@ -126,7 +126,9 @@ function RuntimeTaskPage() {
                 key={String(usage.skill_id)}
                 className="grid w-full gap-2 rounded border p-3 text-left text-sm md:grid-cols-4"
                 onClick={() =>
-                  window.location.assign(`/system/skills/${String(usage.skill_id)}`)
+                  window.location.assign(
+                    `/system/skills/${String(usage.skill_id)}`,
+                  )
                 }
               >
                 <span>{String(usage.skill_name ?? usage.skill_slug)}</span>
@@ -134,6 +136,34 @@ function RuntimeTaskPage() {
                 <code>{String(usage.content_sha256).slice(0, 16)}</code>
                 <span>generation {String(usage.runtime_generation)}</span>
               </button>
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
+      {task.data?.model_call_usage?.length ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>逐次模型调用记录</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {task.data.model_call_usage.map((usage) => (
+              <div
+                key={String(usage.id)}
+                className="grid gap-2 rounded border p-3 text-sm md:grid-cols-4"
+              >
+                <span>调用 #{String(usage.call_sequence)}</span>
+                <span>事件 #{String(usage.event_sequence)}</span>
+                <span>状态：{String(usage.status)}</span>
+                <code
+                  className="truncate"
+                  title={String(usage.runtime_model_binding_id)}
+                >
+                  {String(usage.runtime_model_binding_id)}
+                </code>
+                <pre className="overflow-auto rounded bg-muted p-2 text-xs md:col-span-4">
+                  {JSON.stringify(usage.usage, null, 2)}
+                </pre>
+              </div>
             ))}
           </CardContent>
         </Card>

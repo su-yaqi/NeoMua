@@ -60,7 +60,7 @@ backend routes --> deps / crud --> models --> db
 - 单体服务 + Compose 编排：当前规模下优先简化开发、测试和部署链路。
 - 能力不可变与目标显式性：Skill/Plugin Version、MCP Revision、Agent Release 内容本身均不可变；Plugin、MCP 与 Agent Release 继续精确锁定自身版本，但 Agent/Plugin/Release 对 Skill 只锁定身份。Skill 当前版本由控制面指针显式决定，Runtime 按目标独立同步，不按 SemVer 猜测，也不做模型、Harness、Tool 或权限降级。
 - v0.9 执行绑定以 Runtime Instance 为边界：Agent Release 只保存稳定模型偏好；Conversation、Workflow 和 Task 保存 exact binding 或严格的偏好解析结果。Runtime 配置摘要、能力指纹、模型目录指纹和 effective spec digest 进入不可变执行快照。
-- 当前 v0.9 开发快照尚未实现完整可信证明：Node 模型证据仍回显控制面快照，部分 Runtime 安全上限未落地，离线和过期依赖未统一失效。主干发布前必须按 `context/audit-2026-07-17-v0.9.md` 关闭阻断项。
+- v0.9 的 Runtime 模型证明来自本地持久化 applied 配置、实际 Adapter、能力缓存和已验证模型路由，控制面精确核对后才允许首次模型调用。配置环境按运维与 Runtime 双重 allowlist 清洗；目录、权限、Tool/MCP、能力和超时在执行边界复核，当前无法可靠执行的隔离、网络、CPU、内存或并发策略明确阻断。Node 离线、能力过期或依赖变化会统一使旧 Binding 失效。
 - Skill 发布、同步和使用解耦：发布阶段完成文件安全检查、Manifest 解析、完整校验、摘要和签名；同步阶段由通知与周期轮询驱动，按摘要下载、验签、缓存并原子切换 desired/applied；任务阶段只绑定 Runtime 本地已应用的不可变目录并写入版本证据，不访问控制面、不下载、不解包、不再次解析。
 - Skill 同步采用两阶段提交和保守失败语义：验证成功后再提交 applied 指针；同步失败保留上一已应用版本。首次尚无可用版本时阻断依赖该 Skill 的激活或任务，已有版本时继续使用旧 applied 并明确展示差异，绝不静默移除能力。
 - MCP secret 分域：平台 target 使用 AES-GCM 密文；节点 target 只保存 `secret_ref`，本地 Keychain 指纹通过心跳上报，变化或移除使 target `stale`。

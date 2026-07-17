@@ -32,6 +32,7 @@ class ModelSelectionInput(StrictBody):
 
 
 class ConversationAgentInput(StrictBody):
+    conversation_agent_id: uuid.UUID | None = None
     runtime_agent_release_id: uuid.UUID
     model_selection: ModelSelectionInput | None = None
 
@@ -98,6 +99,7 @@ class ConversationConfigurationUpdate(StrictBody):
     model_id: str | None = Field(default=None, min_length=1, max_length=255)
     participant_runtime_agent_release_ids: list[uuid.UUID] = []
     organizer_runtime_agent_release_id: uuid.UUID | None = None
+    organizer_conversation_agent_id: uuid.UUID | None = None
     chat_model_selection: ModelSelectionInput | None = None
     participant_selections: list[ConversationAgentInput] = []
 

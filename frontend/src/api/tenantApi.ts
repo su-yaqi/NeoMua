@@ -265,6 +265,8 @@ export interface RuntimeTask {
   created_at: string
   updated_at: string
   skill_usage: Array<Record<string, unknown>>
+  model_usage: Record<string, unknown> | null
+  model_call_usage: Array<Record<string, unknown>>
 }
 
 export interface RuntimeArtifact {

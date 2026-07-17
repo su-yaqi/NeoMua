@@ -58,7 +58,15 @@ def test_create_complete_agent_declares_stable_model_preference(
     )
     assert precheck.status_code == 200, precheck.text
     precheck_body = precheck.json()
-    assert precheck_body["deployable"] is True
+    assert precheck_body["deployable"] is True, precheck_body
+    compatibility = client.get(
+        f"{settings.API_V1_STR}/agent-releases/{release_body['id']}/compatibility",
+        headers=headers,
+    )
+    assert compatibility.status_code == 200, compatibility.text
+    target = compatibility.json()["targets"][0]
+    assert target["runtime_instance_id"] == str(_runtime.id)
+    assert target["compatible"] is True
     assert precheck_body["preference_status"] == "available"
 
     activation = client.post(

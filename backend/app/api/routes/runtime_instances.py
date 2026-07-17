@@ -1,12 +1,15 @@
 """v0.9 Runtime instance, configuration, capability, and model catalog APIs."""
 
+import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from pathlib import PurePosixPath, PureWindowsPath
 from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, select
 
 from app.api.deps import (
@@ -25,6 +28,7 @@ from app.runtime.catalog import (
     RuntimeCatalogError,
     canonical_digest,
     configuration_payload,
+    current_runtime_evidence,
     model_catalog_fingerprint,
     validate_model_binding_route,
 )
@@ -70,8 +74,71 @@ class RuntimeConfigurationInput(StrictBody):
     def validate_command(self) -> "RuntimeConfigurationInput":
         if any("\x00" in item for item in [self.executable, *self.arguments]):
             raise ValueError("Runtime command cannot contain NUL")
-        if self.working_directory_policy not in {"workspace", "project", "isolated"}:
+        if self.working_directory_policy not in {"workspace", "project"}:
             raise ValueError("Unsupported working_directory_policy")
+        if self.arguments:
+            raise ValueError("adapter_contract_unsupported: configured base arguments")
+        if len(set(self.environment_allowlist)) != len(self.environment_allowlist):
+            raise ValueError("environment_allowlist contains duplicates")
+        if any(
+            re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) is None
+            for name in self.environment_allowlist
+        ):
+            raise ValueError("environment_allowlist contains an invalid name")
+        allowed_security = {
+            "allowed_working_roots",
+            "network_policy",
+            "permission_mode",
+            "permission_modes",
+        }
+        unknown_security = set(self.security_policy) - allowed_security
+        if unknown_security:
+            raise ValueError(
+                f"Unsupported Runtime security policy: {sorted(unknown_security)}"
+            )
+        if self.security_policy.get("network_policy", "unrestricted") != "unrestricted":
+            raise ValueError("adapter_contract_unsupported: restricted network policy")
+        modes = self.security_policy.get("permission_modes")
+        if modes is None and self.security_policy.get("permission_mode") is not None:
+            modes = [self.security_policy["permission_mode"]]
+        if modes is not None and (
+            not isinstance(modes, list)
+            or not modes
+            or any(
+                mode not in {"default", "acceptEdits", "plan", "dontAsk"}
+                for mode in modes
+            )
+        ):
+            raise ValueError("security_policy.permission_modes is invalid")
+        roots = self.security_policy.get("allowed_working_roots", [])
+        if not isinstance(roots, list) or any(
+            not isinstance(root, str)
+            or not (
+                (
+                    PurePosixPath(root).is_absolute()
+                    and ".." not in PurePosixPath(root).parts
+                )
+                or (
+                    PureWindowsPath(root).is_absolute()
+                    and ".." not in PureWindowsPath(root).parts
+                )
+            )
+            for root in roots
+        ):
+            raise ValueError(
+                "security_policy.allowed_working_roots must contain normalized absolute paths"
+            )
+        allowed_limits = {"max_timeout_seconds"}
+        unknown_limits = set(self.resource_limits) - allowed_limits
+        if unknown_limits:
+            raise ValueError(
+                f"adapter_contract_unsupported: resource limits {sorted(unknown_limits)}"
+            )
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 1
+            for value in self.resource_limits.values()
+        ):
+            raise ValueError("Runtime resource limits must be positive integers")
         return self
 
 
@@ -134,6 +201,20 @@ class ConfigurationApplyInput(StrictBody):
 
 class ConfigurationClaimInput(StrictBody):
     worker_id: str = Field(min_length=1, max_length=255)
+
+
+class CapabilityHeartbeatEvidence(StrictBody):
+    runtime_instance_id: uuid.UUID
+    engine_type: RuntimeEngineType
+    engine_version: str | None = Field(default=None, max_length=64)
+    adapter_version: str = Field(min_length=1, max_length=64)
+    configuration_digest: str = Field(min_length=64, max_length=64)
+    capability_fingerprint: str = Field(min_length=64, max_length=64)
+
+
+class CapabilityHeartbeatInput(StrictBody):
+    worker_id: str = Field(min_length=1, max_length=255)
+    evidence: list[CapabilityHeartbeatEvidence] = Field(max_length=1000)
 
 
 class ConfigurationResultInput(StrictBody):
@@ -447,7 +528,16 @@ def create_runtime_configuration(
     current_user: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_admin),
 ) -> dict[str, Any]:
-    runtime = _runtime_or_404(session, runtime_id, namespace_id)
+    runtime = session.exec(
+        select(RuntimeInstance)
+        .where(
+            RuntimeInstance.id == runtime_id,
+            RuntimeInstance.namespace_id == namespace_id,
+        )
+        .with_for_update()
+    ).first()
+    if runtime is None:
+        raise HTTPException(404, "Runtime not found")
     latest = session.exec(
         select(RuntimeConfigurationRevision)
         .where(RuntimeConfigurationRevision.runtime_instance_id == runtime.id)
@@ -458,7 +548,22 @@ def create_runtime_configuration(
         raise HTTPException(409, {"expected_revision": body.expected_revision, "actual_revision": actual})
     row = _configuration_from_input(runtime.id, actual + 1, body, current_user.id)
     session.add(row)
-    session.flush()
+    try:
+        session.flush()
+    except IntegrityError as exc:
+        session.rollback()
+        current = session.exec(
+            select(RuntimeConfigurationRevision)
+            .where(RuntimeConfigurationRevision.runtime_instance_id == runtime_id)
+            .order_by(col(RuntimeConfigurationRevision.revision).desc())
+        ).first()
+        raise HTTPException(
+            409,
+            {
+                "expected_revision": body.expected_revision,
+                "actual_revision": current.revision if current else 0,
+            },
+        ) from exc
     runtime.desired_configuration_revision_id = row.id
     runtime.updated_at = datetime.now(timezone.utc)
     session.add(runtime)
@@ -557,7 +662,9 @@ def _binding_public(session: SessionDep, row: RuntimeModelBinding) -> dict[str, 
         "engine_model_id": row.engine_model_id,
         "status": row.status.value,
         "validation_fingerprint": row.validation_fingerprint,
+        "validated_capability_fingerprint": row.validated_capability_fingerprint,
         "last_validated_at": row.last_validated_at,
+        "validation_expires_at": row.validation_expires_at,
         "last_error": row.last_error,
     }
 
@@ -684,18 +791,24 @@ def validate_runtime_model_binding(
     _: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_admin),
 ) -> dict[str, Any]:
-    _runtime_or_404(session, runtime_id, namespace_id)
-    row = session.get(RuntimeModelBinding, binding_id)
+    runtime = _runtime_or_404(session, runtime_id, namespace_id)
+    row = session.exec(
+        select(RuntimeModelBinding)
+        .where(RuntimeModelBinding.id == binding_id)
+        .with_for_update()
+    ).first()
     if row is None or row.runtime_instance_id != runtime_id or row.namespace_id != namespace_id:
         raise HTTPException(404, "Runtime model binding not found")
-    attempt_no = len(
-        session.exec(
-            select(RuntimeModelValidationAttempt).where(
-                RuntimeModelValidationAttempt.runtime_model_binding_id == row.id
-            )
-        ).all()
-    ) + 1
+    last_attempt = session.exec(
+        select(RuntimeModelValidationAttempt)
+        .where(RuntimeModelValidationAttempt.runtime_model_binding_id == row.id)
+        .order_by(col(RuntimeModelValidationAttempt.attempt_no).desc())
+    ).first()
+    attempt_no = (last_attempt.attempt_no if last_attempt else 0) + 1
     try:
+        _, capability, _ = current_runtime_evidence(
+            session, runtime, include_catalog=False
+        )
         validate_model_binding_route(session, row)
         if row.provider_config_id:
             provider = session.get(LlmProviderConfig, row.provider_config_id)
@@ -733,6 +846,8 @@ def validate_runtime_model_binding(
         row.status = RuntimeModelBindingStatus.AVAILABLE
         row.validation_fingerprint = digest
         row.last_validated_at = datetime.now(timezone.utc)
+        row.validation_expires_at = row.last_validated_at + timedelta(hours=24)
+        row.validated_capability_fingerprint = capability.capability_fingerprint
         row.last_error = None
         attempt = RuntimeModelValidationAttempt(
             runtime_model_binding_id=row.id,
@@ -933,6 +1048,50 @@ def claim_runtime_configuration(
     }
 
 
+@internal_router.post("/capabilities/heartbeat")
+def heartbeat_runtime_capabilities(
+    body: CapabilityHeartbeatInput, session: SessionDep
+) -> dict[str, int]:
+    now = datetime.now(timezone.utc)
+    accepted = 0
+    for item in body.evidence:
+        runtime = session.get(RuntimeInstance, item.runtime_instance_id)
+        if (
+            runtime is None
+            or runtime.location_type != RuntimeLocationType.PLATFORM
+            or runtime.engine_type != item.engine_type
+            or runtime.applied_configuration_revision_id is None
+            or runtime.current_capability_report_id is None
+        ):
+            continue
+        configuration = session.get(
+            RuntimeConfigurationRevision, runtime.applied_configuration_revision_id
+        )
+        capability = session.get(
+            RuntimeCapabilityReport, runtime.current_capability_report_id
+        )
+        if (
+            configuration is None
+            or capability is None
+            or capability.runtime_instance_id != runtime.id
+            or configuration.configuration_digest != item.configuration_digest
+            or capability.configuration_digest != item.configuration_digest
+            or capability.capability_fingerprint != item.capability_fingerprint
+            or capability.engine_version != item.engine_version
+            or capability.adapter_version != item.adapter_version
+        ):
+            continue
+        capability.reported_at = now
+        runtime.last_seen_at = now
+        if runtime.enabled:
+            runtime.status = RuntimeInstanceStatus.AVAILABLE
+        session.add(capability)
+        session.add(runtime)
+        accepted += 1
+    session.commit()
+    return {"accepted": accepted}
+
+
 @internal_router.post("/configurations/result")
 def report_runtime_configuration_result(
     body: ConfigurationResultInput, session: SessionDep
@@ -1040,6 +1199,12 @@ def report_native_model_validation_result(
     if body.status == "succeeded":
         if body.error is not None:
             raise HTTPException(422, "Successful validation cannot include error")
+        runtime = session.get(RuntimeInstance, binding.runtime_instance_id)
+        if runtime is None:
+            raise HTTPException(409, "Runtime model validation target is missing")
+        _, capability, _ = current_runtime_evidence(
+            session, runtime, include_catalog=False
+        )
         evidence = {
             "runtime_model_binding_id": str(binding.id),
             "engine_model_id": body.engine_model_id,
@@ -1052,6 +1217,8 @@ def report_native_model_validation_result(
         binding.status = RuntimeModelBindingStatus.AVAILABLE
         binding.validation_fingerprint = digest
         binding.last_validated_at = attempt.completed_at
+        binding.validation_expires_at = attempt.completed_at + timedelta(hours=24)
+        binding.validated_capability_fingerprint = capability.capability_fingerprint
         binding.last_error = None
     elif body.status == "failed" and body.error is not None:
         attempt.status = "failed"

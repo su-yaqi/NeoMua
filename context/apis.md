@@ -157,7 +157,7 @@
 
 发布、激活、Plugin Version、retry/rollback 和任务创建使用 `Idempotency-Key`。MCP/Release Worker 领取与回传继续位于受独立服务凭证保护的 `/internal/runtime/*`；节点结果经已鉴权 WSS 转发。读接口不返回 secret value。
 
-v0.9 Activation precheck 按 Runtime Instance 的 applied 配置、能力报告、模型目录、Skill 和 MCP 状态生成短时证据；Task 创建冻结 exact model binding 或唯一解析的 Agent 偏好。PRD 规定的独立 `GET /agent-releases/{release_id}/compatibility` 和逐次 `task_model_usage` 上报在当前开发快照中尚未完成，不能按已交付接口使用。
+v0.9 Activation precheck 按 Runtime Instance 的 applied 配置、在线且未过期的能力报告、模型目录、Skill 和 MCP 状态生成短时证据；Task 创建冻结 exact model binding 或唯一解析的 Agent 偏好。`GET /agent-releases/{release_id}/compatibility` 返回正式兼容性诊断；任务事件会按调用序号写入 `agent_task_model_call_usage`，任务详情返回 binding、usage、状态和脱敏错误证据。
 
 v0.7 为 Agent、Skill、MCP 与 Plugin 增加 complete-create 接口，由一次请求原子创建身份与必要初始草稿/版本/Revision；失败不遗留只有名称和标识的半成品。用户输入字段仍使用稳定的 `slug` API 名称，但 UI 展示为“唯一标识”。
 
@@ -206,7 +206,7 @@ v0.8 的 `POST /skills/complete/editor` 原子创建 Skill 身份、草稿与初
 | 附件 | `GET/POST /conversations/{id}/attachments`（严格扫描 UTF-8 文本、Markdown、JSON） |
 | 项目上下文 | `POST /conversations/{id}/context-snapshots` |
 
-创建、派生、消息与委派使用 `Idempotency-Key`。项目与 Runtime Instance 创建后固定；Chat 使用 exact binding，Agent 参与者可使用 exact 或 `agent_preference`，保存时冻结解析证据。当前表约束仍禁止同一 Agent/Release 以多个独立角色重复出现，是已记录的 v0.9 缺口。
+创建、派生、消息与委派使用 `Idempotency-Key`。项目与 Runtime Instance 创建后固定；Chat 使用 exact binding，Agent 参与者可使用 exact 或 `agent_preference`，保存时冻结解析证据。参与者以 `conversation_agent_id` 作为角色实例身份，同一 Agent/Release 可以出现于多个独立角色，但每个角色保存独立绑定和模型证据。
 
 ### workflow management（v0.6）
 

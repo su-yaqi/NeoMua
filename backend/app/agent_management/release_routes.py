@@ -48,6 +48,7 @@ from app.models import NamespaceRole
 from app.runtime.artifacts.signing import configured_artifact_signer, verify_signature
 from app.runtime.catalog import (
     RuntimeCatalogError,
+    available_model_bindings,
     current_runtime_evidence,
 )
 from app.runtime.catalog import (
@@ -60,8 +61,6 @@ from app.runtime.models import (
     RuntimeCapabilityReport,
     RuntimeInstance,
     RuntimeLocationType,
-    RuntimeModelBinding,
-    RuntimeModelBindingStatus,
     RuntimeNode,
     RuntimeProfile,
     RuntimeType,
@@ -616,12 +615,7 @@ def _v09_precheck(
         )
     except RuntimeCatalogError as exc:
         raise HTTPException(422, {"code": exc.code, "message": exc.message}) from exc
-    bindings = session.exec(
-        select(RuntimeModelBinding).where(
-            RuntimeModelBinding.runtime_instance_id == runtime.id,
-            RuntimeModelBinding.status == RuntimeModelBindingStatus.AVAILABLE,
-        )
-    ).all()
+    bindings = available_model_bindings(session, runtime.id)
     if not bindings:
         deployable = False
         checks.append(
@@ -669,6 +663,66 @@ def _v09_precheck(
         )
     else:
         checks.append({"key": "tools", "status": "passed"})
+    policies = dict(release.resolved_spec.get("policies", {}))
+    permission_mode = str(policies.get("permission_mode", "default"))
+    runtime_permission_modes = set(
+        configuration.security_policy.get("permission_modes", [])
+    )
+    if not runtime_permission_modes and configuration.security_policy.get(
+        "permission_mode"
+    ):
+        runtime_permission_modes.add(
+            str(configuration.security_policy["permission_mode"])
+        )
+    policy_errors: list[dict[str, Any]] = []
+    if runtime_permission_modes and permission_mode not in runtime_permission_modes:
+        policy_errors.append(
+            {"code": "agent_permission_exceeds_runtime_policy"}
+        )
+    capability_permission_modes = set(
+        capability.capabilities.get("permission_modes", [])
+    )
+    if capability_permission_modes and permission_mode not in capability_permission_modes:
+        policy_errors.append({"code": "runtime_permission_mode_unsupported"})
+    approval_required = any(
+        item.get("policy") == "require_approval"
+        for item in release.resolved_spec.get("tools", [])
+    ) or policies.get("tool_approval") is True
+    if approval_required and not capability.capabilities.get(
+        "supports_per_tool_approval", False
+    ):
+        policy_errors.append({"code": "runtime_tool_approval_unsupported"})
+    if release.resolved_spec.get("mcp_servers") and not capability.capabilities.get(
+        "supports_mcp_injection", False
+    ):
+        policy_errors.append({"code": "runtime_mcp_injection_unsupported"})
+    max_timeout = configuration.resource_limits.get("max_timeout_seconds")
+    requested_timeout = int(policies.get("timeout_seconds", 3600))
+    if max_timeout is not None and requested_timeout > int(max_timeout):
+        policy_errors.append(
+            {
+                "code": "agent_timeout_exceeds_runtime_limit",
+                "requested": requested_timeout,
+                "maximum": int(max_timeout),
+            }
+        )
+    required_capabilities = policies.get("required_capabilities", {})
+    for key, required in (
+        required_capabilities.items()
+        if isinstance(required_capabilities, dict)
+        else []
+    ):
+        if required is True and not capability.capabilities.get(key, False):
+            policy_errors.append(
+                {"code": "required_runtime_capability_missing", "capability": key}
+            )
+    if policy_errors:
+        deployable = False
+        checks.append(
+            {"key": "execution_policy", "status": "blocked", "errors": policy_errors}
+        )
+    else:
+        checks.append({"key": "execution_policy", "status": "passed"})
     skill_errors: list[dict[str, Any]] = []
     for item in release.resolved_spec.get("skills", []):
         try:
@@ -790,6 +844,60 @@ def _v09_precheck_public(row: AgentActivationPrecheck) -> dict[str, Any]:
         "precheck_digest": row.precheck_digest,
         "expires_at": row.expires_at,
     }
+
+
+@router.get("/agent-releases/{release_id}/compatibility")
+def release_runtime_compatibility(
+    release_id: uuid.UUID,
+    session: SessionDep,
+    _: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
+) -> dict[str, Any]:
+    release = _get_release(session, release_id, namespace_id)
+    if release.resolved_spec_schema_version != "2.0":
+        raise HTTPException(422, "Compatibility matrix requires a v0.9 Release")
+    runtimes = session.exec(
+        select(RuntimeInstance)
+        .where(RuntimeInstance.namespace_id == namespace_id)
+        .order_by(col(RuntimeInstance.name))
+    ).all()
+    targets: list[dict[str, Any]] = []
+    for runtime in runtimes:
+        try:
+            precheck = _v09_precheck(
+                session, release, runtime.id, valid_for_seconds=60
+            )
+            targets.append(
+                {
+                    "runtime_instance_id": runtime.id,
+                    "runtime_name": runtime.name,
+                    "engine_type": runtime.engine_type.value,
+                    "compatible": precheck.deployable,
+                    "preference_status": precheck.preference_status,
+                    "configuration_revision_id": precheck.runtime_configuration_revision_id,
+                    "capability_report_id": precheck.runtime_capability_report_id,
+                    "model_catalog_fingerprint": precheck.model_catalog_fingerprint,
+                    "checks": precheck.checks,
+                }
+            )
+        except HTTPException as exc:
+            detail = exc.detail if isinstance(exc.detail, dict) else {
+                "code": "runtime_incompatible",
+                "message": str(exc.detail),
+            }
+            targets.append(
+                {
+                    "runtime_instance_id": runtime.id,
+                    "runtime_name": runtime.name,
+                    "engine_type": runtime.engine_type.value,
+                    "compatible": False,
+                    "preference_status": "unavailable",
+                    "checks": [
+                        {"key": "runtime", "status": "blocked", **detail}
+                    ],
+                }
+            )
+    return {"release_id": release.id, "targets": targets}
 
 
 @router.post("/agent-releases/{release_id}/activations/precheck")

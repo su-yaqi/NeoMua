@@ -12,6 +12,7 @@ from app.runtime.models import (
     AgentEventType,
     AgentSession,
     AgentTask,
+    AgentTaskModelCallUsage,
     AgentTaskModelUsage,
 )
 from app.runtime.policy import (
@@ -202,6 +203,35 @@ def append_and_apply_event(
 
     event = session.get(AgentEvent, inserted_id)
     assert event is not None
+    usage_payload = redacted.get("usage")
+    if (
+        task.runtime_instance_id is not None
+        and isinstance(usage_payload, dict)
+        and usage_payload
+    ):
+        model_usage = session.exec(
+            select(AgentTaskModelUsage).where(
+                AgentTaskModelUsage.task_id == task.id
+            )
+        ).one()
+        last_call = session.exec(
+            select(AgentTaskModelCallUsage)
+            .where(AgentTaskModelCallUsage.task_id == task.id)
+            .order_by(col(AgentTaskModelCallUsage.call_sequence).desc())
+        ).first()
+        session.add(
+            AgentTaskModelCallUsage(
+                task_id=task.id,
+                runtime_model_binding_id=model_usage.runtime_model_binding_id,
+                call_sequence=(last_call.call_sequence if last_call else 0) + 1,
+                event_sequence=sequence,
+                usage=usage_payload,
+                status=(
+                    "failed" if event_type == AgentEventType.ERROR else "succeeded"
+                ),
+                error=redacted if event_type == AgentEventType.ERROR else None,
+            )
+        )
     apply_event_state(task, event_type, redacted)
     if (
         event_type == AgentEventType.RESULT

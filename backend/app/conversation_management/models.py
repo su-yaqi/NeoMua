@@ -187,7 +187,6 @@ class Conversation(SQLModel, table=True):
 class ConversationAgent(SQLModel, table=True):
     __tablename__ = "conversation_agent"
     __table_args__ = (
-        UniqueConstraint("conversation_id", "agent_id", name="uq_conversation_agent"),
         Index(
             "uq_conversation_main_agent",
             "conversation_id",

@@ -2,12 +2,13 @@ import asyncio
 import hashlib
 import json
 from enum import Enum
-from typing import Protocol
+from typing import Any, Protocol
 
 from runtime_worker.agent_shell import EngineShell, RunCommand
 from runtime_worker.mcp_manager import McpRuntimeManager
 from runtime_worker.permissions import validate_permission_mode
 from runtime_worker.release_store import AgentReleaseStore
+from runtime_worker.runtime_configuration import RuntimeConfigurationStore
 from runtime_worker.skill_store import SkillStore
 from workflow_runtime.executor import execute_runtime_job
 
@@ -59,6 +60,7 @@ class NodeTaskExecutor:
         shell: EngineShell | None = None,
         release_store: AgentReleaseStore | None = None,
         skill_store: SkillStore | None = None,
+        runtime_configuration_store: RuntimeConfigurationStore | None = None,
         approval_callback=None,
         delegation_callback=None,
         mcp_manager: McpRuntimeManager | None = None,
@@ -72,12 +74,22 @@ class NodeTaskExecutor:
         self.cancelling: set[str] = set()
         self.release_store = release_store
         self.skill_store = skill_store
+        self.runtime_configuration_store = runtime_configuration_store
         self.approval_callback = approval_callback
         self.delegation_callback = delegation_callback
         self.mcp_manager = mcp_manager or McpRuntimeManager()
 
     def validate(self, command: dict) -> None:
         snapshot = command["snapshot"]
+        if snapshot.get("runtime_instance_id"):
+            if self.runtime_configuration_store is None:
+                raise ValueError("runtime_configuration_store_unavailable")
+            configuration = self.runtime_configuration_store.get(
+                str(snapshot["runtime_instance_id"])
+            )
+            if configuration is None:
+                raise ValueError("runtime_configuration_not_applied_locally")
+            configuration.validate_task_snapshot(snapshot)
         if snapshot.get("agent_release_id"):
             if self.release_store is None:
                 raise ValueError("release_not_active: Agent Release store is unavailable")
@@ -112,6 +124,17 @@ class NodeTaskExecutor:
         self.running[task_id] = asyncio.create_task(
             self._run_with_lease(task_id, revision, command)
         )
+
+    def model_evidence(self, command: dict) -> dict[str, Any]:
+        snapshot = command["snapshot"]
+        if self.runtime_configuration_store is None:
+            raise ValueError("runtime_configuration_store_unavailable")
+        configuration = self.runtime_configuration_store.get(
+            str(snapshot["runtime_instance_id"])
+        )
+        if configuration is None:
+            raise ValueError("runtime_configuration_not_applied_locally")
+        return configuration.validate_task_snapshot(snapshot)
 
     def prepare_skill_binding(self, command: dict) -> list[dict]:
         snapshot = command["snapshot"]
@@ -152,7 +175,22 @@ class NodeTaskExecutor:
         snapshot = command["snapshot"]
         sequence = 0
         try:
-            env = build_route_env(command["route"], snapshot, self.route_store)
+            configuration = (
+                self.runtime_configuration_store.get(
+                    str(snapshot["runtime_instance_id"])
+                )
+                if self.runtime_configuration_store
+                and snapshot.get("runtime_instance_id")
+                else None
+            )
+            env = (
+                configuration.task_environment(
+                    self.runtime_configuration_store.source_environment
+                )
+                if configuration and self.runtime_configuration_store
+                else {}
+            )
+            env.update(build_route_env(command["route"], snapshot, self.route_store))
             release_store = self.release_store
             release_dirs: list[str] = []
             if snapshot.get("agent_release_id"):
@@ -169,6 +207,7 @@ class NodeTaskExecutor:
                 )
             run_command = RunCommand(
                 engine_type=snapshot.get("engine_type", "claude_code"),
+                executable=configuration.execution_path() if configuration else None,
                 prompt=command["prompt"],
                 model=snapshot.get("engine_model_id", snapshot.get("model_id")),
                 system_prompt=snapshot.get("system_prompt"),
@@ -323,6 +362,7 @@ class NodeTaskController:
         shell: EngineShell | None = None,
         release_store: AgentReleaseStore | None = None,
         skill_store: SkillStore | None = None,
+        runtime_configuration_store: RuntimeConfigurationStore | None = None,
     ) -> None:
         self.node_id = node_id
         self.spool = spool
@@ -339,6 +379,7 @@ class NodeTaskController:
             shell=shell,
             release_store=release_store,
             skill_store=skill_store,
+            runtime_configuration_store=runtime_configuration_store,
             approval_callback=self._request_approval,
             delegation_callback=self._request_delegation,
         )
@@ -404,6 +445,11 @@ class NodeTaskController:
                     )
                 else:
                     evidence = []
+                model_evidence = (
+                    self.executor.model_evidence(message.payload)
+                    if message.payload.get("requires_model_preparation")
+                    else None
+                )
             except Exception as exc:
                 self.spool.mark_dispatch_state(
                     str(message.payload.get("task_id", "")), "terminal"
@@ -434,21 +480,7 @@ class NodeTaskController:
                             "revision": message.payload["revision"],
                             "duplicate": decision == DispatchDecision.DUPLICATE,
                             "skill_evidence": evidence,
-                            "model_evidence": {
-                                "runtime_instance_id": message.payload["snapshot"].get("runtime_instance_id"),
-                                "runtime_model_binding_id": message.payload["snapshot"].get("runtime_model_binding_id"),
-                                "engine_type": message.payload["snapshot"].get("engine_type"),
-                                "engine_version": message.payload["snapshot"].get("engine_version"),
-                                "adapter_version": message.payload["snapshot"].get("adapter_version"),
-                                "engine_model_id": message.payload["snapshot"].get("engine_model_id"),
-                                "route_type": message.payload["snapshot"].get("route_type"),
-                                "route_reference": message.payload["snapshot"].get("route_key"),
-                                "runtime_configuration_digest": message.payload["snapshot"].get("runtime_configuration_digest"),
-                                "capability_fingerprint": message.payload["snapshot"].get("capability_fingerprint"),
-                                "effective_spec_digest": message.payload["snapshot"].get("effective_spec_digest"),
-                            }
-                            if message.payload.get("requires_model_preparation")
-                            else None,
+                            "model_evidence": model_evidence,
                         },
                     )
                 ]

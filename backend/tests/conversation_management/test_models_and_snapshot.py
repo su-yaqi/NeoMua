@@ -1,9 +1,20 @@
 from fastapi.testclient import TestClient
+from sqlalchemy import UniqueConstraint
 from sqlmodel import Session
 
+from app.conversation_management.models import ConversationAgent
 from app.core.config import settings
 from tests.api.routes.test_agent_tasks import ready_runtime
 from tests.api.routes.test_namespaces import create_namespace, namespace_headers
+
+
+def test_conversation_allows_same_agent_identity_in_multiple_roles() -> None:
+    unique_column_sets = {
+        tuple(column.name for column in constraint.columns)
+        for constraint in ConversationAgent.__table__.constraints
+        if isinstance(constraint, UniqueConstraint)
+    }
+    assert ("conversation_id", "agent_id") not in unique_column_sets
 
 
 def test_v09_chat_freezes_exact_runtime_model_binding(

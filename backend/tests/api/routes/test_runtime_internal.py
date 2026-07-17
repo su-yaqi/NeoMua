@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
@@ -9,6 +10,7 @@ from app.runtime.catalog import canonical_digest
 from app.runtime.models import (
     AgentTask,
     AgentTaskModelUsage,
+    RuntimeCapabilityReport,
     RuntimeJob,
     RuntimeJobKind,
     RuntimeJobStatus,
@@ -58,6 +60,45 @@ def test_internal_endpoint_rejects_user_jwt(
         json={"task_id": "00000000-0000-0000-0000-000000000000", "events": []},
     )
     assert response.status_code == 403
+
+
+def test_platform_capability_heartbeat_only_renews_matching_local_evidence(
+    client: TestClient, db: Session
+) -> None:
+    namespace = create_namespace(db)
+    runtime, _binding = ready_runtime(db, namespace.id)
+    capability = db.get(RuntimeCapabilityReport, runtime.current_capability_report_id)
+    assert capability is not None
+    original_reported_at = capability.reported_at
+    exact = {
+        "runtime_instance_id": str(runtime.id),
+        "engine_type": runtime.engine_type.value,
+        "engine_version": capability.engine_version,
+        "adapter_version": capability.adapter_version,
+        "configuration_digest": capability.configuration_digest,
+        "capability_fingerprint": capability.capability_fingerprint,
+    }
+    response = client.post(
+        f"{settings.API_V1_STR}/internal/runtime/capabilities/heartbeat",
+        headers=_internal_headers(),
+        json={"worker_id": "platform-worker-1", "evidence": [exact]},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {"accepted": 1}
+    db.expire_all()
+    capability = db.get(RuntimeCapabilityReport, runtime.current_capability_report_id)
+    assert capability is not None and capability.reported_at >= original_reported_at
+
+    rejected = client.post(
+        f"{settings.API_V1_STR}/internal/runtime/capabilities/heartbeat",
+        headers=_internal_headers(),
+        json={
+            "worker_id": "stale-worker",
+            "evidence": [{**exact, "capability_fingerprint": "0" * 64}],
+        },
+    )
+    assert rejected.status_code == 200, rejected.text
+    assert rejected.json() == {"accepted": 0}
 
 
 def test_legacy_harness_capability_write_is_gone(
@@ -156,6 +197,8 @@ def test_gateway_resolves_only_evidenced_v09_provider_binding(
     assert provider_model.model_definition_id is not None
 
     runtime, native_binding = ready_runtime(db, namespace.id)
+    capability = db.get(RuntimeCapabilityReport, runtime.current_capability_report_id)
+    assert capability is not None
     provider_binding = RuntimeModelBinding(
         namespace_id=namespace.id,
         runtime_instance_id=runtime.id,
@@ -167,6 +210,9 @@ def test_gateway_resolves_only_evidenced_v09_provider_binding(
         engine_model_id=provider_model.model_id,
         status=RuntimeModelBindingStatus.AVAILABLE,
         validation_fingerprint=canonical_digest({"provider": str(provider.id)}),
+        validated_capability_fingerprint=capability.capability_fingerprint,
+        last_validated_at=datetime.now(timezone.utc),
+        validation_expires_at=datetime.now(timezone.utc) + timedelta(hours=24),
     )
     db.add(provider_binding)
     db.delete(native_binding)

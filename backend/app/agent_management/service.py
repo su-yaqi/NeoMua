@@ -460,6 +460,59 @@ def validate_draft(
                         message="execution policy contains an unsupported field",
                     )
                 )
+        permission_mode = draft.execution_policy.get("permission_mode", "default")
+        if permission_mode not in {"default", "acceptEdits", "plan", "dontAsk"}:
+            errors.append(
+                Diagnostic(
+                    code="execution_permission_mode_invalid",
+                    field="execution_policy.permission_mode",
+                    message="execution permission mode is unsupported",
+                )
+            )
+        timeout = draft.execution_policy.get("timeout_seconds", 3600)
+        if isinstance(timeout, bool) or not isinstance(timeout, int) or timeout < 1:
+            errors.append(
+                Diagnostic(
+                    code="execution_timeout_invalid",
+                    field="execution_policy.timeout_seconds",
+                    message="execution timeout must be a positive integer",
+                )
+            )
+        for boolean_key in {
+            "project_context_required",
+            "delegation_required",
+            "tool_approval",
+        }:
+            value = draft.execution_policy.get(boolean_key)
+            if value is not None and not isinstance(value, bool):
+                errors.append(
+                    Diagnostic(
+                        code="execution_policy_type_invalid",
+                        field=f"execution_policy.{boolean_key}",
+                        message="execution policy field must be boolean",
+                    )
+                )
+        network_policy = draft.execution_policy.get("network_policy", "unrestricted")
+        if network_policy != "unrestricted":
+            errors.append(
+                Diagnostic(
+                    code="execution_network_policy_unsupported",
+                    field="execution_policy.network_policy",
+                    message="current Runtime adapters cannot prove restricted network execution",
+                )
+            )
+        required = draft.execution_policy.get("required_capabilities", {})
+        if not isinstance(required, dict) or any(
+            not isinstance(key, str) or not isinstance(value, bool)
+            for key, value in required.items()
+        ):
+            errors.append(
+                Diagnostic(
+                    code="required_capabilities_invalid",
+                    field="execution_policy.required_capabilities",
+                    message="required_capabilities must map capability names to booleans",
+                )
+            )
 
     if profile is not None:
         errors.extend(validate_config(profile.config, is_profile=True))

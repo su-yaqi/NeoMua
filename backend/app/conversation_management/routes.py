@@ -399,9 +399,12 @@ def create_conversation(
         elif body.mode == ConversationMode.AGENT:
             assert body.main_agent is not None
             participant_inputs = [body.main_agent, *body.collaborators]
-            binding_ids = [item.runtime_agent_release_id for item in participant_inputs]
-            if len(binding_ids) != len(set(binding_ids)):
-                raise HTTPException(422, "Each Agent can participate only once")
+            if any(
+                item.conversation_agent_id is not None for item in participant_inputs
+            ):
+                raise HTTPException(
+                    422, "conversation_agent_id is only valid for configuration updates"
+                )
             for index, participant_input in enumerate(participant_inputs):
                 binding_id = participant_input.runtime_agent_release_id
                 if runtime_instance is not None:
@@ -601,6 +604,7 @@ def update_configuration(
         )
         selections = body.participant_selections
         organizer_binding_id = body.organizer_runtime_agent_release_id
+        organizer_participant_id = body.organizer_conversation_agent_id
         binding_ids = [item.runtime_agent_release_id for item in selections]
         if (
             runtime_instance is None
@@ -609,20 +613,19 @@ def update_configuration(
             or body.chat_model_selection is not None
             or body.participant_runtime_agent_release_ids
             or not selections
-            or organizer_binding_id is None
-            or organizer_binding_id not in binding_ids
-            or len(binding_ids) != len(set(binding_ids))
+            or (organizer_binding_id is None and organizer_participant_id is None)
         ):
             raise HTTPException(
                 422,
-                "v0.9 Agent configuration requires unique selections and one organizer",
+                "v0.9 Agent configuration requires selections and one organizer",
             )
         existing = session.exec(
             select(ConversationAgent).where(
                 ConversationAgent.conversation_id == conversation.id
             )
         ).all()
-        by_binding = {item.runtime_agent_release_id: item for item in existing}
+        by_id = {item.id: item for item in existing}
+        used_participant_ids: set[uuid.UUID] = set()
         selected: list[ConversationAgent] = []
         execution_bindings: list[ConversationExecutionBinding] = []
         for selection in selections:
@@ -632,7 +635,36 @@ def update_configuration(
                 runtime_instance.id,
                 selection.runtime_agent_release_id,
             )
-            participant = by_binding.get(selection.runtime_agent_release_id)
+            participant = (
+                by_id.get(selection.conversation_agent_id)
+                if selection.conversation_agent_id is not None
+                else next(
+                    (
+                        item
+                        for item in existing
+                        if item.runtime_agent_release_id
+                        == selection.runtime_agent_release_id
+                        and item.id not in used_participant_ids
+                    ),
+                    None,
+                )
+            )
+            if (
+                selection.conversation_agent_id is not None
+                and participant is None
+            ):
+                raise HTTPException(404, "Conversation Agent participant not found")
+            if (
+                participant is not None
+                and participant.runtime_agent_release_id
+                != selection.runtime_agent_release_id
+            ):
+                raise HTTPException(
+                    422,
+                    "conversation_agent_id does not match runtime_agent_release_id",
+                )
+            if participant is not None and participant.id in used_participant_ids:
+                raise HTTPException(422, "Conversation Agent selection is duplicated")
             if participant is None:
                 participant = add_conversation_agent(
                     session,
@@ -643,7 +675,8 @@ def update_configuration(
                     current_user.id,
                 )
                 session.flush()
-                by_binding[selection.runtime_agent_release_id] = participant
+                existing.append(participant)
+                by_id[participant.id] = participant
             elif (
                 participant.agent_release_id != release.id
                 or participant.resolved_spec_digest != release.resolved_spec_digest
@@ -665,7 +698,26 @@ def update_configuration(
                 )
             )
             selected.append(participant)
-        organizer = by_binding[organizer_binding_id]
+            used_participant_ids.add(participant.id)
+        if organizer_participant_id is not None:
+            organizer = next(
+                (item for item in selected if item.id == organizer_participant_id),
+                None,
+            )
+            if organizer is None:
+                raise HTTPException(422, "Organizer must be one selected participant")
+        else:
+            organizer_matches = [
+                item
+                for item in selected
+                if item.runtime_agent_release_id == organizer_binding_id
+            ]
+            if len(organizer_matches) != 1:
+                raise HTTPException(
+                    422,
+                    "organizer_runtime_agent_release_id is ambiguous; use organizer_conversation_agent_id",
+                )
+            organizer = organizer_matches[0]
         for participant in existing:
             participant.role = (
                 ConversationAgentRole.MAIN

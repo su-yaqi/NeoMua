@@ -12,6 +12,10 @@ from runtime_worker.capabilities import (
     discover_runtime_installations,
     node_agent_version,
 )
+from runtime_worker.runtime_configuration import (
+    RuntimeConfigurationStore,
+    sanitize_process_environment,
+)
 
 from node_runtime.agent_releases import AgentReleaseController
 from node_runtime.artifacts.controller import ArtifactController
@@ -103,10 +107,15 @@ def run(state_dir: Path = typer.Option(Path("/var/lib/neomua-node"))) -> None:
     config = ConfigStore(state_dir / "config.json").load()
     identity_store = IdentityStore(state_dir / "identity.json")
     identity = identity_store.load()
+    source_environment = sanitize_process_environment()
     spool = EventSpool(state_dir / "events.db")
     interrupted_task_ids = spool.recover_interrupted_dispatches()
     last_ack, spool_first, spool_last = spool.reconciliation_range()
     route_store = ModelRouteStore(state_dir / "model-routes.json")
+    runtime_configuration_store = RuntimeConfigurationStore(
+        state_dir / "runtime-configurations.json",
+        source_environment=source_environment,
+    )
     agent_release_controller = AgentReleaseController(
         identity.node_id, state_dir / "agent-releases"
     )
@@ -117,6 +126,7 @@ def run(state_dir: Path = typer.Option(Path("/var/lib/neomua-node"))) -> None:
         identity.node_id,
         spool,
         route_store,
+        runtime_configuration_store=runtime_configuration_store,
         release_store=agent_release_controller.store,
         skill_store=skill_sync_controller.store,
     )
@@ -144,6 +154,7 @@ def run(state_dir: Path = typer.Option(Path("/var/lib/neomua-node"))) -> None:
         ),
         identity_store=identity_store,
         task_controller=task_controller,
+        runtime_configuration_store=runtime_configuration_store,
         runtime_config_manager=RuntimeConfigManager(route_store),
         artifact_controller=artifact_controller,
         harness_capabilities=discover_runtime_capabilities(),

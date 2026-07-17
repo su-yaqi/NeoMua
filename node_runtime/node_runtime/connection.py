@@ -5,12 +5,12 @@ import random
 import secrets
 import time
 from collections.abc import Awaitable, Callable
-from pathlib import Path
 from typing import Any
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from pydantic import ValidationError
 from runtime_worker.agent_shell import RunCommand
+from runtime_worker.runtime_configuration import RuntimeConfigurationStore
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed, InvalidStatus, WebSocketException
 
@@ -77,6 +77,7 @@ class NodeConnection:
         mcp_validation_controller: NodeMcpValidationController | None = None,
         skill_sync_controller: NodeSkillSyncController | None = None,
         runtime_installations: list[dict[str, Any]] | None = None,
+        runtime_configuration_store: RuntimeConfigurationStore | None = None,
         on_discovery_generation: Callable[[int], None] | None = None,
     ) -> None:
         self.url = websocket_url(platform_url)
@@ -93,6 +94,7 @@ class NodeConnection:
         self.mcp_validation_controller = mcp_validation_controller
         self.skill_sync_controller = skill_sync_controller
         self.runtime_installations = runtime_installations
+        self.runtime_configuration_store = runtime_configuration_store
         self.on_discovery_generation = on_discovery_generation
 
     async def connect_once(self) -> None:
@@ -169,6 +171,10 @@ class NodeConnection:
                 payload["harness_capabilities"] = self.harness_capabilities
             if self.secret_fingerprints is not None:
                 payload["mcp_secret_fingerprints"] = self.secret_fingerprints()
+            if self.runtime_configuration_store is not None:
+                payload["runtime_capability_evidence"] = (
+                    self.runtime_configuration_store.capability_evidence()
+                )
             await websocket.send(
                 envelope(
                     "heartbeat",
@@ -245,23 +251,23 @@ class NodeConnection:
                 try:
                     if installation is None:
                         raise ValueError("Runtime installation is unavailable")
-                    executable_name = Path(str(payload["executable"])).name
-                    allowed = {
-                        "claude_code": {"claude", "claude-code"},
-                        "codex": {"codex"},
-                    }.get(str(payload["engine_type"]), set())
-                    if executable_name not in allowed:
-                        raise ValueError("configured executable does not match Runtime engine")
-                    if payload.get("arguments"):
-                        raise ValueError(
-                            "adapter_contract_unsupported: configured base arguments"
-                        )
+                    if self.runtime_configuration_store is None:
+                        raise ValueError("Runtime configuration store is unavailable")
+                    applied = self.runtime_configuration_store.apply(
+                        payload,
+                        engine_version=installation.get("engine_version"),
+                        adapter_version=str(installation.get("adapter_version")),
+                        capabilities=dict(installation.get("capabilities", {})),
+                        discovered_models=list(
+                            installation.get("discovered_models", [])
+                        ),
+                    )
                     result = {
                         "status": "applied",
-                        "engine_version": installation.get("engine_version"),
-                        "adapter_version": installation.get("adapter_version"),
-                        "capabilities": installation.get("capabilities", {}),
-                        "discovered_models": installation.get("discovered_models", []),
+                        "engine_version": applied.engine_version,
+                        "adapter_version": applied.adapter_version,
+                        "capabilities": applied.capabilities,
+                        "discovered_models": applied.discovered_models,
                     }
                 except (KeyError, TypeError, ValueError) as exc:
                     result = {
@@ -300,11 +306,19 @@ class NodeConnection:
                 try:
                     if self.task_controller is None:
                         raise ValueError("Runtime engine controller is unavailable")
+                    if self.runtime_configuration_store is None:
+                        raise ValueError("Runtime configuration store is unavailable")
+                    configuration = self.runtime_configuration_store.get(
+                        str(payload["runtime_instance_id"])
+                    )
+                    if configuration is None:
+                        raise ValueError("Runtime configuration is not applied locally")
                     terminal = False
                     event_count = 0
                     failure: str | None = None
                     command = RunCommand(
                         engine_type=str(payload["engine_type"]),
+                        executable=configuration.execution_path(),
                         prompt="Reply with OK.",
                         model=str(payload["engine_model_id"]),
                         permission_mode="plan",
@@ -324,6 +338,13 @@ class NodeConnection:
                         raise ValueError(
                             failure or "Runtime engine returned no terminal result"
                         )
+                    if self.runtime_configuration_store is None:
+                        raise ValueError("Runtime configuration store is unavailable")
+                    self.runtime_configuration_store.record_validated_model(
+                        str(payload["runtime_instance_id"]),
+                        str(payload["engine_model_id"]),
+                        str(payload["route_key"]),
+                    )
                     result = {
                         "status": "succeeded",
                         "evidence": {

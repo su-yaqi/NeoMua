@@ -14,7 +14,7 @@
 2. Activation 为每个 target 创建独立 deployment，并为 Release 中的 Skill identity 建立 Runtime 订阅。平台 Worker 或节点先在任务链路之外同步 current Skill Bundle，staging、验签和核对 digest 后原子推进 applied；首次未就绪时 Activation 保持等待或明确失败。
 3. 多目标允许 `partial`，由 Admin 显式 retry 或 rollback；回滚创建新审计动作，只影响后续任务。
 4. 新 Session/Task 只能引用 target 当前 active Release，并冻结相同 Resolved Spec digest、Runtime Model Binding 与选择来源；每个 Task 另行绑定该 Runtime 当时已 applied 的 Skill Version，执行中不热替换，同一 Session 的后续 Task 可使用新版本。
-5. Runtime 在首次模型调用前应复核本地实际 engine/Adapter/config/model route 并回报证据；当前 Node 回显控制面快照的问题是发布阻断项，不能作为流程完成证据。
+5. Runtime 在首次模型调用前复核本地实际 engine/Adapter/config/model route 并回报本地证据；控制面只在证据精确匹配冻结快照后允许模型调用，不接受快照字段回显自证。
 6. `require_approval` Tool 在完全一致的参数摘要获批前保持等待，过期/断线默认拒绝。
 
 ## 节点 MCP secret

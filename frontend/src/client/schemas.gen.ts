@@ -1208,6 +1208,85 @@ export const Body_workflows_upload_workflow_attachmentSchema = {
     title: 'Body_workflows-upload_workflow_attachment'
 } as const;
 
+export const CapabilityHeartbeatEvidenceSchema = {
+    properties: {
+        runtime_instance_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Runtime Instance Id'
+        },
+        engine_type: {
+            $ref: '#/components/schemas/RuntimeEngineType'
+        },
+        engine_version: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 64
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Engine Version'
+        },
+        adapter_version: {
+            type: 'string',
+            maxLength: 64,
+            minLength: 1,
+            title: 'Adapter Version'
+        },
+        configuration_digest: {
+            type: 'string',
+            maxLength: 64,
+            minLength: 64,
+            title: 'Configuration Digest'
+        },
+        capability_fingerprint: {
+            type: 'string',
+            maxLength: 64,
+            minLength: 64,
+            title: 'Capability Fingerprint'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'runtime_instance_id',
+        'engine_type',
+        'adapter_version',
+        'configuration_digest',
+        'capability_fingerprint'
+    ],
+    title: 'CapabilityHeartbeatEvidence'
+} as const;
+
+export const CapabilityHeartbeatInputSchema = {
+    properties: {
+        worker_id: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Worker Id'
+        },
+        evidence: {
+            items: {
+                $ref: '#/components/schemas/CapabilityHeartbeatEvidence'
+            },
+            type: 'array',
+            maxItems: 1000,
+            title: 'Evidence'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'worker_id',
+        'evidence'
+    ],
+    title: 'CapabilityHeartbeatInput'
+} as const;
+
 export const ClaimInputSchema = {
     properties: {
         worker_id: {
@@ -1426,6 +1505,18 @@ export const ContextRefreshSchema = {
 
 export const ConversationAgentInputSchema = {
     properties: {
+        conversation_agent_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Conversation Agent Id'
+        },
         runtime_agent_release_id: {
             type: 'string',
             format: 'uuid',
@@ -1502,6 +1593,18 @@ export const ConversationConfigurationUpdateSchema = {
                 }
             ],
             title: 'Organizer Runtime Agent Release Id'
+        },
+        organizer_conversation_agent_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Organizer Conversation Agent Id'
         },
         chat_model_selection: {
             anyOf: [
@@ -8156,6 +8259,14 @@ export const app__api__routes__agent_tasks__TaskPublicSchema = {
                 }
             ],
             title: 'Model Usage'
+        },
+        model_call_usage: {
+            items: {
+                additionalProperties: true,
+                type: 'object'
+            },
+            type: 'array',
+            title: 'Model Call Usage'
         }
     },
     type: 'object',

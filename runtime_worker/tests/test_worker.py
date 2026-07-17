@@ -1,8 +1,13 @@
 import asyncio
 import json
+from pathlib import Path
 
 import httpx
 import pytest
+from runtime_worker.runtime_configuration import (
+    RuntimeConfigurationStore,
+    canonical_digest,
+)
 from runtime_worker.worker import RuntimeWorker
 
 
@@ -51,8 +56,18 @@ class HangingShell:
 
 
 @pytest.mark.anyio
-async def test_worker_applies_runtime_instance_configuration_and_reports_capability() -> None:
+async def test_worker_applies_runtime_instance_configuration_and_reports_capability(
+    tmp_path: Path,
+) -> None:
     requests: list[httpx.Request] = []
+    configuration = {
+        "executable": "claude",
+        "arguments": [],
+        "working_directory_policy": "workspace",
+        "environment_allowlist": [],
+        "security_policy": {"permission_modes": ["default", "plan"]},
+        "resource_limits": {},
+    }
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
@@ -62,10 +77,9 @@ async def test_worker_applies_runtime_instance_configuration_and_reports_capabil
                 json={
                     "runtime_instance_id": "00000000-0000-0000-0000-000000000010",
                     "configuration_revision_id": "00000000-0000-0000-0000-000000000011",
-                    "configuration_digest": "a" * 64,
+                    "configuration_digest": canonical_digest(configuration),
                     "engine_type": "claude_code",
-                    "executable": "claude",
-                    "arguments": [],
+                    **configuration,
                 },
             )
         return httpx.Response(200, json={"status": "applied"})
@@ -90,6 +104,9 @@ async def test_worker_applies_runtime_instance_configuration_and_reports_capabil
             "worker-1",
             shell=FakeShell(),
             harness_capabilities=capabilities,
+            runtime_configuration_store=RuntimeConfigurationStore(
+                tmp_path / "runtime-configurations.json"
+            ),
         )
         assert await worker.apply_configuration_once()
     result = json.loads(requests[-1].content)
@@ -101,8 +118,49 @@ async def test_worker_applies_runtime_instance_configuration_and_reports_capabil
 
 
 @pytest.mark.anyio
-async def test_worker_claims_executes_and_posts_events() -> None:
+async def test_worker_claims_executes_and_posts_events(tmp_path: Path) -> None:
     requests: list[httpx.Request] = []
+    store = RuntimeConfigurationStore(tmp_path / "runtime-configurations.json")
+    configuration = {
+        "runtime_instance_id": "00000000-0000-0000-0000-000000000010",
+        "configuration_revision_id": "00000000-0000-0000-0000-000000000012",
+        "engine_type": "claude_code",
+        "executable": "claude",
+        "arguments": [],
+        "working_directory_policy": "workspace",
+        "environment_allowlist": [],
+        "security_policy": {"permission_modes": ["default"]},
+        "resource_limits": {},
+    }
+    configuration["configuration_digest"] = canonical_digest(
+        {
+            key: configuration[key]
+            for key in (
+                "executable",
+                "arguments",
+                "working_directory_policy",
+                "environment_allowlist",
+                "security_policy",
+                "resource_limits",
+            )
+        }
+    )
+    applied = store.apply(
+        configuration,
+        engine_version="2.1.191",
+        adapter_version="0.1.0",
+        capabilities={
+            "tools": [],
+            "permission_modes": ["default"],
+            "supports_tool_filters": False,
+            "supports_per_tool_approval": False,
+            "supports_mcp_injection": False,
+        },
+        discovered_models=[{"id": "claude-test"}],
+    )
+    store.record_validated_model(
+        applied.runtime_instance_id, "claude-test", "native"
+    )
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
@@ -122,8 +180,8 @@ async def test_worker_claims_executes_and_posts_events() -> None:
                         "engine_model_id": "claude-test",
                         "route_type": "runtime_native",
                         "route_reference": "native",
-                        "runtime_configuration_digest": "a" * 64,
-                        "capability_fingerprint": "b" * 64,
+                        "runtime_configuration_digest": applied.configuration_digest,
+                        "capability_fingerprint": applied.capability_fingerprint,
                         "effective_spec_digest": "c" * 64,
                     },
                     "command": {
@@ -161,6 +219,7 @@ async def test_worker_claims_executes_and_posts_events() -> None:
                     "adapter_version": "0.1.0",
                 }
             },
+            runtime_configuration_store=store,
         )
         assert await worker.run_once()
     prepared_request = next(
