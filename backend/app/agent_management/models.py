@@ -82,6 +82,15 @@ class AgentDraft(SQLModel, table=True):
         default=None, foreign_key="llm_provider_config.id", ondelete="SET NULL"
     )
     model_id: str | None = Field(default=None, max_length=255)
+    preferred_model_definition_id: uuid.UUID | None = Field(
+        default=None,
+        foreign_key="llm_model_definition.id",
+        ondelete="RESTRICT",
+        index=True,
+    )
+    execution_policy: dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(POSTGRES_JSON, nullable=False)
+    )
     system_prompt: str = Field(default="", sa_column=Column(Text, nullable=False))
     config: dict[str, Any] = Field(
         default_factory=dict, sa_column=Column(POSTGRES_JSON, nullable=False)

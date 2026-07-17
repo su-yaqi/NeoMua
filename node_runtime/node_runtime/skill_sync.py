@@ -5,9 +5,9 @@ import tempfile
 from pathlib import Path
 
 import httpx
+from runtime_worker.skill_store import SkillCacheMiss, SkillStore
 
 from node_runtime.protocol import Envelope, envelope
-from runtime_worker.skill_store import SkillCacheMiss, SkillStore
 
 
 class NodeSkillSyncController:

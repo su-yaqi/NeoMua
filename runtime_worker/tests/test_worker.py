@@ -51,18 +51,34 @@ class HangingShell:
 
 
 @pytest.mark.anyio
-async def test_worker_reports_harness_capabilities() -> None:
-    requests: list[dict] = []
+async def test_worker_applies_runtime_instance_configuration_and_reports_capability() -> None:
+    requests: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        requests.append(json.loads(request.content))
-        return httpx.Response(200, json={"updated": 1})
+        requests.append(request)
+        if request.url.path.endswith("/configurations/claim"):
+            return httpx.Response(
+                200,
+                json={
+                    "runtime_instance_id": "00000000-0000-0000-0000-000000000010",
+                    "configuration_revision_id": "00000000-0000-0000-0000-000000000011",
+                    "configuration_digest": "a" * 64,
+                    "engine_type": "claude_code",
+                    "executable": "claude",
+                    "arguments": [],
+                },
+            )
+        return httpx.Response(200, json={"status": "applied"})
 
     capabilities = {
         "claude_code": {
             "cli_version": "2.1.191",
-            "sdk_version": "0.2.110",
-            "harness_version": "0.1.0",
+            "adapter_version": "0.1.0",
+            "builtin_tools": ["Read", "Bash"],
+            "permission_modes": ["default", "plan"],
+            "supports_tool_filters": True,
+            "supports_per_tool_approval": True,
+            "supports_mcp_injection": True,
         }
     }
     async with httpx.AsyncClient(
@@ -75,8 +91,13 @@ async def test_worker_reports_harness_capabilities() -> None:
             shell=FakeShell(),
             harness_capabilities=capabilities,
         )
-        await worker.report_capabilities()
-    assert requests == [{"worker_id": "worker-1", "harness_capabilities": capabilities}]
+        assert await worker.apply_configuration_once()
+    result = json.loads(requests[-1].content)
+    assert result["runtime_instance_id"] == "00000000-0000-0000-0000-000000000010"
+    assert result["status"] == "applied"
+    assert result["engine_version"] == "2.1.191"
+    assert result["adapter_version"] == "0.1.0"
+    assert result["capabilities"]["tools"] == ["Read", "Bash"]
 
 
 @pytest.mark.anyio
@@ -91,9 +112,24 @@ async def test_worker_claims_executes_and_posts_events() -> None:
                 json={
                     "task_id": "00000000-0000-0000-0000-000000000001",
                     "revision": 1,
+                    "requires_model_preparation": True,
+                    "model_preparation": {
+                        "runtime_instance_id": "00000000-0000-0000-0000-000000000010",
+                        "runtime_model_binding_id": "00000000-0000-0000-0000-000000000011",
+                        "engine_type": "claude_code",
+                        "engine_version": "2.1.191",
+                        "adapter_version": "0.1.0",
+                        "engine_model_id": "claude-test",
+                        "route_type": "runtime_native",
+                        "route_reference": "native",
+                        "runtime_configuration_digest": "a" * 64,
+                        "capability_fingerprint": "b" * 64,
+                        "effective_spec_digest": "c" * 64,
+                    },
                     "command": {
+                        "engine_type": "claude_code",
                         "prompt": "hello",
-                        "model": "claude",
+                        "model": "claude-test",
                         "permission_mode": "default",
                         "tools": [],
                         "allowed_tools": [],
@@ -105,14 +141,35 @@ async def test_worker_claims_executes_and_posts_events() -> None:
                     },
                 },
             )
+        if request.url.path.endswith("/model-prepared"):
+            return httpx.Response(
+                200, json={"route_type": "runtime_native", "environment": {}}
+            )
         return httpx.Response(200, json={"accepted": 2})
 
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(handler), base_url="http://control"
     ) as client:
-        worker = RuntimeWorker(client, "token", "worker-1", shell=FakeShell())
+        worker = RuntimeWorker(
+            client,
+            "token",
+            "worker-1",
+            shell=FakeShell(),
+            harness_capabilities={
+                "claude_code": {
+                    "cli_version": "2.1.191",
+                    "adapter_version": "0.1.0",
+                }
+            },
+        )
         assert await worker.run_once()
-    event_requests = requests[1:]
+    prepared_request = next(
+        item for item in requests if item.url.path.endswith("/model-prepared")
+    )
+    assert json.loads(prepared_request.content)["runtime_model_binding_id"] == (
+        "00000000-0000-0000-0000-000000000011"
+    )
+    event_requests = [item for item in requests if item.url.path.endswith("/events")]
     assert [
         json.loads(item.content)["events"][0]["sequence"] for item in event_requests
     ] == [2, 3]

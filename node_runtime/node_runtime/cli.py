@@ -7,26 +7,27 @@ from urllib.parse import urlparse
 
 import httpx
 import typer
-
-from node_runtime.config import ConfigStore, NodeConfig
-from node_runtime.identity import DeviceIdentity, IdentityStore, generate_keypair
-from node_runtime.connection import NodeConnection
-from node_runtime.reconcile import ReconcileState
-from node_runtime.model_route import ModelRouteStore
-from node_runtime.spool import EventSpool
-from node_runtime.tasks import NodeTaskController
-from node_runtime.runtime_config import RuntimeConfigManager
-from node_runtime.artifacts.controller import ArtifactController
-from node_runtime.artifacts.installer import ArtifactInstaller
-from node_runtime.agent_releases import AgentReleaseController
-from node_runtime.skill_sync import NodeSkillSyncController
-from node_runtime.mcp_validation import NodeMcpValidationController
-from node_runtime.secrets import node_secret_fingerprints
-from node_runtime.service import SystemdServiceManager, UnsupportedServiceManager
 from runtime_worker.capabilities import (
-    discover_harness_capabilities,
+    discover_runtime_capabilities,
+    discover_runtime_installations,
     node_agent_version,
 )
+
+from node_runtime.agent_releases import AgentReleaseController
+from node_runtime.artifacts.controller import ArtifactController
+from node_runtime.artifacts.installer import ArtifactInstaller
+from node_runtime.config import ConfigStore, NodeConfig
+from node_runtime.connection import NodeConnection
+from node_runtime.identity import DeviceIdentity, IdentityStore, generate_keypair
+from node_runtime.mcp_validation import NodeMcpValidationController
+from node_runtime.model_route import ModelRouteStore
+from node_runtime.reconcile import ReconcileState
+from node_runtime.runtime_config import RuntimeConfigManager
+from node_runtime.secrets import node_secret_fingerprints
+from node_runtime.service import SystemdServiceManager, UnsupportedServiceManager
+from node_runtime.skill_sync import NodeSkillSyncController
+from node_runtime.spool import EventSpool
+from node_runtime.tasks import NodeTaskController
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -52,7 +53,7 @@ def install(
     except UnsupportedServiceManager as exc:
         raise typer.BadParameter(str(exc)) from exc
     keypair = generate_keypair()
-    harness_capabilities = discover_harness_capabilities()
+    runtime_capabilities = discover_runtime_capabilities()
     with httpx.Client(timeout=30) as client:
         response = client.post(
             f"{url}/api/v1/node/enroll",
@@ -63,8 +64,8 @@ def install(
                 "os_name": platform.system().lower(),
                 "architecture": platform.machine().lower(),
                 "agent_version": node_agent_version(),
-                "sdk_version": harness_capabilities["claude_code"]["sdk_version"],
-                "harness_capabilities": harness_capabilities,
+                "sdk_version": runtime_capabilities["claude_code"]["sdk_version"],
+                "harness_capabilities": runtime_capabilities,
                 "public_key": keypair.public_key,
             },
         )
@@ -135,6 +136,7 @@ def run(state_dir: Path = typer.Option(Path("/var/lib/neomua-node"))) -> None:
         identity,
         ReconcileState(
             config_revision=route_store.revision(),
+            discovery_generation=route_store.discovery_generation(),
             interrupted_task_ids=interrupted_task_ids,
             last_acknowledged_event=last_ack,
             spool_first_sequence=spool_first,
@@ -144,10 +146,12 @@ def run(state_dir: Path = typer.Option(Path("/var/lib/neomua-node"))) -> None:
         task_controller=task_controller,
         runtime_config_manager=RuntimeConfigManager(route_store),
         artifact_controller=artifact_controller,
-        harness_capabilities=discover_harness_capabilities(),
+        harness_capabilities=discover_runtime_capabilities(),
         secret_fingerprints=lambda: node_secret_fingerprints(secret_index),
         agent_release_controller=agent_release_controller,
         mcp_validation_controller=NodeMcpValidationController(identity.node_id),
         skill_sync_controller=skill_sync_controller,
+        runtime_installations=discover_runtime_installations(),
+        on_discovery_generation=route_store.set_discovery_generation,
     )
     asyncio.run(connection.run_forever())

@@ -85,14 +85,14 @@
 - `/admin` 在进入页面前再次验证 `is_superuser`。
 - 顶部空间选择器将当前空间写入 `localStorage.selected_namespace_id`，并通过 `tenantApi` 自动附加到请求头。
 - 布局层会在 `/namespaces/mine` 返回后再校验并修正本地缓存的空间 ID，避免首次渲染时因空间列表尚未加载完成而误清空当前选择。
-- 运行时页顶部固定展示平台运行时，下方为节点列表和签名内容区。admin 可配置、注册、吊销和发布；developer 可多轮测试和下发普通任务；user 不渲染页面内容或导航。
+- 运行时页以 Runtime Instance 库存为核心，并同时展示承载它们的 Node、配置修订、能力报告、模型 Binding、签名内容与 Skill 同步状态。Admin 可创建/配置实例、验证 Binding、注册/吊销 Node 和发布内容；Developer 只读运行状态并可下发授权的普通任务；User 不渲染页面内容或导航。
 - 任务详情按事件类型展示，工具负载默认折叠；中断任务只提供显式“重新执行”，不显示自动重试。
 - 一次性节点令牌只保存在对话框组件状态，关闭或刷新即消失，不写 localStorage。
-- Agent 能力页对 Skill 只选择身份并启用/停用，对 Plugin 仍选择精确 Version，对 MCP 选择已发现 Tool；Release 页必须选择明确目标并通过服务端 precheck 后才能创建 Activation。界面不提供 Skill Version 锁定控件。
+- Agent 能力页选择稳定模型偏好和引擎中立策略；对 Skill 只选择身份并启用/停用，对 Plugin 仍选择精确 Version，对 MCP 选择已发现 Tool。Release 页必须选择明确 Runtime Instance 并通过服务端 precheck 后才能创建 Activation；Harness 历史页只读。界面不提供 Skill Version 或供应商路由锁定控件。
 - Activation 详情逐目标展示 attempt、digest 和错误；失败目标由 Admin 显式 Retry，已应用目标通过确认对话框创建可审计 Rollback，不自动替用户决策。
 - `/system/skills` 是外层资产列表，展示名称、唯一标识、当前发布版本、草稿状态和 Runtime 同步摘要；进入 `/system/skills/:skillId` 后使用左侧文件目录树、右侧编辑/预览的工作台。Markdown 支持编辑与渲染预览，其他文本可编辑，二进制文件只显示元数据；版本历史和 Runtime desired/applied 状态在同一工作台中可追踪。
 - Skill/Plugin/MCP 详情父路由显式渲染子路由出口，列表页不会遮蔽详情页。Skill 发布前必须完成草稿校验；已发布版本只读，current version 切换和失败同步重试均为显式操作。
-- 工作台仅保留 Chat 和 Agent，采用左侧历史会话、右侧历史消息与底部输入区的常见聊天布局。项目和 Runtime 创建后只读；模型可切换，Agent 可增减并指定一个组织 Agent，变更保存为后续消息使用的配置修订。
+- 工作台仅保留 Chat 和 Agent，采用左侧历史会话、右侧历史消息与底部输入区的常见聊天布局。项目和 Runtime Instance 创建后只读；Chat 选择 exact model binding，Agent 选择 exact 或严格的偏好解析模式，参与者可增减并指定一个组织 Agent，变更保存为后续消息使用的配置修订。
 - 项目详情按成员、仓库、Spec 与任务分区；Spec 位置可绑定精确不可变标准版本。归档必须二次确认，归档后表单只读。
 - `/workflows` 只展示已启用且前端组件已随构建发布的应用卡片；应用页左上可切换应用，主体是实例列表，右上新建。新建实例只填写任务名称和“要做什么”，项目、Runtime 和 Agent 在模板配置页完成；应用专属详情继续显示精确模板版本、流程图、节点页签及服务端冲突/阻断。
 - 项目、Agent、Skill、MCP、Plugin 与 Spec 标准均从列表标题区按钮打开完整创建弹窗/页面；一次提交完成必要配置，不再先创建只有名称和 Slug 的空壳。所有用户可见的 `slug` 标签统一显示为“唯一标识”。

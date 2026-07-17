@@ -26,6 +26,7 @@ from app.project_management.models import (
     SpecStandardVersion,
 )
 from app.runtime.models import (
+    RuntimeInstance,
     RuntimeJob,
     RuntimeJobKind,
     RuntimeJobStatus,
@@ -115,6 +116,21 @@ def validate_runtime(
     return runtime
 
 
+def validate_runtime_instance(
+    session: Session, namespace_id: uuid.UUID, runtime_id: uuid.UUID | None
+) -> RuntimeInstance | None:
+    if runtime_id is None:
+        return None
+    runtime = session.get(RuntimeInstance, runtime_id)
+    if (
+        runtime is None
+        or runtime.namespace_id != namespace_id
+        or not runtime.enabled
+    ):
+        raise HTTPException(422, "Default Runtime must be available in the project namespace")
+    return runtime
+
+
 def get_repository(
     session: Session, repository_id: uuid.UUID, project_id: uuid.UUID
 ) -> ProjectRepository:
@@ -141,7 +157,7 @@ def verified_repository_runtime_proof(
         job is None
         or job.kind != RuntimeJobKind.REPOSITORY_PROBE
         or job.status != RuntimeJobStatus.SUCCEEDED
-        or job.runtime_profile_id != runtime_id
+        or (job.runtime_instance_id or job.runtime_profile_id) != runtime_id
         or not isinstance(job.result, dict)
         or job.result.get("commit") != repository.validated_commit
         or proof.get("commit") != repository.validated_commit
@@ -302,7 +318,7 @@ def reconcile_repository_validation(
         session.add(repository)
         return True
     result = job.result
-    runtime_id = str(job.runtime_profile_id)
+    runtime_id = str(job.runtime_instance_id or job.runtime_profile_id)
     repository.runtime_workspace_refs = {
         **repository.runtime_workspace_refs,
         runtime_id: {
@@ -405,6 +421,7 @@ def project_public(session: Session, project: Project) -> dict[str, Any]:
         "description": project.description,
         "status": project.status,
         "default_runtime_id": project.default_runtime_id,
+        "default_runtime_instance_id": project.default_runtime_instance_id,
         "member_ids": member_ids,
         "created_by": project.created_by,
         "created_at": project.created_at,

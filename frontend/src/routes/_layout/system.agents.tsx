@@ -36,7 +36,7 @@ function AgentsPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Agent 管理</h1>
         <p className="text-muted-foreground">
-          管理空间级 Agent 定义、草稿与 Claude Harness 配置。
+          管理空间级 Agent 定义、模型偏好、执行策略与能力意图。
         </p>
       </div>
       <AgentList canManage={canManage} />

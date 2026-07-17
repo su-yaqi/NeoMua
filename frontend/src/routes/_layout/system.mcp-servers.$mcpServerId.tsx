@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
 import { useMemo, useState } from "react"
-import { mcpServersApi, tenantApi } from "@/api/tenantApi"
+import { mcpServersApi, runtimeInstancesApi } from "@/api/tenantApi"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -32,7 +32,7 @@ function Page() {
   const [endpoint, setEndpoint] = useState("")
   const [executableKey, setExecutableKey] = useState("")
   const [targetRevisionId, setTargetRevisionId] = useState("")
-  const [runtimeProfileId, setRuntimeProfileId] = useState("")
+  const [runtimeInstanceId, setRuntimeInstanceId] = useState("")
   const [secretRef, setSecretRef] = useState("")
   const [secretInputs, setSecretInputs] = useState<Record<string, string>>({})
 
@@ -69,38 +69,23 @@ function Page() {
     },
     refetchInterval: 5000,
   })
-  const platform = useQuery({
-    queryKey: ["platform-runtime"],
-    queryFn: tenantApi.readPlatformRuntime,
-    retry: false,
-  })
-  const nodes = useQuery({
-    queryKey: ["runtime-nodes"],
-    queryFn: tenantApi.readRuntimeNodes,
+  const runtimes = useQuery({
+    queryKey: ["runtime-instances"],
+    queryFn: runtimeInstancesApi.list,
   })
   const runtimeOptions = useMemo(
-    () => [
-      ...(platform.data
-        ? [
-            {
-              id: platform.data.id,
-              label: "平台运行时",
-              kind: "platform" as const,
-            },
-          ]
-        : []),
-      ...(nodes.data?.data
-        .filter((node) => node.runtime_profile_id)
-        .map((node) => ({
-          id: node.runtime_profile_id!,
-          label: `${node.name}（节点）`,
-          kind: "node" as const,
-        })) ?? []),
-    ],
-    [platform.data, nodes.data],
+    () =>
+      runtimes.data?.data
+        .filter((runtime) => runtime.enabled && runtime.status === "available")
+        .map((runtime) => ({
+          id: runtime.id,
+          label: `${runtime.name}（${runtime.engine_type}）`,
+          kind: runtime.location_type,
+        })) || [],
+    [runtimes.data],
   )
   const selectedRuntime = runtimeOptions.find(
-    (item) => item.id === runtimeProfileId,
+    (item) => item.id === runtimeInstanceId,
   )
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: ["mcp-server", mcpServerId] })
@@ -124,7 +109,7 @@ function Page() {
   const targetMutation = useMutation({
     mutationFn: () =>
       mcpServersApi.createTarget(targetRevisionId, {
-        runtime_profile_id: runtimeProfileId,
+        runtime_instance_id: runtimeInstanceId,
         ...(selectedRuntime?.kind === "node" ? { secret_ref: secretRef } : {}),
       }),
     onSuccess: () => {
@@ -225,8 +210,8 @@ function Page() {
             </select>
             <select
               className="rounded border bg-background px-3"
-              value={runtimeProfileId}
-              onChange={(event) => setRuntimeProfileId(event.target.value)}
+              value={runtimeInstanceId}
+              onChange={(event) => setRuntimeInstanceId(event.target.value)}
             >
               <option value="">选择平台或节点</option>
               {runtimeOptions.map((runtime) => (
@@ -245,7 +230,7 @@ function Page() {
               disabled={
                 targetMutation.isPending ||
                 !targetRevisionId ||
-                !runtimeProfileId ||
+                !runtimeInstanceId ||
                 (selectedRuntime?.kind === "node" && !secretRef)
               }
               onClick={() => targetMutation.mutate()}
@@ -279,7 +264,7 @@ function Page() {
               }
               const isPlatform =
                 runtimeOptions.find(
-                  (item) => item.id === target.runtime_profile_id,
+                  (item) => item.id === target.runtime_instance_id,
                 )?.kind === "platform"
               return (
                 <div className="space-y-2 rounded border p-3" key={targetId}>
@@ -287,8 +272,8 @@ function Page() {
                     <div>
                       <p className="font-medium">
                         {runtimeOptions.find(
-                          (item) => item.id === target.runtime_profile_id,
-                        )?.label ?? String(target.runtime_profile_id)}
+                          (item) => item.id === target.runtime_instance_id,
+                        )?.label ?? String(target.runtime_instance_id)}
                       </p>
                       <p className="text-sm">状态：{String(target.status)}</p>
                     </div>

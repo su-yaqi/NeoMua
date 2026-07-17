@@ -8,8 +8,45 @@ export const ActivationCreateSchema = {
                 format: 'uuid'
             },
             type: 'array',
-            minItems: 1,
-            title: 'Runtime Profile Ids'
+            title: 'Runtime Profile Ids',
+            default: []
+        },
+        runtime_instance_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Runtime Instance Id'
+        },
+        precheck_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Precheck Id'
+        },
+        precheck_digest: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 64,
+                    minLength: 64
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Precheck Digest'
         },
         valid_for_seconds: {
             type: 'integer',
@@ -21,9 +58,6 @@ export const ActivationCreateSchema = {
     },
     additionalProperties: false,
     type: 'object',
-    required: [
-        'runtime_profile_ids'
-    ],
     title: 'ActivationCreate'
 } as const;
 
@@ -149,6 +183,106 @@ export const AdminUserUpdateSchema = {
     title: 'AdminUserUpdate'
 } as const;
 
+export const AgentCompleteCreateSchema = {
+    properties: {
+        slug: {
+            type: 'string',
+            maxLength: 128,
+            minLength: 1,
+            pattern: '^[a-z0-9][a-z0-9-]*$',
+            title: 'Slug'
+        },
+        name: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Name'
+        },
+        description: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Description'
+        },
+        harness_profile_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Harness Profile Id'
+        },
+        provider_config_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Provider Config Id'
+        },
+        model_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 255,
+                    minLength: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Model Id'
+        },
+        preferred_model_definition_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Preferred Model Definition Id'
+        },
+        execution_policy: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Execution Policy'
+        },
+        system_prompt: {
+            type: 'string',
+            title: 'System Prompt',
+            default: ''
+        },
+        config: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Config'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'slug',
+        'name'
+    ],
+    title: 'AgentCompleteCreate'
+} as const;
+
 export const AgentCopySchema = {
     properties: {
         slug: {
@@ -256,6 +390,23 @@ export const AgentDraftPublicSchema = {
             ],
             title: 'Model Id'
         },
+        preferred_model_definition_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Preferred Model Definition Id'
+        },
+        execution_policy: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Execution Policy'
+        },
         system_prompt: {
             type: 'string',
             title: 'System Prompt'
@@ -305,6 +456,8 @@ export const AgentDraftPublicSchema = {
         'harness_profile_id',
         'provider_config_id',
         'model_id',
+        'preferred_model_definition_id',
+        'execution_policy',
         'system_prompt',
         'config',
         'validated_revision',
@@ -406,6 +559,18 @@ export const AgentListItemSchema = {
                 }
             ],
             title: 'Model Id'
+        },
+        preferred_model_definition_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Preferred Model Definition Id'
         }
     },
     type: 'object',
@@ -548,16 +713,21 @@ export const AgentPublicSchema = {
 
 export const AgentSkillBindingSchema = {
     properties: {
-        skill_version_id: {
+        skill_id: {
             type: 'string',
             format: 'uuid',
-            title: 'Skill Version Id'
+            title: 'Skill Id'
+        },
+        enabled: {
+            type: 'boolean',
+            title: 'Enabled',
+            default: true
         }
     },
     additionalProperties: false,
     type: 'object',
     required: [
-        'skill_version_id'
+        'skill_id'
     ],
     title: 'AgentSkillBinding'
 } as const;
@@ -847,8 +1017,32 @@ export const ArtifactsPublicSchema = {
     title: 'ArtifactsPublic'
 } as const;
 
-export const Body_agent_capabilities_upload_skill_versionSchema = {
+export const Body_agent_capabilities_create_skill_completeSchema = {
     properties: {
+        slug: {
+            type: 'string',
+            maxLength: 128,
+            minLength: 1,
+            pattern: '^[a-z0-9][a-z0-9-]*$',
+            title: 'Slug'
+        },
+        name: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Name'
+        },
+        description: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Description'
+        },
         version: {
             type: 'string',
             title: 'Version'
@@ -861,10 +1055,37 @@ export const Body_agent_capabilities_upload_skill_versionSchema = {
     },
     type: 'object',
     required: [
+        'slug',
+        'name',
         'version',
         'file'
     ],
-    title: 'Body_agent-capabilities-upload_skill_version'
+    title: 'Body_agent-capabilities-create_skill_complete'
+} as const;
+
+export const Body_agent_capabilities_import_skill_draftSchema = {
+    properties: {
+        version: {
+            type: 'string',
+            title: 'Version'
+        },
+        expected_revision: {
+            type: 'integer',
+            title: 'Expected Revision'
+        },
+        file: {
+            type: 'string',
+            format: 'binary',
+            title: 'File'
+        }
+    },
+    type: 'object',
+    required: [
+        'version',
+        'expected_revision',
+        'file'
+    ],
+    title: 'Body_agent-capabilities-import_skill_draft'
 } as const;
 
 export const Body_conversations_upload_attachmentSchema = {
@@ -987,24 +1208,6 @@ export const Body_workflows_upload_workflow_attachmentSchema = {
     title: 'Body_workflows-upload_workflow_attachment'
 } as const;
 
-export const CapabilityReportSchema = {
-    properties: {
-        worker_id: {
-            type: 'string',
-            title: 'Worker Id'
-        },
-        harness_capabilities: {
-            $ref: '#/components/schemas/HarnessCapabilities'
-        }
-    },
-    type: 'object',
-    required: [
-        'worker_id',
-        'harness_capabilities'
-    ],
-    title: 'CapabilityReport'
-} as const;
-
 export const ClaimInputSchema = {
     properties: {
         worker_id: {
@@ -1083,6 +1286,126 @@ export const CliRefreshSchema = {
     title: 'CliRefresh'
 } as const;
 
+export const ConfigurationApplyInputSchema = {
+    properties: {
+        configuration_revision_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Configuration Revision Id'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'configuration_revision_id'
+    ],
+    title: 'ConfigurationApplyInput'
+} as const;
+
+export const ConfigurationClaimInputSchema = {
+    properties: {
+        worker_id: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Worker Id'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'worker_id'
+    ],
+    title: 'ConfigurationClaimInput'
+} as const;
+
+export const ConfigurationResultInputSchema = {
+    properties: {
+        worker_id: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Worker Id'
+        },
+        runtime_instance_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Runtime Instance Id'
+        },
+        configuration_revision_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Configuration Revision Id'
+        },
+        configuration_digest: {
+            type: 'string',
+            maxLength: 64,
+            minLength: 64,
+            title: 'Configuration Digest'
+        },
+        status: {
+            type: 'string',
+            title: 'Status'
+        },
+        engine_version: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 64
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Engine Version'
+        },
+        adapter_version: {
+            type: 'string',
+            maxLength: 64,
+            minLength: 1,
+            title: 'Adapter Version'
+        },
+        capabilities: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Capabilities',
+            default: {}
+        },
+        discovered_models: {
+            items: {
+                additionalProperties: true,
+                type: 'object'
+            },
+            type: 'array',
+            title: 'Discovered Models',
+            default: []
+        },
+        error: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Error'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'worker_id',
+        'runtime_instance_id',
+        'configuration_revision_id',
+        'configuration_digest',
+        'status',
+        'adapter_version'
+    ],
+    title: 'ConfigurationResultInput'
+} as const;
+
 export const ConfirmationDecisionSchema = {
     type: 'string',
     enum: [
@@ -1107,6 +1430,16 @@ export const ConversationAgentInputSchema = {
             type: 'string',
             format: 'uuid',
             title: 'Runtime Agent Release Id'
+        },
+        model_selection: {
+            anyOf: [
+                {
+                    $ref: '#/components/schemas/ModelSelectionInput'
+                },
+                {
+                    type: 'null'
+                }
+            ]
         }
     },
     additionalProperties: false,
@@ -1115,6 +1448,86 @@ export const ConversationAgentInputSchema = {
         'runtime_agent_release_id'
     ],
     title: 'ConversationAgentInput'
+} as const;
+
+export const ConversationConfigurationUpdateSchema = {
+    properties: {
+        expected_revision: {
+            type: 'integer',
+            minimum: 1,
+            title: 'Expected Revision'
+        },
+        provider_config_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Provider Config Id'
+        },
+        model_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 255,
+                    minLength: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Model Id'
+        },
+        participant_runtime_agent_release_ids: {
+            items: {
+                type: 'string',
+                format: 'uuid'
+            },
+            type: 'array',
+            title: 'Participant Runtime Agent Release Ids',
+            default: []
+        },
+        organizer_runtime_agent_release_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Organizer Runtime Agent Release Id'
+        },
+        chat_model_selection: {
+            anyOf: [
+                {
+                    $ref: '#/components/schemas/ModelSelectionInput'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        participant_selections: {
+            items: {
+                $ref: '#/components/schemas/ConversationAgentInput'
+            },
+            type: 'array',
+            title: 'Participant Selections',
+            default: []
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'expected_revision'
+    ],
+    title: 'ConversationConfigurationUpdate'
 } as const;
 
 export const ConversationContextSnapshotSchema = {
@@ -1207,9 +1620,28 @@ export const ConversationCreateSchema = {
             $ref: '#/components/schemas/ConversationMode'
         },
         runtime_id: {
-            type: 'string',
-            format: 'uuid',
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
             title: 'Runtime Id'
+        },
+        runtime_instance_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Runtime Instance Id'
         },
         project_id: {
             anyOf: [
@@ -1251,6 +1683,16 @@ export const ConversationCreateSchema = {
             ],
             title: 'Model Id'
         },
+        chat_model_selection: {
+            anyOf: [
+                {
+                    $ref: '#/components/schemas/ModelSelectionInput'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
         main_agent: {
             anyOf: [
                 {
@@ -1274,8 +1716,7 @@ export const ConversationCreateSchema = {
     type: 'object',
     required: [
         'title',
-        'mode',
-        'runtime_id'
+        'mode'
     ],
     title: 'ConversationCreate'
 } as const;
@@ -1295,29 +1736,20 @@ export const ConversationDeriveSchema = {
             ],
             title: 'Title'
         },
-        runtime_id: {
+        runtime_instance_id: {
             type: 'string',
             format: 'uuid',
-            title: 'Runtime Id'
+            title: 'Runtime Instance Id'
         },
-        provider_config_id: {
-            type: 'string',
-            format: 'uuid',
-            title: 'Provider Config Id'
-        },
-        model_id: {
-            type: 'string',
-            maxLength: 255,
-            minLength: 1,
-            title: 'Model Id'
+        chat_model_selection: {
+            $ref: '#/components/schemas/ModelSelectionInput'
         }
     },
     additionalProperties: false,
     type: 'object',
     required: [
-        'runtime_id',
-        'provider_config_id',
-        'model_id'
+        'runtime_instance_id',
+        'chat_model_selection'
     ],
     title: 'ConversationDerive'
 } as const;
@@ -1533,6 +1965,75 @@ export const DeploymentStatusSchema = {
     title: 'DeploymentStatus'
 } as const;
 
+export const DiscoveryInstallationSchema = {
+    properties: {
+        installation_key: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Installation Key'
+        },
+        name: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Name'
+        },
+        engine_type: {
+            $ref: '#/components/schemas/RuntimeEngineType'
+        },
+        engine_version: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 64
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Engine Version'
+        },
+        adapter_version: {
+            type: 'string',
+            maxLength: 64,
+            minLength: 1,
+            title: 'Adapter Version'
+        },
+        executable_fingerprint: {
+            type: 'string',
+            maxLength: 128,
+            minLength: 32,
+            title: 'Executable Fingerprint'
+        },
+        capabilities: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Capabilities',
+            default: {}
+        },
+        discovered_models: {
+            items: {
+                additionalProperties: true,
+                type: 'object'
+            },
+            type: 'array',
+            title: 'Discovered Models',
+            default: []
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'installation_key',
+        'name',
+        'engine_type',
+        'adapter_version',
+        'executable_fingerprint'
+    ],
+    title: 'DiscoveryInstallation'
+} as const;
+
 export const DraftSaveSchema = {
     properties: {
         expected_revision: {
@@ -1574,6 +2075,30 @@ export const DraftSaveSchema = {
                 }
             ],
             title: 'Model Id'
+        },
+        preferred_model_definition_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Preferred Model Definition Id'
+        },
+        execution_policy: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Execution Policy'
         },
         system_prompt: {
             anyOf: [
@@ -2629,6 +3154,16 @@ export const LlmProviderConfigCreateSchema = {
             type: 'array',
             title: 'Enabled Model Ids',
             default: []
+        },
+        validate_on_create: {
+            type: 'boolean',
+            title: 'Validate On Create',
+            default: false
+        },
+        sync_models_on_create: {
+            type: 'boolean',
+            title: 'Sync Models On Create',
+            default: false
         }
     },
     type: 'object',
@@ -2896,6 +3431,83 @@ export const LlmProviderConfigsPublicSchema = {
     title: 'LlmProviderConfigsPublic'
 } as const;
 
+export const LlmProviderDraftRequestSchema = {
+    properties: {
+        provider_slug: {
+            type: 'string',
+            maxLength: 128,
+            minLength: 1,
+            title: 'Provider Slug'
+        },
+        base_url: {
+            type: 'string',
+            maxLength: 1024,
+            minLength: 1,
+            title: 'Base Url'
+        },
+        secret_inputs: {
+            additionalProperties: {
+                type: 'string'
+            },
+            type: 'object',
+            title: 'Secret Inputs'
+        },
+        extra_config: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Extra Config'
+        },
+        manual_models: {
+            items: {
+                $ref: '#/components/schemas/LlmProviderModelInput'
+            },
+            type: 'array',
+            title: 'Manual Models',
+            default: []
+        },
+        enabled_model_ids: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Enabled Model Ids',
+            default: []
+        }
+    },
+    type: 'object',
+    required: [
+        'provider_slug',
+        'base_url'
+    ],
+    title: 'LlmProviderDraftRequest'
+} as const;
+
+export const LlmProviderDraftResultSchema = {
+    properties: {
+        validation_status: {
+            $ref: '#/components/schemas/ProviderValidationStatus'
+        },
+        validation_message: {
+            type: 'string',
+            title: 'Validation Message'
+        },
+        models: {
+            items: {
+                $ref: '#/components/schemas/LlmProviderModelPreview'
+            },
+            type: 'array',
+            title: 'Models',
+            default: []
+        }
+    },
+    type: 'object',
+    required: [
+        'validation_status',
+        'validation_message'
+    ],
+    title: 'LlmProviderDraftResult'
+} as const;
+
 export const LlmProviderModelInputSchema = {
     properties: {
         model_id: {
@@ -2924,12 +3536,79 @@ export const LlmProviderModelInputSchema = {
     title: 'LlmProviderModelInput'
 } as const;
 
+export const LlmProviderModelPreviewSchema = {
+    properties: {
+        model_id: {
+            type: 'string',
+            title: 'Model Id'
+        },
+        display_name: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Display Name'
+        },
+        source_type: {
+            $ref: '#/components/schemas/ProviderModelSourceType'
+        },
+        is_enabled: {
+            type: 'boolean',
+            title: 'Is Enabled'
+        },
+        sync_status: {
+            $ref: '#/components/schemas/ProviderModelSyncStatus'
+        },
+        raw_metadata: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Raw Metadata'
+        },
+        last_synced_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Last Synced At'
+        }
+    },
+    type: 'object',
+    required: [
+        'model_id',
+        'source_type',
+        'is_enabled',
+        'sync_status'
+    ],
+    title: 'LlmProviderModelPreview'
+} as const;
+
 export const LlmProviderModelPublicSchema = {
     properties: {
         id: {
             type: 'string',
             format: 'uuid',
             title: 'Id'
+        },
+        model_definition_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Model Definition Id'
         },
         model_id: {
             type: 'string',
@@ -3044,6 +3723,57 @@ export const McpAgentBindingSchema = {
     title: 'McpAgentBinding'
 } as const;
 
+export const McpCompleteCreateSchema = {
+    properties: {
+        slug: {
+            type: 'string',
+            maxLength: 128,
+            minLength: 1,
+            pattern: '^[a-z0-9][a-z0-9-]*$',
+            title: 'Slug'
+        },
+        name: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Name'
+        },
+        description: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Description'
+        },
+        revision: {
+            $ref: '#/components/schemas/McpRevisionCreate'
+        },
+        target: {
+            $ref: '#/components/schemas/McpTargetCreate'
+        },
+        secret_inputs: {
+            additionalProperties: {
+                type: 'string'
+            },
+            type: 'object',
+            title: 'Secret Inputs'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'slug',
+        'name',
+        'revision',
+        'target'
+    ],
+    title: 'McpCompleteCreate'
+} as const;
+
 export const McpRevisionCreateSchema = {
     properties: {
         transport: {
@@ -3091,9 +3821,28 @@ export const McpSecretWriteSchema = {
 export const McpTargetCreateSchema = {
     properties: {
         runtime_profile_id: {
-            type: 'string',
-            format: 'uuid',
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
             title: 'Runtime Profile Id'
+        },
+        runtime_instance_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Runtime Instance Id'
         },
         secret_ref: {
             anyOf: [
@@ -3112,9 +3861,6 @@ export const McpTargetCreateSchema = {
     },
     additionalProperties: false,
     type: 'object',
-    required: [
-        'runtime_profile_id'
-    ],
     title: 'McpTargetCreate'
 } as const;
 
@@ -3218,6 +3964,167 @@ export const MessageTargetTypeSchema = {
         'system'
     ],
     title: 'MessageTargetType'
+} as const;
+
+export const ModelDefinitionCreateSchema = {
+    properties: {
+        provider_family: {
+            type: 'string',
+            maxLength: 128,
+            minLength: 1,
+            title: 'Provider Family'
+        },
+        model_key: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Model Key'
+        },
+        display_name: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 255
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Display Name'
+        },
+        capability_tags: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Capability Tags',
+            default: []
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'provider_family',
+        'model_key'
+    ],
+    title: 'ModelDefinitionCreate'
+} as const;
+
+export const ModelPreparedInputSchema = {
+    properties: {
+        worker_id: {
+            type: 'string',
+            title: 'Worker Id'
+        },
+        revision: {
+            type: 'integer',
+            title: 'Revision'
+        },
+        runtime_instance_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Runtime Instance Id'
+        },
+        runtime_model_binding_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Runtime Model Binding Id'
+        },
+        engine_type: {
+            type: 'string',
+            title: 'Engine Type'
+        },
+        engine_version: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Engine Version'
+        },
+        adapter_version: {
+            type: 'string',
+            title: 'Adapter Version'
+        },
+        engine_model_id: {
+            type: 'string',
+            title: 'Engine Model Id'
+        },
+        route_type: {
+            type: 'string',
+            title: 'Route Type'
+        },
+        route_reference: {
+            type: 'string',
+            title: 'Route Reference'
+        },
+        runtime_configuration_digest: {
+            type: 'string',
+            title: 'Runtime Configuration Digest'
+        },
+        capability_fingerprint: {
+            type: 'string',
+            title: 'Capability Fingerprint'
+        },
+        effective_spec_digest: {
+            type: 'string',
+            title: 'Effective Spec Digest'
+        }
+    },
+    type: 'object',
+    required: [
+        'worker_id',
+        'revision',
+        'runtime_instance_id',
+        'runtime_model_binding_id',
+        'engine_type',
+        'adapter_version',
+        'engine_model_id',
+        'route_type',
+        'route_reference',
+        'runtime_configuration_digest',
+        'capability_fingerprint',
+        'effective_spec_digest'
+    ],
+    title: 'ModelPreparedInput'
+} as const;
+
+export const ModelSelectionInputSchema = {
+    properties: {
+        mode: {
+            $ref: '#/components/schemas/ModelSelectionMode'
+        },
+        runtime_model_binding_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Runtime Model Binding Id'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'mode'
+    ],
+    title: 'ModelSelectionInput'
+} as const;
+
+export const ModelSelectionModeSchema = {
+    type: 'string',
+    enum: [
+        'exact',
+        'agent_preference'
+    ],
+    title: 'ModelSelectionMode'
 } as const;
 
 export const NamespaceCreateSchema = {
@@ -3555,6 +4462,72 @@ export const NamespacesPublicSchema = {
         'count'
     ],
     title: 'NamespacesPublic'
+} as const;
+
+export const NativeModelValidationResultSchema = {
+    properties: {
+        worker_id: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Worker Id'
+        },
+        runtime_model_binding_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Runtime Model Binding Id'
+        },
+        attempt_no: {
+            type: 'integer',
+            minimum: 1,
+            title: 'Attempt No'
+        },
+        status: {
+            type: 'string',
+            title: 'Status'
+        },
+        engine_model_id: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Engine Model Id'
+        },
+        route_key: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Route Key'
+        },
+        evidence: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Evidence',
+            default: {}
+        },
+        error: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Error'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'worker_id',
+        'runtime_model_binding_id',
+        'attempt_no',
+        'status',
+        'engine_model_id',
+        'route_key'
+    ],
+    title: 'NativeModelValidationResult'
 } as const;
 
 export const NewPasswordSchema = {
@@ -4067,6 +5040,57 @@ export const PermissionModeSchema = {
     title: 'PermissionMode'
 } as const;
 
+export const PlatformRuntimeCreateSchema = {
+    properties: {
+        name: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Name'
+        },
+        engine_type: {
+            $ref: '#/components/schemas/RuntimeEngineType'
+        },
+        installation_key: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Installation Key'
+        },
+        engine_version: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 64
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Engine Version'
+        },
+        adapter_version: {
+            type: 'string',
+            maxLength: 64,
+            minLength: 1,
+            title: 'Adapter Version',
+            default: '1.0.0'
+        },
+        configuration: {
+            $ref: '#/components/schemas/RuntimeConfigurationInput'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'name',
+        'engine_type',
+        'installation_key',
+        'configuration'
+    ],
+    title: 'PlatformRuntimeCreate'
+} as const;
+
 export const PlatformRuntimePublicSchema = {
     properties: {
         id: {
@@ -4210,6 +5234,67 @@ export const PlatformRuntimeUpsertSchema = {
     title: 'PlatformRuntimeUpsert'
 } as const;
 
+export const PluginCompleteCreateSchema = {
+    properties: {
+        slug: {
+            type: 'string',
+            maxLength: 128,
+            minLength: 1,
+            pattern: '^[a-z0-9][a-z0-9-]*$',
+            title: 'Slug'
+        },
+        name: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Name'
+        },
+        description: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Description'
+        },
+        harness_type: {
+            type: 'string',
+            title: 'Harness Type',
+            default: 'claude_code'
+        },
+        adapter_schema_version: {
+            type: 'string',
+            title: 'Adapter Schema Version',
+            default: '1.1'
+        },
+        adapter_config: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Adapter Config'
+        },
+        components: {
+            items: {
+                additionalProperties: true,
+                type: 'object'
+            },
+            type: 'array',
+            minItems: 1,
+            title: 'Components'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'slug',
+        'name',
+        'components'
+    ],
+    title: 'PluginCompleteCreate'
+} as const;
+
 export const PluginDraftSaveSchema = {
     properties: {
         expected_revision: {
@@ -4224,7 +5309,7 @@ export const PluginDraftSaveSchema = {
         adapter_schema_version: {
             type: 'string',
             title: 'Adapter Schema Version',
-            default: '1.0'
+            default: '1.1'
         },
         adapter_config: {
             additionalProperties: true,
@@ -4333,7 +5418,7 @@ export const ProjectCreateSchema = {
             ],
             title: 'Description'
         },
-        default_runtime_id: {
+        default_runtime_instance_id: {
             anyOf: [
                 {
                     type: 'string',
@@ -4343,7 +5428,7 @@ export const ProjectCreateSchema = {
                     type: 'null'
                 }
             ],
-            title: 'Default Runtime Id'
+            title: 'Default Runtime Instance Id'
         },
         member_ids: {
             items: {
@@ -4351,8 +5436,15 @@ export const ProjectCreateSchema = {
                 format: 'uuid'
             },
             type: 'array',
-            title: 'Member Ids',
-            default: []
+            title: 'Member Ids'
+        },
+        initial_repositories: {
+            items: {
+                $ref: '#/components/schemas/ProjectInitialRepositoryCreate'
+            },
+            type: 'array',
+            maxItems: 10,
+            title: 'Initial Repositories'
         }
     },
     additionalProperties: false,
@@ -4362,6 +5454,53 @@ export const ProjectCreateSchema = {
         'name'
     ],
     title: 'ProjectCreate'
+} as const;
+
+export const ProjectInitialRepositoryCreateSchema = {
+    properties: {
+        remote_url: {
+            type: 'string',
+            maxLength: 2048,
+            minLength: 1,
+            title: 'Remote Url'
+        },
+        purpose: {
+            type: 'string',
+            minLength: 1,
+            title: 'Purpose'
+        },
+        default_branch: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 255
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Default Branch'
+        },
+        credential_ref: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 512
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Credential Ref'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'remote_url',
+        'purpose'
+    ],
+    title: 'ProjectInitialRepositoryCreate'
 } as const;
 
 export const ProjectMembersUpdateSchema = {
@@ -4651,7 +5790,7 @@ export const ProjectUpdateSchema = {
             ],
             title: 'Description'
         },
-        default_runtime_id: {
+        default_runtime_instance_id: {
             anyOf: [
                 {
                     type: 'string',
@@ -4661,7 +5800,7 @@ export const ProjectUpdateSchema = {
                     type: 'null'
                 }
             ],
-            title: 'Default Runtime Id'
+            title: 'Default Runtime Instance Id'
         },
         archive: {
             anyOf: [
@@ -4918,18 +6057,75 @@ export const RepositoryUpdateSchema = {
 
 export const RepositoryValidationRequestSchema = {
     properties: {
-        runtime_id: {
+        runtime_instance_id: {
             type: 'string',
             format: 'uuid',
-            title: 'Runtime Id'
+            title: 'Runtime Instance Id'
         }
     },
     additionalProperties: false,
     type: 'object',
     required: [
-        'runtime_id'
+        'runtime_instance_id'
     ],
     title: 'RepositoryValidationRequest'
+} as const;
+
+export const RuntimeConfigurationInputSchema = {
+    properties: {
+        expected_revision: {
+            type: 'integer',
+            minimum: 0,
+            title: 'Expected Revision'
+        },
+        executable: {
+            type: 'string',
+            maxLength: 1024,
+            minLength: 1,
+            title: 'Executable'
+        },
+        arguments: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Arguments',
+            default: []
+        },
+        working_directory_policy: {
+            type: 'string',
+            maxLength: 64,
+            title: 'Working Directory Policy',
+            default: 'workspace'
+        },
+        environment_allowlist: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Environment Allowlist',
+            default: []
+        },
+        security_policy: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Security Policy',
+            default: {}
+        },
+        resource_limits: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Resource Limits',
+            default: {}
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'expected_revision',
+        'executable'
+    ],
+    title: 'RuntimeConfigurationInput'
 } as const;
 
 export const RuntimeDelegationInputSchema = {
@@ -4961,6 +6157,57 @@ export const RuntimeDelegationInputSchema = {
         'content'
     ],
     title: 'RuntimeDelegationInput'
+} as const;
+
+export const RuntimeDiscoveryReportSchema = {
+    properties: {
+        node_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Node Id'
+        },
+        generation: {
+            type: 'integer',
+            minimum: 1,
+            title: 'Generation'
+        },
+        installations: {
+            items: {
+                $ref: '#/components/schemas/DiscoveryInstallation'
+            },
+            type: 'array',
+            title: 'Installations'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'node_id',
+        'generation',
+        'installations'
+    ],
+    title: 'RuntimeDiscoveryReport'
+} as const;
+
+export const RuntimeEngineTypeSchema = {
+    type: 'string',
+    enum: [
+        'claude_code',
+        'codex'
+    ],
+    title: 'RuntimeEngineType'
+} as const;
+
+export const RuntimeInstanceStatusSchema = {
+    type: 'string',
+    enum: [
+        'discovered',
+        'available',
+        'unavailable',
+        'incompatible',
+        'disabled'
+    ],
+    title: 'RuntimeInstanceStatus'
 } as const;
 
 export const RuntimeJobResultInputSchema = {
@@ -5023,6 +6270,74 @@ export const RuntimeJobStatusSchema = {
     title: 'RuntimeJobStatus'
 } as const;
 
+export const RuntimeModelBindingCreateSchema = {
+    properties: {
+        model_definition_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Model Definition Id'
+        },
+        route_type: {
+            $ref: '#/components/schemas/RuntimeModelRouteType'
+        },
+        route_key: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Route Key'
+        },
+        engine_model_id: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Engine Model Id'
+        },
+        provider_config_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Provider Config Id'
+        },
+        provider_model_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Provider Model Id'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'model_definition_id',
+        'route_type',
+        'route_key',
+        'engine_model_id'
+    ],
+    title: 'RuntimeModelBindingCreate'
+} as const;
+
+export const RuntimeModelRouteTypeSchema = {
+    type: 'string',
+    enum: [
+        'provider_config',
+        'runtime_native',
+        'legacy_direct'
+    ],
+    title: 'RuntimeModelRouteType'
+} as const;
+
 export const RuntimeRouteModeSchema = {
     type: 'string',
     enum: [
@@ -5080,6 +6395,231 @@ export const SessionPublicSchema = {
     title: 'SessionPublic'
 } as const;
 
+export const SkillCompleteEditorSchema = {
+    properties: {
+        slug: {
+            type: 'string',
+            maxLength: 128,
+            minLength: 1,
+            pattern: '^[a-z0-9][a-z0-9-]*$',
+            title: 'Slug'
+        },
+        name: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Name'
+        },
+        description: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Description'
+        },
+        version: {
+            type: 'string',
+            title: 'Version'
+        },
+        skill_md: {
+            type: 'string',
+            minLength: 1,
+            title: 'Skill Md'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'slug',
+        'name',
+        'version',
+        'skill_md'
+    ],
+    title: 'SkillCompleteEditor'
+} as const;
+
+export const SkillCurrentVersionUpdateSchema = {
+    properties: {
+        version_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Version Id'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'version_id'
+    ],
+    title: 'SkillCurrentVersionUpdate'
+} as const;
+
+export const SkillDraftFileCreateSchema = {
+    properties: {
+        path: {
+            type: 'string',
+            maxLength: 1024,
+            minLength: 1,
+            title: 'Path'
+        },
+        content: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Content'
+        },
+        content_base64: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Content Base64'
+        },
+        mime_type: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 255
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Mime Type'
+        },
+        expected_revision: {
+            type: 'integer',
+            title: 'Expected Revision'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'path',
+        'expected_revision'
+    ],
+    title: 'SkillDraftFileCreate'
+} as const;
+
+export const SkillDraftFileMoveSchema = {
+    properties: {
+        path: {
+            type: 'string',
+            maxLength: 1024,
+            minLength: 1,
+            title: 'Path'
+        },
+        expected_revision: {
+            type: 'integer',
+            title: 'Expected Revision'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'path',
+        'expected_revision'
+    ],
+    title: 'SkillDraftFileMove'
+} as const;
+
+export const SkillDraftFileUpdateSchema = {
+    properties: {
+        content: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Content'
+        },
+        content_base64: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Content Base64'
+        },
+        mime_type: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 255
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Mime Type'
+        },
+        expected_revision: {
+            type: 'integer',
+            title: 'Expected Revision'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'expected_revision'
+    ],
+    title: 'SkillDraftFileUpdate'
+} as const;
+
+export const SkillDraftMutationSchema = {
+    properties: {
+        expected_revision: {
+            type: 'integer',
+            title: 'Expected Revision'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'expected_revision'
+    ],
+    title: 'SkillDraftMutation'
+} as const;
+
+export const SkillDraftPublishSchema = {
+    properties: {
+        version: {
+            type: 'string',
+            title: 'Version'
+        },
+        expected_revision: {
+            type: 'integer',
+            title: 'Expected Revision'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'version',
+        'expected_revision'
+    ],
+    title: 'SkillDraftPublish'
+} as const;
+
 export const SkillInvokeInputSchema = {
     properties: {
         arguments: {
@@ -5090,6 +6630,86 @@ export const SkillInvokeInputSchema = {
     },
     type: 'object',
     title: 'SkillInvokeInput'
+} as const;
+
+export const SkillSyncResultSchema = {
+    properties: {
+        status: {
+            type: 'string',
+            title: 'Status'
+        },
+        content_sha256: {
+            type: 'string',
+            maxLength: 64,
+            minLength: 64,
+            title: 'Content Sha256'
+        },
+        bytes_downloaded: {
+            type: 'integer',
+            minimum: 0,
+            title: 'Bytes Downloaded',
+            default: 0
+        },
+        error: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Error'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'status',
+        'content_sha256'
+    ],
+    title: 'SkillSyncResult'
+} as const;
+
+export const SkillUsageItemSchema = {
+    properties: {
+        skill_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Skill Id'
+        },
+        version_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Version Id'
+        },
+        version: {
+            type: 'string',
+            title: 'Version'
+        },
+        content_sha256: {
+            type: 'string',
+            maxLength: 64,
+            minLength: 64,
+            title: 'Content Sha256'
+        },
+        runtime_generation: {
+            type: 'integer',
+            minimum: 1,
+            title: 'Runtime Generation'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'skill_id',
+        'version_id',
+        'version',
+        'content_sha256',
+        'runtime_generation'
+    ],
+    title: 'SkillUsageItem'
 } as const;
 
 export const SpecBindingStatusSchema = {
@@ -5290,6 +6910,71 @@ export const SpecStandardSchema = {
         'name'
     ],
     title: 'SpecStandard'
+} as const;
+
+export const SpecStandardCompleteCreateSchema = {
+    properties: {
+        scope_type: {
+            $ref: '#/components/schemas/SpecScopeType'
+        },
+        slug: {
+            type: 'string',
+            maxLength: 128,
+            minLength: 1,
+            pattern: '^[a-z0-9][a-z0-9-]*$',
+            title: 'Slug'
+        },
+        name: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Name'
+        },
+        description: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Description'
+        },
+        version: {
+            type: 'string',
+            maxLength: 64,
+            minLength: 1,
+            title: 'Version'
+        },
+        manifest: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Manifest'
+        },
+        storage_ref: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 1024
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Storage Ref'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'scope_type',
+        'slug',
+        'name',
+        'version',
+        'manifest'
+    ],
+    title: 'SpecStandardCompleteCreate'
 } as const;
 
 export const SpecStandardCreateSchema = {
@@ -5545,14 +7230,62 @@ export const TargetCompatibilitySchema = {
 export const TaskCreateSchema = {
     properties: {
         runtime_agent_release_id: {
-            type: 'string',
-            format: 'uuid',
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
             title: 'Runtime Agent Release Id'
         },
         runtime_profile_id: {
-            type: 'string',
-            format: 'uuid',
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
             title: 'Runtime Profile Id'
+        },
+        runtime_instance_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Runtime Instance Id'
+        },
+        runtime_model_binding_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Runtime Model Binding Id'
+        },
+        model_selection_mode: {
+            anyOf: [
+                {
+                    $ref: '#/components/schemas/ModelSelectionMode'
+                },
+                {
+                    type: 'null'
+                }
+            ]
         },
         node_id: {
             anyOf: [
@@ -5585,12 +7318,22 @@ export const TaskCreateSchema = {
                 }
             ],
             title: 'Working Directory'
+        },
+        system_prompt: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'System Prompt'
         }
     },
+    additionalProperties: false,
     type: 'object',
     required: [
-        'runtime_agent_release_id',
-        'runtime_profile_id',
         'prompt'
     ],
     title: 'TaskCreate'
@@ -5603,6 +7346,97 @@ export const TaskKindSchema = {
         'admin'
     ],
     title: 'TaskKind'
+} as const;
+
+export const TaskPreparationFailureSchema = {
+    properties: {
+        runtime_profile_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Runtime Profile Id'
+        },
+        runtime_instance_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Runtime Instance Id'
+        },
+        revision: {
+            type: 'integer',
+            title: 'Revision'
+        },
+        code: {
+            type: 'string',
+            title: 'Code'
+        },
+        message: {
+            type: 'string',
+            title: 'Message'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'revision',
+        'code',
+        'message'
+    ],
+    title: 'TaskPreparationFailure'
+} as const;
+
+export const TaskSkillUsageReportSchema = {
+    properties: {
+        runtime_profile_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Runtime Profile Id'
+        },
+        runtime_instance_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Runtime Instance Id'
+        },
+        skills: {
+            items: {
+                $ref: '#/components/schemas/SkillUsageItem'
+            },
+            type: 'array',
+            title: 'Skills'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'skills'
+    ],
+    title: 'TaskSkillUsageReport'
 } as const;
 
 export const TaskStatusSchema = {
@@ -6032,6 +7866,120 @@ export const ValidationErrorSchema = {
     title: 'ValidationError'
 } as const;
 
+export const WorkflowExecutionConfigurationUpdateSchema = {
+    properties: {
+        expected_revision: {
+            type: 'integer',
+            minimum: 0,
+            title: 'Expected Revision'
+        },
+        project_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Project Id'
+        },
+        node_bindings: {
+            additionalProperties: {
+                $ref: '#/components/schemas/WorkflowExecutionNodeBindingInput'
+            },
+            type: 'object',
+            title: 'Node Bindings'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'expected_revision',
+        'node_bindings'
+    ],
+    title: 'WorkflowExecutionConfigurationUpdate'
+} as const;
+
+export const WorkflowExecutionNodeBindingInputSchema = {
+    properties: {
+        runtime_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Runtime Id'
+        },
+        runtime_instance_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Runtime Instance Id'
+        },
+        agent_release_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Agent Release Id'
+        },
+        runtime_agent_release_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Runtime Agent Release Id'
+        },
+        model_selection_mode: {
+            anyOf: [
+                {
+                    $ref: '#/components/schemas/ModelSelectionMode'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        runtime_model_binding_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Runtime Model Binding Id'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    title: 'WorkflowExecutionNodeBindingInput'
+} as const;
+
 export const WorkflowInstanceCreateSchema = {
     properties: {
         title: {
@@ -6049,18 +7997,6 @@ export const WorkflowInstanceCreateSchema = {
             additionalProperties: true,
             type: 'object',
             title: 'Input'
-        },
-        runtime_id: {
-            anyOf: [
-                {
-                    type: 'string',
-                    format: 'uuid'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Runtime Id'
         }
     },
     additionalProperties: false,
@@ -6075,33 +8011,15 @@ export const WorkflowInstanceCreateSchema = {
 
 export const WorkflowPreflightSchema = {
     properties: {
-        project_id: {
-            type: 'string',
-            format: 'uuid',
-            title: 'Project Id'
-        },
         template_version_id: {
             type: 'string',
             format: 'uuid',
             title: 'Template Version Id'
-        },
-        runtime_id: {
-            anyOf: [
-                {
-                    type: 'string',
-                    format: 'uuid'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Runtime Id'
         }
     },
     additionalProperties: false,
     type: 'object',
     required: [
-        'project_id',
         'template_version_id'
     ],
     title: 'WorkflowPreflight'
@@ -6135,9 +8053,28 @@ export const app__api__routes__agent_tasks__TaskPublicSchema = {
             title: 'Id'
         },
         runtime_profile_id: {
-            type: 'string',
-            format: 'uuid',
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
             title: 'Runtime Profile Id'
+        },
+        runtime_instance_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Runtime Instance Id'
         },
         node_id: {
             anyOf: [
@@ -6199,12 +8136,33 @@ export const app__api__routes__agent_tasks__TaskPublicSchema = {
             type: 'string',
             format: 'date-time',
             title: 'Updated At'
+        },
+        skill_usage: {
+            items: {
+                additionalProperties: true,
+                type: 'object'
+            },
+            type: 'array',
+            title: 'Skill Usage'
+        },
+        model_usage: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Model Usage'
         }
     },
     type: 'object',
     required: [
         'id',
         'runtime_profile_id',
+        'runtime_instance_id',
         'node_id',
         'task_kind',
         'status',

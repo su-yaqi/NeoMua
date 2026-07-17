@@ -10,6 +10,8 @@ from app.agent_management.capability_models import AgentRelease, RuntimeAgentRel
 from app.conversation_management.models import (
     Conversation,
     ConversationAgentRole,
+    ConversationConfigurationRevision,
+    ConversationExecutionBinding,
     ConversationMessage,
     ConversationMode,
     ConversationVisibility,
@@ -36,12 +38,24 @@ from app.project_management.models import (
     SpecStandardVersion,
 )
 from app.project_management.service import verified_repository_runtime_proof
+from app.runtime.catalog import (
+    RuntimeCatalogError,
+    current_runtime_evidence,
+    resolve_model_binding,
+    validate_model_binding_route,
+)
+from app.runtime.catalog import (
+    canonical_digest as runtime_digest,
+)
 from app.runtime.jobs import enqueue_runtime_job
 from app.runtime.models import (
     AgentTask,
+    ModelSelectionMode,
+    RuntimeInstance,
     RuntimeJob,
     RuntimeJobKind,
     RuntimeJobStatus,
+    RuntimeModelBinding,
     RuntimeProfile,
 )
 from app.runtime.policy import TaskStatus
@@ -410,6 +424,229 @@ def preflight(
         if node_binding is None:
             continue
         runtime_id = node_binding.get("runtime_id")
+        runtime_instance_id = node_binding.get("runtime_instance_id")
+        if runtime_instance_id is not None:
+            runtime_instance = session.get(RuntimeInstance, runtime_instance_id)
+            if (
+                runtime_instance is None
+                or runtime_instance.namespace_id != namespace_id
+            ):
+                errors.append(
+                    {"code": "runtime_unavailable", "node_key": definition.node_key}
+                )
+                continue
+            runtime_agent_release_id = node_binding.get(
+                "runtime_agent_release_id"
+            )
+            release: AgentRelease | None = None
+            active_release: RuntimeAgentRelease | None = None
+            if definition.node_type == WorkflowNodeType.AGENT:
+                if runtime_agent_release_id is None:
+                    errors.append(
+                        {
+                            "code": "agent_release_unconfigured",
+                            "node_key": definition.node_key,
+                        }
+                    )
+                    continue
+                active_release = session.get(
+                    RuntimeAgentRelease, runtime_agent_release_id
+                )
+                release = (
+                    session.get(AgentRelease, active_release.current_release_id)
+                    if active_release
+                    else None
+                )
+                if (
+                    active_release is None
+                    or active_release.runtime_instance_id != runtime_instance.id
+                    or release is None
+                    or release.namespace_id != namespace_id
+                    or release.resolved_spec_schema_version != "2.0"
+                    or active_release.applied_digest != release.resolved_spec_digest
+                    or active_release.materialization_digest
+                    != release.resolved_spec_digest
+                ):
+                    errors.append(
+                        {
+                            "code": "agent_release_not_active",
+                            "node_key": definition.node_key,
+                        }
+                    )
+                    continue
+                if (
+                    definition.agent_release_id is not None
+                    and release.id != definition.agent_release_id
+                ):
+                    errors.append(
+                        {
+                            "code": "agent_release_fixed_by_package",
+                            "node_key": definition.node_key,
+                        }
+                    )
+                    continue
+            elif runtime_agent_release_id is not None:
+                errors.append(
+                    {
+                        "code": "agent_release_not_allowed",
+                        "node_key": definition.node_key,
+                    }
+                )
+                continue
+            try:
+                configuration, capability, catalog = current_runtime_evidence(
+                    session, runtime_instance
+                )
+                mode_value = node_binding.get("model_selection_mode")
+                if definition.node_type == WorkflowNodeType.AGENT and mode_value is None:
+                    raise RuntimeCatalogError(
+                        "model_selection_required",
+                        "Agent Workflow node requires model selection",
+                    )
+                mode = ModelSelectionMode(str(mode_value)) if mode_value else None
+                model_binding: RuntimeModelBinding | None = None
+                selection_source: str | None = None
+                if mode is not None:
+                    submitted_model_binding_id = node_binding.get(
+                        "runtime_model_binding_id"
+                    )
+                    if node_binding.get("frozen"):
+                        model_binding, _ = resolve_model_binding(
+                            session,
+                            runtime=runtime_instance,
+                            mode=ModelSelectionMode.EXACT,
+                            exact_binding_id=submitted_model_binding_id,
+                            preferred_model_definition_id=(
+                                release.preferred_model_definition_id
+                                if release
+                                else None
+                            ),
+                        )
+                        selection_source = str(node_binding.get("selection_source"))
+                    else:
+                        model_binding, source = resolve_model_binding(
+                            session,
+                            runtime=runtime_instance,
+                            mode=mode,
+                            exact_binding_id=submitted_model_binding_id,
+                            preferred_model_definition_id=(
+                                release.preferred_model_definition_id
+                                if release
+                                else None
+                            ),
+                        )
+                        selection_source = source.value
+                    validate_model_binding_route(session, model_binding)
+            except (RuntimeCatalogError, KeyError, ValueError) as exc:
+                errors.append(
+                    {
+                        "code": getattr(exc, "code", "model_selection_invalid"),
+                        "node_key": definition.node_key,
+                        "message": str(exc),
+                    }
+                )
+                continue
+            if (
+                definition.node_type != WorkflowNodeType.AGENT
+                and mode is not None
+                and mode != ModelSelectionMode.EXACT
+            ):
+                errors.append(
+                    {
+                        "code": "model_node_requires_exact",
+                        "node_key": definition.node_key,
+                    }
+                )
+                continue
+            required_tools = set(
+                release.required_capabilities.get("tools", []) if release else []
+            )
+            missing_tools = sorted(
+                required_tools - set(capability.capabilities.get("tools", []))
+            )
+            if missing_tools:
+                errors.append(
+                    {
+                        "code": "required_tools_missing",
+                        "node_key": definition.node_key,
+                        "missing": missing_tools,
+                    }
+                )
+                continue
+            if (
+                version.manifest.get("requirements", {}).get("repositories")
+                and project is not None
+            ):
+                repositories = session.exec(
+                    select(ProjectRepository).where(
+                        ProjectRepository.project_id == project.id
+                    )
+                ).all()
+                missing_repository_proof = False
+                for repository in repositories:
+                    proof = verified_repository_runtime_proof(
+                        session, repository, runtime_instance.id
+                    )
+                    if proof is None:
+                        missing_repository_proof = True
+                        errors.append(
+                            {
+                                "code": "runtime_repository_unverified",
+                                "node_key": definition.node_key,
+                                "repository_id": str(repository.id),
+                                "runtime_id": str(runtime_instance.id),
+                            }
+                        )
+                if missing_repository_proof:
+                    continue
+            effective_digest = runtime_digest(
+                {
+                    "runtime_instance_id": str(runtime_instance.id),
+                    "release_digest": release.resolved_spec_digest if release else None,
+                    "configuration_digest": configuration.configuration_digest,
+                    "capability_fingerprint": capability.capability_fingerprint,
+                    "runtime_model_binding_id": str(model_binding.id)
+                    if model_binding
+                    else None,
+                    "model_catalog_fingerprint": catalog,
+                }
+            )
+            resolved = {
+                "runtime_instance_id": str(runtime_instance.id),
+                "runtime_agent_release_id": str(active_release.id)
+                if active_release
+                else None,
+                "agent_release_id": str(release.id) if release else None,
+                "resolved_spec_digest": release.resolved_spec_digest
+                if release
+                else None,
+                "model_selection_mode": mode.value if mode else None,
+                "preferred_model_definition_id": str(
+                    release.preferred_model_definition_id
+                )
+                if release and release.preferred_model_definition_id
+                else None,
+                "runtime_model_binding_id": str(model_binding.id)
+                if model_binding
+                else None,
+                "selection_source": selection_source,
+                "runtime_configuration_revision_id": str(configuration.id),
+                "runtime_capability_report_id": str(capability.id),
+                "runtime_model_catalog_fingerprint": catalog,
+                "adapter_version": capability.adapter_version,
+                "effective_spec_digest": effective_digest,
+            }
+            runtime_resolution[definition.node_key] = resolved
+            if release is not None:
+                role_key = definition.agent_role_key or definition.node_key
+                resolved_agent_bindings[role_key] = {
+                    "node_key": definition.node_key,
+                    "role_key": role_key,
+                    **resolved,
+                    "agent_id": str(release.agent_id),
+                    "release_version": release.version,
+                }
+            continue
         if runtime_id is None:
             errors.append(
                 {"code": "runtime_unresolved", "node_key": definition.node_key}
@@ -620,7 +857,7 @@ def _run_context(
     return WorkflowRunContext(
         workflow_instance_id=str(instance.id),
         node_key=node.node_key,
-        runtime_id=str(node.resolved_runtime_id),
+        runtime_id=str(node.resolved_runtime_instance_id or node.resolved_runtime_id),
         project_id=str(instance.project_id) if instance.project_id else None,
         input=input_snapshot,
         previous_output=previous.output if previous else None,
@@ -710,6 +947,7 @@ def _queue_runtime_component(
         session,
         namespace_id=instance.namespace_id,
         runtime_id=node.resolved_runtime_id,
+        runtime_instance_id=node.resolved_runtime_instance_id,
         kind=kind,
         payload={
             "component_key": component_key,
@@ -809,6 +1047,7 @@ def _new_execution(
         input_revision=input_revision,
         attempt=attempt,
         runtime_id=node.resolved_runtime_id,
+        runtime_instance_id=node.resolved_runtime_instance_id,
         status=status,
         phase=phase,
         idempotency_key=f"workflow:{node.workflow_instance_id}:node:{node.node_key}:revision:{input_revision}:attempt:{attempt}:{phase}",
@@ -869,15 +1108,30 @@ def _execute_agent_node(
     except ValueError:
         release_id = None
     release = session.get(AgentRelease, release_id) if release_id else None
-    binding = session.exec(
-        select(RuntimeAgentRelease).where(
-            RuntimeAgentRelease.runtime_profile_id == node.resolved_runtime_id,
-            RuntimeAgentRelease.current_release_id == release_id,
+    raw_runtime_agent_release_id = resolution.get("runtime_agent_release_id")
+    binding = (
+        session.get(
+            RuntimeAgentRelease, uuid.UUID(str(raw_runtime_agent_release_id))
         )
-    ).first()
+        if raw_runtime_agent_release_id
+        else session.exec(
+            select(RuntimeAgentRelease).where(
+                RuntimeAgentRelease.runtime_profile_id == node.resolved_runtime_id,
+                RuntimeAgentRelease.current_release_id == release_id,
+            )
+        ).first()
+    )
     if (
         release is None
         or binding is None
+        or (
+            node.resolved_runtime_instance_id is not None
+            and binding.runtime_instance_id != node.resolved_runtime_instance_id
+        )
+        or (
+            node.resolved_runtime_instance_id is None
+            and binding.runtime_profile_id != node.resolved_runtime_id
+        )
         or binding.applied_digest != release.resolved_spec_digest
     ):
         node.status = WorkflowNodeStatus.BLOCKED
@@ -923,6 +1177,7 @@ def _execute_agent_node(
             mode=ConversationMode.AGENT,
             visibility=ConversationVisibility.PRIVATE,
             runtime_id=node.resolved_runtime_id,
+            runtime_instance_id=node.resolved_runtime_instance_id,
             idempotency_key=conversation_key,
             creation_fingerprint=canonical_digest(
                 {
@@ -942,6 +1197,53 @@ def _execute_agent_node(
             ConversationAgentRole.MAIN,
             creator_id,
         )
+        session.flush()
+        if node.resolved_runtime_instance_id is not None:
+            configuration = ConversationConfigurationRevision(
+                conversation_id=conversation.id,
+                revision=1,
+                mode=ConversationMode.AGENT,
+                organizer_agent_id=participant.id,
+                participant_ids=[str(participant.id)],
+                runtime_model_catalog_fingerprint=resolution.get(
+                    "runtime_model_catalog_fingerprint"
+                ),
+                created_by=creator_id,
+            )
+            session.add(configuration)
+            session.flush()
+            session.add(
+                ConversationExecutionBinding(
+                    configuration_revision_id=configuration.id,
+                    role_key=str(participant.id),
+                    runtime_instance_id=node.resolved_runtime_instance_id,
+                    runtime_agent_release_id=binding.id,
+                    agent_release_id=release.id,
+                    model_selection_mode=str(resolution["model_selection_mode"]),
+                    preferred_model_definition_id=(
+                        uuid.UUID(str(resolution["preferred_model_definition_id"]))
+                        if resolution.get("preferred_model_definition_id")
+                        else None
+                    ),
+                    runtime_model_binding_id=uuid.UUID(
+                        str(resolution["runtime_model_binding_id"])
+                    ),
+                    selection_source=str(resolution["selection_source"]),
+                    runtime_configuration_revision_id=uuid.UUID(
+                        str(resolution["runtime_configuration_revision_id"])
+                    ),
+                    runtime_capability_report_id=uuid.UUID(
+                        str(resolution["runtime_capability_report_id"])
+                    ),
+                    adapter_version=str(resolution["adapter_version"]),
+                    model_catalog_fingerprint=str(
+                        resolution["runtime_model_catalog_fingerprint"]
+                    ),
+                    effective_spec_digest=str(resolution["effective_spec_digest"]),
+                )
+            )
+            conversation.current_configuration_revision_id = configuration.id
+            session.add(conversation)
     else:
         from app.conversation_management.models import ConversationAgent
 
@@ -974,6 +1276,7 @@ def _execute_agent_node(
         sequence=next_message_sequence(session, conversation.id),
         author_type=MessageAuthorType.SYSTEM,
         target_type=MessageTargetType.MAIN,
+        configuration_revision_id=conversation.current_configuration_revision_id,
         payload={
             "content": prompt,
             "workflow_instance_id": str(instance.id),
@@ -1507,6 +1810,9 @@ def create_instance_nodes(
     incoming_keys = {edge.target_node_key for edge in edges}
     for definition in definitions:
         raw_runtime_id = runtime_resolution[definition.node_key].get("runtime_id")
+        raw_runtime_instance_id = runtime_resolution[definition.node_key].get(
+            "runtime_instance_id"
+        )
         node = WorkflowNodeInstance(
             workflow_instance_id=instance.id,
             node_definition_id=definition.id,
@@ -1518,6 +1824,11 @@ def create_instance_nodes(
             ),
             resolved_runtime_id=(
                 uuid.UUID(str(raw_runtime_id)) if raw_runtime_id else None
+            ),
+            resolved_runtime_instance_id=(
+                uuid.UUID(str(raw_runtime_instance_id))
+                if raw_runtime_instance_id
+                else None
             ),
         )
         session.add(node)

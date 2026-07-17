@@ -706,6 +706,7 @@ def merge_provider_models(
 def to_provider_model_public(model: LlmProviderModel) -> LlmProviderModelPublic:
     return LlmProviderModelPublic(
         id=model.id,
+        model_definition_id=model.model_definition_id,
         model_id=model.model_id,
         display_name=model.display_name,
         source_type=model.source_type,

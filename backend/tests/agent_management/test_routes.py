@@ -1,616 +1,182 @@
-import uuid
-
-import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
 from app.core.config import settings
-from app.runtime.models import RuntimeProfile, RuntimeRouteMode, RuntimeType
+from app.runtime.security import expected_internal_token
+from tests.api.routes.test_agent_tasks import ready_runtime
+from tests.api.routes.test_namespaces import create_namespace, namespace_headers
 
 
-def _ns_headers(headers: dict[str, str], namespace_id: str) -> dict[str, str]:
-    h = dict(headers)
-    h["X-Namespace-Id"] = namespace_id
-    return h
-
-
-@pytest.fixture
-def namespace_setup(client: TestClient, superuser_token_headers: dict[str, str]):
-    # Create a namespace via the platform endpoint (POST /platform/namespaces).
-    r = client.post(
-        f"{settings.API_V1_STR}/platform/namespaces",
+def test_create_complete_agent_declares_stable_model_preference(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    namespace = create_namespace(db)
+    _runtime, binding = ready_runtime(db, namespace.id)
+    headers = namespace_headers(superuser_token_headers, namespace.id)
+    response = client.post(
+        f"{settings.API_V1_STR}/agents/complete",
+        headers=headers,
         json={
-            "name": f"ns-agents-{uuid.uuid4().hex[:6]}",
-            "code": f"ns-agents-{uuid.uuid4().hex[:6]}",
-            "is_active": True,
+            "slug": "v09-agent",
+            "name": "v0.9 Agent",
+            "preferred_model_definition_id": str(binding.model_definition_id),
+            "execution_policy": {"permission_mode": "default"},
+            "system_prompt": "Work carefully and report evidence.",
+            "config": {},
         },
-        headers=superuser_token_headers,
     )
-    assert r.status_code == 200, r.text
-    ns = r.json()
-    return ns["id"]
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["draft"]["preferred_model_definition_id"] == str(
+        binding.model_definition_id
+    )
+    assert body["draft"]["harness_profile_id"] is None
+    assert body["draft"]["provider_config_id"] is None
+    assert body["draft"]["model_id"] is None
 
-
-def test_create_agent_and_draft(
-    client: TestClient, superuser_token_headers, namespace_setup
-):
-    headers = _ns_headers(superuser_token_headers, namespace_setup)
-    r = client.post(
-        f"{settings.API_V1_STR}/agents",
-        json={"slug": "my-agent", "name": "My Agent"},
+    validation = client.post(
+        f"{settings.API_V1_STR}/agents/{body['agent']['id']}/draft/validate",
         headers=headers,
     )
-    assert r.status_code == 201, r.text
-    agent = r.json()
-    assert agent["slug"] == "my-agent"
+    assert validation.status_code == 200, validation.text
+    assert validation.json()["status"] == "validated"
+    release = client.post(
+        f"{settings.API_V1_STR}/agents/{body['agent']['id']}/releases",
+        headers={**headers, "Idempotency-Key": "v09-agent-release"},
+        json={"draft_revision": 1, "version": "1.0.0"},
+    )
+    assert release.status_code == 201, release.text
+    release_body = release.json()
+    assert release_body["resolved_spec_schema_version"] == "2.0"
 
-    # Draft auto-created at revision 1.
-    r = client.get(f"{settings.API_V1_STR}/agents/{agent['id']}/draft", headers=headers)
-    assert r.status_code == 200
-    draft = r.json()
-    assert draft["revision"] == 1
-    assert draft["validation_status"] == "unvalidated"
+    precheck = client.post(
+        f"{settings.API_V1_STR}/agent-releases/{release_body['id']}/activations/precheck",
+        headers=headers,
+        json={"runtime_instance_id": str(_runtime.id)},
+    )
+    assert precheck.status_code == 200, precheck.text
+    precheck_body = precheck.json()
+    assert precheck_body["deployable"] is True
+    assert precheck_body["preference_status"] == "available"
+
+    activation = client.post(
+        f"{settings.API_V1_STR}/agent-releases/{release_body['id']}/activations",
+        headers={**headers, "Idempotency-Key": "v09-agent-activation"},
+        json={
+            "runtime_instance_id": str(_runtime.id),
+            "precheck_id": precheck_body["id"],
+            "precheck_digest": precheck_body["precheck_digest"],
+        },
+    )
+    assert activation.status_code == 202, activation.text
+    assert activation.json()["runtime_instance_id"] == str(_runtime.id)
+
+    internal_headers = {"X-Runtime-Token": expected_internal_token()}
+    deployment = client.post(
+        f"{settings.API_V1_STR}/internal/runtime/agent-deployments/claim",
+        headers=internal_headers,
+    )
+    assert deployment.status_code == 200, deployment.text
+    deployment_body = deployment.json()
+    applied = client.post(
+        f"{settings.API_V1_STR}/internal/runtime/agent-deployments/{deployment_body['deployment_id']}/result",
+        headers=internal_headers,
+        json={
+            "status": "applied",
+            "resolved_spec_digest": release_body["resolved_spec_digest"],
+            "materialization_digest": deployment_body["materialization"][
+                "resolved_spec_digest"
+            ],
+            "capability_fingerprint": deployment_body["capability_fingerprint"],
+        },
+    )
+    assert applied.status_code == 200, applied.text
+    assert applied.json()["status"] == "applied"
+
+    runtime_agents = client.get(
+        f"{settings.API_V1_STR}/runtime-agents", headers=headers
+    )
+    assert runtime_agents.status_code == 200, runtime_agents.text
+    active = runtime_agents.json()["data"]
+    assert len(active) == 1
+    assert active[0]["runtime_instance_id"] == str(_runtime.id)
+    assert active[0]["current_release_id"] == release_body["id"]
 
 
-def test_duplicate_slug_409(
-    client: TestClient, superuser_token_headers, namespace_setup
-):
-    headers = _ns_headers(superuser_token_headers, namespace_setup)
-    body = {"slug": "dup", "name": "First"}
-    r = client.post(f"{settings.API_V1_STR}/agents", json=body, headers=headers)
-    assert r.status_code == 201
-    r = client.post(f"{settings.API_V1_STR}/agents", json=body, headers=headers)
-    assert r.status_code == 409
-
-
-def test_agent_names_may_repeat_when_slugs_are_unique(
-    client: TestClient, superuser_token_headers, namespace_setup
-):
-    headers = _ns_headers(superuser_token_headers, namespace_setup)
-    for slug in ("same-name-one", "same-name-two"):
-        response = client.post(
-            f"{settings.API_V1_STR}/agents",
-            json={"slug": slug, "name": "Same display name"},
-            headers=headers,
-        )
-        assert response.status_code == 201, response.text
-
-
-def test_copy_agent_clones_draft_as_unvalidated_revision_one(
-    client: TestClient, superuser_token_headers, namespace_setup
-):
-    headers = _ns_headers(superuser_token_headers, namespace_setup)
+def test_agent_copy_preserves_preference_but_not_legacy_harness_fields(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    namespace = create_namespace(db)
+    _runtime, binding = ready_runtime(db, namespace.id)
+    headers = namespace_headers(superuser_token_headers, namespace.id)
     source = client.post(
-        f"{settings.API_V1_STR}/agents",
-        json={"slug": "copy-source", "name": "Source", "description": "shared"},
+        f"{settings.API_V1_STR}/agents/complete",
         headers=headers,
-    ).json()
-    saved = client.put(
-        f"{settings.API_V1_STR}/agents/{source['id']}/draft",
         json={
-            "expected_revision": 1,
-            "system_prompt": "Copied prompt",
-            "config": {
-                "timeout_seconds": 120,
-                "working_directory_strategy": "inherit",
-            },
+            "slug": "copy-source-v09",
+            "name": "Source",
+            "preferred_model_definition_id": str(binding.model_definition_id),
+            "system_prompt": "Source prompt",
         },
-        headers=headers,
-    )
-    assert saved.status_code == 200, saved.text
+    ).json()["agent"]
     copied = client.post(
         f"{settings.API_V1_STR}/agents/{source['id']}/copy",
-        json={"slug": "copy-target", "name": "Source Copy"},
         headers=headers,
+        json={"slug": "copy-target-v09", "name": "Target"},
     )
     assert copied.status_code == 201, copied.text
-    copied_draft = client.get(
+    draft = client.get(
         f"{settings.API_V1_STR}/agents/{copied.json()['id']}/draft",
         headers=headers,
     ).json()
-    assert copied_draft["revision"] == 1
-    assert copied_draft["system_prompt"] == "Copied prompt"
-    assert copied_draft["config"]["timeout_seconds"] == 120
-    assert copied_draft["validated_revision"] is None
-    assert copied_draft["validation_status"] == "unvalidated"
+    assert draft["preferred_model_definition_id"] == str(binding.model_definition_id)
+    assert draft["harness_profile_id"] is None
 
 
-def test_slug_immutable(client: TestClient, superuser_token_headers, namespace_setup):
-    headers = _ns_headers(superuser_token_headers, namespace_setup)
-    r = client.post(
-        f"{settings.API_V1_STR}/agents",
-        json={"slug": "s1", "name": "S1"},
-        headers=headers,
+def test_legacy_agent_and_harness_creation_are_read_only(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    namespace = create_namespace(db)
+    headers = namespace_headers(superuser_token_headers, namespace.id)
+    assert (
+        client.post(
+            f"{settings.API_V1_STR}/agents",
+            headers=headers,
+            json={"slug": "legacy-agent", "name": "Legacy"},
+        ).status_code
+        == 410
     )
-    agent_id = r.json()["id"]
-    # Slug is immutable and unknown mutation fields are rejected explicitly.
-    r = client.patch(
-        f"{settings.API_V1_STR}/agents/{agent_id}",
-        json={"slug": "s2", "name": "S2"},
-        headers=headers,
+    assert (
+        client.post(
+            f"{settings.API_V1_STR}/harness-profiles",
+            headers=headers,
+            json={"name": "legacy-harness"},
+        ).status_code
+        == 410
     )
-    assert r.status_code == 422, r.text
-    # Verify slug unchanged.
-    r = client.get(f"{settings.API_V1_STR}/agents/{agent_id}", headers=headers)
-    assert r.json()["slug"] == "s1"
 
 
-def test_cas_draft_conflict_409(
-    client: TestClient, superuser_token_headers, namespace_setup
-):
-    headers = _ns_headers(superuser_token_headers, namespace_setup)
-    agent = client.post(
-        f"{settings.API_V1_STR}/agents",
-        json={"slug": "cas", "name": "CAS"},
-        headers=headers,
-    ).json()
-    # Save at revision 1.
-    r = client.put(
-        f"{settings.API_V1_STR}/agents/{agent['id']}/draft",
-        json={"expected_revision": 1, "system_prompt": "first"},
-        headers=headers,
-    )
-    assert r.status_code == 200
-    assert r.json()["revision"] == 2
-    # Second save at stale revision 1 -> 409.
-    r = client.put(
-        f"{settings.API_V1_STR}/agents/{agent['id']}/draft",
-        json={"expected_revision": 1, "system_prompt": "second"},
-        headers=headers,
-    )
-    assert r.status_code == 409
-    body = r.json()
-    assert body["detail"]["current_revision"] == 2
-
-
-def test_draft_save_invalidates_validation(
-    client: TestClient, db: Session, superuser_token_headers, namespace_setup
-):
-    headers = _ns_headers(superuser_token_headers, namespace_setup)
-    agent = client.post(
-        f"{settings.API_V1_STR}/agents",
-        json={"slug": "inv", "name": "Inv"},
-        headers=headers,
-    ).json()
-
-    # Set up a fully-valid draft so validation SUCCEEDS (status "validated").
-    # A valid draft needs: an enabled harness profile, an enabled provider
-    # config with an enabled model, and a non-empty system prompt. Only a
-    # successful validation transitions to "stale" after an edit; a draft that
-    # fails validation stays "error" (see draft_validation_status).
-    profile = client.post(
-        f"{settings.API_V1_STR}/harness-profiles",
-        json={"name": "inv-prof"},
-        headers=headers,
-    ).json()
-    config = client.post(
-        f"{settings.API_V1_STR}/llm/provider-configs",
+def test_complete_agent_rejects_legacy_execution_fields(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    namespace = create_namespace(db)
+    _runtime, binding = ready_runtime(db, namespace.id)
+    response = client.post(
+        f"{settings.API_V1_STR}/agents/complete",
+        headers=namespace_headers(superuser_token_headers, namespace.id),
         json={
-            "config_name": "inv-cfg",
-            "provider_slug": "deepseek",
-            "base_url": "https://api.deepseek.com/v1",
-            "enabled": True,
-            "secret_inputs": {"api_token": "sk-test-secret-1234"},
-            "extra_config": {},
-            "manual_models": [{"model_id": "deepseek-chat"}],
-            "enabled_model_ids": ["deepseek-chat"],
+            "slug": "invalid-v09-agent",
+            "name": "Invalid",
+            "preferred_model_definition_id": str(binding.model_definition_id),
+            "harness_profile_id": "00000000-0000-0000-0000-000000000001",
         },
-        headers=headers,
-    ).json()
-    runtime = client.put(
-        f"{settings.API_V1_STR}/runtimes/platform",
-        json={
-            "route_mode": "platform_gateway",
-            "provider_config_id": config["id"],
-            "model_id": "deepseek-chat",
-        },
-        headers=headers,
     )
-    assert runtime.status_code == 200, runtime.text
-    report = client.post(
-        f"{settings.API_V1_STR}/internal/runtime/capabilities",
-        json={
-            "worker_id": "test-worker",
-            "harness_capabilities": {
-                "claude_code": {
-                    "cli_version": "2.1.191",
-                    "sdk_version": "0.2.110",
-                    "harness_version": "0.1.0",
-                }
-            },
-        },
-        headers={"X-Runtime-Token": settings.INTERNAL_RUNTIME_TOKEN},
-    )
-    assert report.status_code == 200, report.text
-    # An additional target with no report remains unknown, but does not
-    # invalidate the compatible platform target.
-    db.add(
-        RuntimeProfile(
-            namespace_id=uuid.UUID(namespace_setup),
-            runtime_type=RuntimeType.NODE,
-            route_mode=RuntimeRouteMode.PLATFORM_GATEWAY,
-            provider_config_id=uuid.UUID(config["id"]),
-            model_id="deepseek-chat",
-        )
-    )
-    db.commit()
-    client.put(
-        f"{settings.API_V1_STR}/agents/{agent['id']}/draft",
-        json={
-            "expected_revision": 1,
-            "harness_profile_id": profile["id"],
-            "provider_config_id": config["id"],
-            "model_id": "deepseek-chat",
-            "system_prompt": "You are helpful.",
-        },
-        headers=headers,
-    )
-    # Validate -> succeeds (validated_revision set, status "validated").
-    r = client.post(
-        f"{settings.API_V1_STR}/agents/{agent['id']}/draft/validate",
-        headers=headers,
-    )
-    assert r.status_code == 200, r.text
-    assert r.json()["status"] == "validated"
-    assert {item["compatible"] for item in r.json()["target_compatibility"]} == {
-        True,
-        None,
-    }
-    draft = client.get(
-        f"{settings.API_V1_STR}/agents/{agent['id']}/draft", headers=headers
-    ).json()
-    assert draft["validation_result"] is not None
-    assert draft["validation_status"] == "validated"
-    validated_revision = draft["revision"]
-    # Save -> bumps revision, invalidates validated_revision.
-    client.put(
-        f"{settings.API_V1_STR}/agents/{agent['id']}/draft",
-        json={
-            "expected_revision": validated_revision,
-            "system_prompt": "changed",
-        },
-        headers=headers,
-    )
-    draft = client.get(
-        f"{settings.API_V1_STR}/agents/{agent['id']}/draft", headers=headers
-    ).json()
-    assert draft["validated_revision"] is None
-    assert draft["validation_status"] == "stale"
-
-
-def test_config_rejects_bypass_permissions(
-    client: TestClient, superuser_token_headers, namespace_setup
-):
-    headers = _ns_headers(superuser_token_headers, namespace_setup)
-    r = client.post(
-        f"{settings.API_V1_STR}/harness-profiles",
-        json={
-            "name": "p1",
-            "config": {"permission_mode": "bypassPermissions"},
-        },
-        headers=headers,
-    )
-    assert r.status_code == 422
-    errs = r.json()["detail"]["errors"]
-    assert any(e["code"] == "bypass_permissions_forbidden" for e in errs)
-
-
-def test_validation_reports_no_compatible_runtime_target(
-    client: TestClient, superuser_token_headers, namespace_setup
-):
-    headers = _ns_headers(superuser_token_headers, namespace_setup)
-    profile = client.post(
-        f"{settings.API_V1_STR}/harness-profiles",
-        json={"name": "no-target-profile"},
-        headers=headers,
-    ).json()
-    agent = client.post(
-        f"{settings.API_V1_STR}/agents",
-        json={"slug": "no-target", "name": "No Target"},
-        headers=headers,
-    ).json()
-    client.put(
-        f"{settings.API_V1_STR}/agents/{agent['id']}/draft",
-        json={
-            "expected_revision": 1,
-            "harness_profile_id": profile["id"],
-            "system_prompt": "No runtime is configured.",
-        },
-        headers=headers,
-    )
-    result = client.post(
-        f"{settings.API_V1_STR}/agents/{agent['id']}/draft/validate",
-        headers=headers,
-    )
-    assert result.status_code == 200
-    assert any(
-        error["code"] == "no_compatible_runtime_target"
-        for error in result.json()["errors"]
-    )
-
-
-def test_config_rejects_denylisted_env(
-    client: TestClient, superuser_token_headers, namespace_setup
-):
-    headers = _ns_headers(superuser_token_headers, namespace_setup)
-    r = client.post(
-        f"{settings.API_V1_STR}/harness-profiles",
-        json={
-            "name": "p2",
-            "config": {"allowed_env_names": ["LD_PRELOAD"]},
-        },
-        headers=headers,
-    )
-    assert r.status_code == 422
-    errs = r.json()["detail"]["errors"]
-    assert any(e["code"] == "env_denied" for e in errs)
-
-
-def test_config_rejects_secret_key(
-    client: TestClient, superuser_token_headers, namespace_setup
-):
-    headers = _ns_headers(superuser_token_headers, namespace_setup)
-    r = client.post(
-        f"{settings.API_V1_STR}/harness-profiles",
-        json={"name": "p3", "config": {"api_key": "sk-xxx"}},
-        headers=headers,
-    )
-    assert r.status_code == 422
-    errs = r.json()["detail"]["errors"]
-    assert any(e["code"] == "secret_value_forbidden" for e in errs)
-
-
-def test_config_rejects_shell_string(
-    client: TestClient, superuser_token_headers, namespace_setup
-):
-    headers = _ns_headers(superuser_token_headers, namespace_setup)
-    r = client.post(
-        f"{settings.API_V1_STR}/harness-profiles",
-        json={"name": "p4", "config": {"some_flag": "ls; rm -rf /"}},
-        headers=headers,
-    )
-    assert r.status_code == 422
-    errs = r.json()["detail"]["errors"]
-    assert any(e["code"] == "shell_metachar_forbidden" for e in errs)
-
-
-def test_unknown_harness_type_rejected(
-    client: TestClient, superuser_token_headers, namespace_setup
-):
-    headers = _ns_headers(superuser_token_headers, namespace_setup)
-    r = client.post(
-        f"{settings.API_V1_STR}/harness-profiles",
-        json={"name": "p5", "harness_type": "codex_cli"},
-        headers=headers,
-    )
-    assert r.status_code == 422
-    errs = r.json()["detail"]["errors"]
-    assert any(e["code"] == "unsupported_harness" for e in errs)
-
-
-def test_unknown_harness_schema_version_rejected(
-    client: TestClient, superuser_token_headers, namespace_setup
-):
-    headers = _ns_headers(superuser_token_headers, namespace_setup)
-    r = client.post(
-        f"{settings.API_V1_STR}/harness-profiles",
-        json={"name": "future-schema", "config_schema_version": "999"},
-        headers=headers,
-    )
-    assert r.status_code == 422
-    assert any(
-        e["code"] == "unsupported_config_schema" for e in r.json()["detail"]["errors"]
-    )
-
-
-def test_profile_referenced_by_archived_agent_cannot_delete(
-    client: TestClient, superuser_token_headers, namespace_setup
-):
-    headers = _ns_headers(superuser_token_headers, namespace_setup)
-    profile = client.post(
-        f"{settings.API_V1_STR}/harness-profiles",
-        json={"name": "archived-ref"},
-        headers=headers,
-    ).json()
-    agent = client.post(
-        f"{settings.API_V1_STR}/agents",
-        json={"slug": "archived-ref", "name": "Archived Ref"},
-        headers=headers,
-    ).json()
-    client.put(
-        f"{settings.API_V1_STR}/agents/{agent['id']}/draft",
-        json={"expected_revision": 1, "harness_profile_id": profile["id"]},
-        headers=headers,
-    )
-    client.patch(
-        f"{settings.API_V1_STR}/agents/{agent['id']}",
-        json={"status": "archived"},
-        headers=headers,
-    )
-    r = client.delete(
-        f"{settings.API_V1_STR}/harness-profiles/{profile['id']}", headers=headers
-    )
-    assert r.status_code == 409
-
-
-def test_draft_rejects_cross_namespace_profile_reference(
-    client: TestClient, superuser_token_headers
-):
-    ns_a = client.post(
-        f"{settings.API_V1_STR}/platform/namespaces",
-        json={
-            "name": f"nsA-{uuid.uuid4().hex[:6]}",
-            "code": f"nsa-{uuid.uuid4().hex[:6]}",
-            "is_active": True,
-        },
-        headers=superuser_token_headers,
-    ).json()["id"]
-    ns_b = client.post(
-        f"{settings.API_V1_STR}/platform/namespaces",
-        json={
-            "name": f"nsB-{uuid.uuid4().hex[:6]}",
-            "code": f"nsb-{uuid.uuid4().hex[:6]}",
-            "is_active": True,
-        },
-        headers=superuser_token_headers,
-    ).json()["id"]
-    profile = client.post(
-        f"{settings.API_V1_STR}/harness-profiles",
-        json={"name": "foreign"},
-        headers=_ns_headers(superuser_token_headers, ns_a),
-    ).json()
-    agent = client.post(
-        f"{settings.API_V1_STR}/agents",
-        json={"slug": "local", "name": "Local"},
-        headers=_ns_headers(superuser_token_headers, ns_b),
-    ).json()
-    r = client.put(
-        f"{settings.API_V1_STR}/agents/{agent['id']}/draft",
-        json={"expected_revision": 1, "harness_profile_id": profile["id"]},
-        headers=_ns_headers(superuser_token_headers, ns_b),
-    )
-    assert r.status_code == 422
-
-
-def test_profile_referenced_cannot_delete(
-    client: TestClient, superuser_token_headers, namespace_setup
-):
-    headers = _ns_headers(superuser_token_headers, namespace_setup)
-    profile = client.post(
-        f"{settings.API_V1_STR}/harness-profiles",
-        json={"name": "pref"},
-        headers=headers,
-    ).json()
-    agent = client.post(
-        f"{settings.API_V1_STR}/agents",
-        json={"slug": "a1", "name": "A1"},
-        headers=headers,
-    ).json()
-    client.put(
-        f"{settings.API_V1_STR}/agents/{agent['id']}/draft",
-        json={"expected_revision": 1, "harness_profile_id": profile["id"]},
-        headers=headers,
-    )
-    r = client.delete(
-        f"{settings.API_V1_STR}/harness-profiles/{profile['id']}", headers=headers
-    )
-    assert r.status_code == 409
-
-
-def test_cross_namespace_agent_404(client: TestClient, superuser_token_headers):
-    # Create namespace A + agent; query from namespace B.
-    r = client.post(
-        f"{settings.API_V1_STR}/platform/namespaces",
-        json={
-            "name": f"nsA-{uuid.uuid4().hex[:6]}",
-            "code": f"nsa-{uuid.uuid4().hex[:6]}",
-            "is_active": True,
-        },
-        headers=superuser_token_headers,
-    )
-    ns_a = r.json()["id"]
-    r = client.post(
-        f"{settings.API_V1_STR}/platform/namespaces",
-        json={
-            "name": f"nsB-{uuid.uuid4().hex[:6]}",
-            "code": f"nsb-{uuid.uuid4().hex[:6]}",
-            "is_active": True,
-        },
-        headers=superuser_token_headers,
-    )
-    ns_b = r.json()["id"]
-    agent = client.post(
-        f"{settings.API_V1_STR}/agents",
-        json={"slug": "cross", "name": "Cross"},
-        headers=_ns_headers(superuser_token_headers, ns_a),
-    ).json()
-    r = client.get(
-        f"{settings.API_V1_STR}/agents/{agent['id']}",
-        headers=_ns_headers(superuser_token_headers, ns_b),
-    )
-    assert r.status_code == 404
-
-
-def test_environment_catalog(
-    client: TestClient, superuser_token_headers, namespace_setup
-):
-    headers = _ns_headers(superuser_token_headers, namespace_setup)
-    r = client.get(
-        f"{settings.API_V1_STR}/harnesses/environment-catalog", headers=headers
-    )
-    assert r.status_code == 200
-    cat = r.json()
-    assert "LD_PRELOAD" in cat["denylist"]
-    assert "ANTHROPIC_MODEL" in cat["allowlist"]
-
-
-def test_harness_catalog(client: TestClient, superuser_token_headers, namespace_setup):
-    headers = _ns_headers(superuser_token_headers, namespace_setup)
-    r = client.get(f"{settings.API_V1_STR}/harnesses/catalog", headers=headers)
-    assert r.status_code == 200
-    harnesses = r.json()["harnesses"]
-    assert any(h["type"] == "claude_code" and h["supported"] for h in harnesses)
-
-
-def test_archived_agent_cannot_be_edited(
-    client: TestClient, superuser_token_headers, namespace_setup
-):
-    headers = _ns_headers(superuser_token_headers, namespace_setup)
-    agent = client.post(
-        f"{settings.API_V1_STR}/agents",
-        json={"slug": "arc", "name": "Arc"},
-        headers=headers,
-    ).json()
-    client.patch(
-        f"{settings.API_V1_STR}/agents/{agent['id']}",
-        json={"status": "archived"},
-        headers=headers,
-    )
-    r = client.put(
-        f"{settings.API_V1_STR}/agents/{agent['id']}/draft",
-        json={"expected_revision": 1, "system_prompt": "x"},
-        headers=headers,
-    )
-    assert r.status_code == 409
-
-
-def test_developer_cannot_write(
-    client: TestClient, superuser_token_headers, namespace_setup
-):
-    # Create a developer user INSIDE the namespace via the namespace user-create
-    # endpoint (POST /namespaces/{id}/users creates a new user with email+
-    # password+role, it does NOT bind an existing user). Then log in as that
-    # developer and assert read=200, write=403.
-    from tests.utils.user import user_authentication_headers
-    from tests.utils.utils import random_email, random_lower_string
-
-    dev_email = random_email()
-    dev_password = random_lower_string()
-    r = client.post(
-        f"{settings.API_V1_STR}/namespaces/{namespace_setup}/users",
-        json={
-            "email": dev_email,
-            "password": dev_password,
-            "full_name": "Dev User",
-            "is_active": True,
-            "role": "developer",
-        },
-        headers=_ns_headers(superuser_token_headers, namespace_setup),
-    )
-    assert r.status_code == 200, r.text
-    dev_headers = _ns_headers(
-        user_authentication_headers(
-            client=client, email=dev_email, password=dev_password
-        ),
-        namespace_setup,
-    )
-    # Read OK.
-    r = client.get(f"{settings.API_V1_STR}/agents", headers=dev_headers)
-    assert r.status_code == 200
-    # Write forbidden (require_namespace_admin -> 403).
-    r = client.post(
-        f"{settings.API_V1_STR}/agents",
-        json={"slug": "dev", "name": "Dev"},
-        headers=dev_headers,
-    )
-    assert r.status_code == 403
+    assert response.status_code == 422

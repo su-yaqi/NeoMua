@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.agent_management.service import TargetCompatibility
 
@@ -18,11 +18,24 @@ class AgentCreate(StrictRequest):
 
 
 class AgentCompleteCreate(AgentCreate):
-    harness_profile_id: uuid.UUID
-    provider_config_id: uuid.UUID
-    model_id: str = Field(min_length=1, max_length=255)
+    harness_profile_id: uuid.UUID | None = None
+    provider_config_id: uuid.UUID | None = None
+    model_id: str | None = Field(default=None, min_length=1, max_length=255)
+    preferred_model_definition_id: uuid.UUID | None = None
+    execution_policy: dict[str, Any] = Field(default_factory=dict)
     system_prompt: str = ""
     config: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_execution_schema(self) -> "AgentCompleteCreate":
+        if any(
+            value is not None
+            for value in (self.harness_profile_id, self.provider_config_id, self.model_id)
+        ):
+            raise ValueError("Legacy Harness/model fields are read-only in v0.9")
+        if self.preferred_model_definition_id is None:
+            raise ValueError("preferred_model_definition_id is required")
+        return self
 
 
 class AgentCopy(StrictRequest):
@@ -41,6 +54,8 @@ class DraftSave(StrictRequest):
     harness_profile_id: uuid.UUID | None = None
     provider_config_id: uuid.UUID | None = None
     model_id: str | None = Field(default=None, max_length=255)
+    preferred_model_definition_id: uuid.UUID | None = None
+    execution_policy: dict[str, Any] | None = None
     system_prompt: str | None = None
     config: dict[str, Any] | None = None
 
@@ -51,6 +66,8 @@ class AgentDraftPublic(BaseModel):
     harness_profile_id: uuid.UUID | None
     provider_config_id: uuid.UUID | None
     model_id: str | None
+    preferred_model_definition_id: uuid.UUID | None
+    execution_policy: dict[str, Any]
     system_prompt: str
     config: dict[str, Any]
     validated_revision: int | None
@@ -75,6 +92,7 @@ class AgentListItem(AgentPublic):
     validation_status: str
     harness_type: str | None = None
     model_id: str | None = None
+    preferred_model_definition_id: uuid.UUID | None = None
 
 
 class AgentsPublic(BaseModel):

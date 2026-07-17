@@ -109,9 +109,13 @@ def mark_skill_current_changed(session: Session, skill: SkillDefinition) -> None
 def ensure_release_skill_subscriptions(
     session: Session,
     release: AgentRelease,
-    runtime_profile_id: uuid.UUID,
+    runtime_profile_id: uuid.UUID | None = None,
+    *,
+    runtime_instance_id: uuid.UUID | None = None,
 ) -> list[RuntimeSkillState]:
-    if release.resolved_spec_schema_version != "1.1":
+    if (runtime_profile_id is None) == (runtime_instance_id is None):
+        raise ValueError("Exactly one Runtime target is required")
+    if release.resolved_spec_schema_version not in {"1.1", "2.0"}:
         return []
     states: list[RuntimeSkillState] = []
     for item in release.resolved_spec.get("skills", []):
@@ -140,7 +144,9 @@ def ensure_release_skill_subscriptions(
         ensure_skill_version_signature(skill, version)
         state = session.exec(
             select(RuntimeSkillState).where(
-                RuntimeSkillState.runtime_profile_id == runtime_profile_id,
+                RuntimeSkillState.runtime_instance_id == runtime_instance_id
+                if runtime_instance_id
+                else RuntimeSkillState.runtime_profile_id == runtime_profile_id,
                 RuntimeSkillState.skill_id == skill.id,
             )
         ).first()
@@ -148,6 +154,7 @@ def ensure_release_skill_subscriptions(
             state = RuntimeSkillState(
                 namespace_id=release.namespace_id,
                 runtime_profile_id=runtime_profile_id,
+                runtime_instance_id=runtime_instance_id,
                 skill_id=skill.id,
                 desired_version_id=version.id,
                 desired_digest=version.content_sha256,
@@ -171,6 +178,7 @@ def ensure_release_skill_subscriptions(
                 session,
                 runtime_profile_id,
                 skill.id,
+                runtime_instance_id=runtime_instance_id,
                 include_release=release,
             )
         )
@@ -182,17 +190,22 @@ def ensure_release_skill_subscriptions(
 
 def _runtime_skill_reference_releases(
     session: Session,
-    runtime_profile_id: uuid.UUID,
+    runtime_profile_id: uuid.UUID | None,
     skill_id: uuid.UUID,
     *,
+    runtime_instance_id: uuid.UUID | None = None,
     include_release: AgentRelease | None = None,
 ) -> set[uuid.UUID]:
+    if (runtime_profile_id is None) == (runtime_instance_id is None):
+        raise ValueError("Exactly one Runtime target is required")
     releases: dict[uuid.UUID, AgentRelease] = {}
     if include_release is not None:
         releases[include_release.id] = include_release
     for binding in session.exec(
         select(RuntimeAgentRelease).where(
-            RuntimeAgentRelease.runtime_profile_id == runtime_profile_id
+            RuntimeAgentRelease.runtime_instance_id == runtime_instance_id
+            if runtime_instance_id
+            else RuntimeAgentRelease.runtime_profile_id == runtime_profile_id
         )
     ).all():
         release = session.get(AgentRelease, binding.current_release_id)
@@ -200,7 +213,9 @@ def _runtime_skill_reference_releases(
             releases[release.id] = release
     for deployment in session.exec(
         select(AgentDeployment).where(
-            AgentDeployment.runtime_profile_id == runtime_profile_id,
+            AgentDeployment.runtime_instance_id == runtime_instance_id
+            if runtime_instance_id
+            else AgentDeployment.runtime_profile_id == runtime_profile_id,
             AgentDeployment.status.in_(
                 [AgentDeploymentStatus.PENDING, AgentDeploymentStatus.DISPATCHED]
             ),
@@ -215,7 +230,7 @@ def _runtime_skill_reference_releases(
     return {
         release.id
         for release in releases.values()
-        if release.resolved_spec_schema_version == "1.1"
+        if release.resolved_spec_schema_version in {"1.1", "2.0"}
         and any(
             str(item.get("id")) == str(skill_id)
             for item in release.resolved_spec.get("skills", [])
@@ -224,17 +239,29 @@ def _runtime_skill_reference_releases(
 
 
 def reconcile_runtime_skill_subscriptions(
-    session: Session, runtime_profile_id: uuid.UUID
+    session: Session,
+    runtime_profile_id: uuid.UUID | None = None,
+    *,
+    runtime_instance_id: uuid.UUID | None = None,
 ) -> None:
+    if (runtime_profile_id is None) == (runtime_instance_id is None):
+        raise ValueError("Exactly one Runtime target is required")
     rows = session.exec(
         select(RuntimeSkillState).where(
-            RuntimeSkillState.runtime_profile_id == runtime_profile_id
+            RuntimeSkillState.runtime_instance_id == runtime_instance_id
+            if runtime_instance_id
+            else RuntimeSkillState.runtime_profile_id == runtime_profile_id
         )
     ).all()
     now = datetime.now(timezone.utc)
     for row in rows:
         row.subscription_count = len(
-            _runtime_skill_reference_releases(session, runtime_profile_id, row.skill_id)
+            _runtime_skill_reference_releases(
+                session,
+                runtime_profile_id,
+                row.skill_id,
+                runtime_instance_id=runtime_instance_id,
+            )
         )
         if row.subscription_count == 0:
             row.status = "orphaned"
@@ -243,9 +270,13 @@ def reconcile_runtime_skill_subscriptions(
 
 
 def release_skills_ready(
-    session: Session, release: AgentRelease, runtime_profile_id: uuid.UUID
+    session: Session,
+    release: AgentRelease,
+    runtime_profile_id: uuid.UUID | None = None,
+    *,
+    runtime_instance_id: uuid.UUID | None = None,
 ) -> bool:
-    if release.resolved_spec_schema_version != "1.1":
+    if release.resolved_spec_schema_version not in {"1.1", "2.0"}:
         return True
     for item in release.resolved_spec.get("skills", []):
         try:
@@ -254,7 +285,9 @@ def release_skills_ready(
             return False
         state = session.exec(
             select(RuntimeSkillState).where(
-                RuntimeSkillState.runtime_profile_id == runtime_profile_id,
+                RuntimeSkillState.runtime_instance_id == runtime_instance_id
+                if runtime_instance_id
+                else RuntimeSkillState.runtime_profile_id == runtime_profile_id,
                 RuntimeSkillState.skill_id == skill_id,
             )
         ).first()
@@ -270,9 +303,13 @@ def release_skills_ready(
 
 
 def release_skill_blockers(
-    session: Session, release: AgentRelease, runtime_profile_id: uuid.UUID
+    session: Session,
+    release: AgentRelease,
+    runtime_profile_id: uuid.UUID | None = None,
+    *,
+    runtime_instance_id: uuid.UUID | None = None,
 ) -> list[dict[str, Any]]:
-    if release.resolved_spec_schema_version != "1.1":
+    if release.resolved_spec_schema_version not in {"1.1", "2.0"}:
         return []
     blockers: list[dict[str, Any]] = []
     for item in release.resolved_spec.get("skills", []):
@@ -282,7 +319,9 @@ def release_skill_blockers(
             continue
         state = session.exec(
             select(RuntimeSkillState).where(
-                RuntimeSkillState.runtime_profile_id == runtime_profile_id,
+                RuntimeSkillState.runtime_instance_id == runtime_instance_id
+                if runtime_instance_id
+                else RuntimeSkillState.runtime_profile_id == runtime_profile_id,
                 RuntimeSkillState.skill_id == skill_id,
                 or_(
                     RuntimeSkillState.status == "blocked",
@@ -306,9 +345,13 @@ def release_skill_blockers(
 
 
 def release_skills_committing(
-    session: Session, release: AgentRelease, runtime_profile_id: uuid.UUID
+    session: Session,
+    release: AgentRelease,
+    runtime_profile_id: uuid.UUID | None = None,
+    *,
+    runtime_instance_id: uuid.UUID | None = None,
 ) -> bool:
-    if release.resolved_spec_schema_version != "1.1":
+    if release.resolved_spec_schema_version not in {"1.1", "2.0"}:
         return False
     skill_ids: list[uuid.UUID] = []
     for item in release.resolved_spec.get("skills", []):
@@ -321,7 +364,9 @@ def release_skills_committing(
     return (
         session.exec(
             select(RuntimeSkillState.id).where(
-                RuntimeSkillState.runtime_profile_id == runtime_profile_id,
+                RuntimeSkillState.runtime_instance_id == runtime_instance_id
+                if runtime_instance_id
+                else RuntimeSkillState.runtime_profile_id == runtime_profile_id,
                 col(RuntimeSkillState.skill_id).in_(skill_ids),
                 RuntimeSkillState.status == "committing",
             )
@@ -338,19 +383,25 @@ def issue_skill_download_token(
     *,
     attempt_id: uuid.UUID,
     node_id: uuid.UUID,
-    runtime_profile_id: uuid.UUID,
+    runtime_profile_id: uuid.UUID | None = None,
+    runtime_instance_id: uuid.UUID | None = None,
     skill_id: uuid.UUID,
     version_id: uuid.UUID,
     content_sha256: str,
     storage_key: str,
 ) -> str:
+    if (runtime_profile_id is None) == (runtime_instance_id is None):
+        raise ValueError("Exactly one Runtime target is required")
     now = datetime.now(timezone.utc)
     return jwt.encode(
         {
             "aud": "neomua-skill-download",
             "attempt_id": str(attempt_id),
             "node_id": str(node_id),
-            "runtime_profile_id": str(runtime_profile_id),
+            "runtime_target_id": str(runtime_instance_id or runtime_profile_id),
+            "runtime_target_type": "runtime_instance"
+            if runtime_instance_id
+            else "runtime_profile",
             "skill_id": str(skill_id),
             "version_id": str(version_id),
             "content_sha256": content_sha256,

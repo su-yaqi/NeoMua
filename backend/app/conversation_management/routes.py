@@ -24,6 +24,7 @@ from app.conversation_management.models import (
     ConversationConfigurationRevision,
     ConversationContextSnapshot,
     ConversationEvent,
+    ConversationExecutionBinding,
     ConversationMessage,
     ConversationMode,
     ConversationStatus,
@@ -44,26 +45,35 @@ from app.conversation_management.service import (
     add_conversation_agent,
     append_conversation_event,
     append_message_event,
+    attach_execution_bindings,
     canonical_digest,
     configuration_public,
     conversation_public,
     create_agent_task,
+    create_chat_task,
     create_configuration_revision,
     create_context_snapshot,
     ensure_current_configuration,
     next_message_sequence,
     reconcile_agent_messages,
     require_conversation_access,
+    resolve_v09_execution_binding,
     target_participants,
     utcnow,
     validate_agent_binding,
     validate_chat_route,
+    validate_v09_agent_binding,
 )
 from app.core.config import settings
-from app.models import LlmProviderConfig, LlmProviderModel
 from app.project_management.models import Project, ProjectMember, ProjectStatus
 from app.project_management.service import require_project_member
-from app.runtime.models import RuntimeProfile
+from app.runtime.models import (
+    RuntimeInstance,
+    RuntimeInstanceStatus,
+    RuntimeModelBinding,
+    RuntimeModelBindingStatus,
+    RuntimeProfile,
+)
 from app.runtime.security import issue_gateway_token
 from app.text_attachments import TEXT_ATTACHMENT_MAX_BYTES, store_text_attachment
 
@@ -166,66 +176,65 @@ def list_conversation_runtimes(
     namespace_id: uuid.UUID = Depends(require_namespace_member),
 ) -> dict[str, Any]:
     rows = session.exec(
-        select(RuntimeProfile).where(RuntimeProfile.namespace_id == namespace_id)
+        select(RuntimeInstance).where(
+            RuntimeInstance.namespace_id == namespace_id,
+            RuntimeInstance.enabled.is_(True),
+            RuntimeInstance.status == RuntimeInstanceStatus.AVAILABLE,
+        )
     ).all()
     data = [
         {
             "id": row.id,
-            "runtime_type": row.runtime_type,
-            "route_mode": row.route_mode,
-            "model_id": row.model_id,
-            "compatible": bool(row.config.get("compatibility_verified")),
+            "runtime_instance_id": row.id,
+            "runtime_node_id": row.runtime_node_id,
+            "runtime_type": row.location_type.value,
+            "engine_type": row.engine_type.value,
+            "name": row.name,
+            "compatible": True,
         }
         for row in rows
     ]
     return {"data": data, "count": len(data)}
 
 
-@router.get("/conversation-catalog/models")
+@router.get("/conversation-catalog/runtimes/{runtime_id}/models")
 def list_conversation_models(
     session: SessionDep,
     _: CurrentUser,
     runtime_id: uuid.UUID,
     namespace_id: uuid.UUID = Depends(require_namespace_member),
 ) -> dict[str, Any]:
-    runtime = session.get(RuntimeProfile, runtime_id)
+    runtime = session.get(RuntimeInstance, runtime_id)
     if runtime is None or runtime.namespace_id != namespace_id:
         raise HTTPException(404, "Runtime not found")
-    if not runtime.config.get("compatibility_verified"):
-        raise HTTPException(409, "Runtime compatibility is not verified")
     rows = session.exec(
-        select(LlmProviderModel, LlmProviderConfig)
-        .join(
-            LlmProviderConfig,
-            col(LlmProviderConfig.id) == col(LlmProviderModel.provider_config_id),
-        )
+        select(RuntimeModelBinding)
         .where(
-            LlmProviderConfig.namespace_id == namespace_id,
-            col(LlmProviderConfig.enabled).is_(True),
-            col(LlmProviderModel.is_enabled).is_(True),
+            RuntimeModelBinding.runtime_instance_id == runtime.id,
+            RuntimeModelBinding.status == RuntimeModelBindingStatus.AVAILABLE,
         )
     ).all()
     data = [
         {
-            "provider_config_id": provider.id,
-            "provider_name": provider.config_name,
-            "provider_slug": provider.provider_slug,
-            "model_id": model.model_id,
-            "display_name": model.display_name,
+            "runtime_model_binding_id": binding.id,
+            "model_definition_id": binding.model_definition_id,
+            "engine_model_id": binding.engine_model_id,
+            "route_type": binding.route_type.value,
+            "route_key": binding.route_key,
         }
-        for model, provider in rows
+        for binding in rows
     ]
     return {"data": data, "count": len(data)}
 
 
-@router.get("/conversation-catalog/agents")
+@router.get("/conversation-catalog/runtimes/{runtime_id}/agents")
 def list_conversation_agents(
     session: SessionDep,
     _: CurrentUser,
     runtime_id: uuid.UUID,
     namespace_id: uuid.UUID = Depends(require_namespace_member),
 ) -> dict[str, Any]:
-    runtime = session.get(RuntimeProfile, runtime_id)
+    runtime = session.get(RuntimeInstance, runtime_id)
     if runtime is None or runtime.namespace_id != namespace_id:
         raise HTTPException(404, "Runtime not found")
     rows = session.exec(
@@ -240,7 +249,7 @@ def list_conversation_agents(
         )
         .where(
             RuntimeAgentRelease.namespace_id == namespace_id,
-            RuntimeAgentRelease.runtime_profile_id == runtime_id,
+            RuntimeAgentRelease.runtime_instance_id == runtime_id,
         )
     ).all()
     data = [
@@ -252,6 +261,19 @@ def list_conversation_agents(
             "release_id": release.id,
             "release_version": release.version,
             "resolved_spec_digest": release.resolved_spec_digest,
+            "preferred_model_definition_id": release.preferred_model_definition_id,
+            "preference_binding_ids": [
+                str(item.id)
+                for item in session.exec(
+                    select(RuntimeModelBinding).where(
+                        RuntimeModelBinding.runtime_instance_id == runtime_id,
+                        RuntimeModelBinding.model_definition_id
+                        == release.preferred_model_definition_id,
+                        RuntimeModelBinding.status
+                        == RuntimeModelBindingStatus.AVAILABLE,
+                    )
+                ).all()
+            ],
             "active": binding.applied_digest == release.resolved_spec_digest
             and binding.materialization_digest == release.resolved_spec_digest,
         }
@@ -295,6 +317,10 @@ def create_conversation(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     namespace_id: uuid.UUID = Depends(require_namespace_member),
 ) -> dict[str, Any]:
+    if body.runtime_id is not None:
+        raise HTTPException(
+            410, "Runtime Profile conversation creation is read-only in v0.9"
+        )
     key = _require_idempotency(idempotency_key)
     fingerprint = canonical_digest(
         {"operation": "create", "body": body.model_dump(mode="json")}
@@ -317,10 +343,22 @@ def create_conversation(
     )
     if body.visibility == ConversationVisibility.PROJECT and project is None:
         raise HTTPException(422, "Project visibility requires project membership")
-    runtime = session.get(RuntimeProfile, body.runtime_id)
-    if runtime is None or runtime.namespace_id != namespace_id:
+    runtime_instance = (
+        session.get(RuntimeInstance, body.runtime_instance_id)
+        if body.runtime_instance_id
+        else None
+    )
+    runtime = session.get(RuntimeProfile, body.runtime_id) if body.runtime_id else None
+    if runtime_instance is not None:
+        if (
+            runtime_instance.namespace_id != namespace_id
+            or not runtime_instance.enabled
+            or runtime_instance.status != RuntimeInstanceStatus.AVAILABLE
+        ):
+            raise HTTPException(422, "Runtime does not belong to the namespace or is unavailable")
+    elif runtime is None or runtime.namespace_id != namespace_id:
         raise HTTPException(422, "Runtime does not belong to the namespace")
-    if body.mode == ConversationMode.CHAT:
+    if body.mode == ConversationMode.CHAT and runtime is not None:
         assert body.provider_config_id is not None and body.model_id is not None
         validate_chat_route(
             session,
@@ -337,6 +375,7 @@ def create_conversation(
         mode=body.mode,
         visibility=body.visibility,
         runtime_id=body.runtime_id,
+        runtime_instance_id=body.runtime_instance_id,
         provider_config_id=body.provider_config_id,
         model_id=body.model_id,
         idempotency_key=key,
@@ -345,19 +384,36 @@ def create_conversation(
     session.add(conversation)
     session.flush()
     try:
-        if body.mode == ConversationMode.AGENT:
+        v09_bindings: list[ConversationExecutionBinding] = []
+        if body.mode == ConversationMode.CHAT and runtime_instance is not None:
+            assert body.chat_model_selection is not None
+            v09_bindings.append(
+                resolve_v09_execution_binding(
+                    session,
+                    runtime=runtime_instance,
+                    role_key="chat",
+                    mode=body.chat_model_selection.mode,
+                    exact_binding_id=body.chat_model_selection.runtime_model_binding_id,
+                )
+            )
+        elif body.mode == ConversationMode.AGENT:
             assert body.main_agent is not None
-            binding_ids = [
-                body.main_agent.runtime_agent_release_id,
-                *[item.runtime_agent_release_id for item in body.collaborators],
-            ]
+            participant_inputs = [body.main_agent, *body.collaborators]
+            binding_ids = [item.runtime_agent_release_id for item in participant_inputs]
             if len(binding_ids) != len(set(binding_ids)):
                 raise HTTPException(422, "Each Agent can participate only once")
-            for index, binding_id in enumerate(binding_ids):
-                binding, release = validate_agent_binding(
-                    session, namespace_id, body.runtime_id, binding_id
-                )
-                add_conversation_agent(
+            for index, participant_input in enumerate(participant_inputs):
+                binding_id = participant_input.runtime_agent_release_id
+                if runtime_instance is not None:
+                    binding, release = validate_v09_agent_binding(
+                        session, namespace_id, runtime_instance.id, binding_id
+                    )
+                else:
+                    assert body.runtime_id is not None
+                    binding, release = validate_agent_binding(
+                        session, namespace_id, body.runtime_id, binding_id
+                    )
+                participant = add_conversation_agent(
                     session,
                     conversation,
                     binding,
@@ -367,8 +423,41 @@ def create_conversation(
                     else ConversationAgentRole.COLLABORATOR,
                     current_user.id,
                 )
+                session.flush()
+                if runtime_instance is not None:
+                    assert participant_input.model_selection is not None
+                    v09_bindings.append(
+                        resolve_v09_execution_binding(
+                            session,
+                            runtime=runtime_instance,
+                            role_key=str(participant.id),
+                            mode=participant_input.model_selection.mode,
+                            exact_binding_id=participant_input.model_selection.runtime_model_binding_id,
+                            runtime_agent_release=binding,
+                            release=release,
+                        )
+                    )
         session.flush()
-        ensure_current_configuration(session, conversation, current_user.id)
+        if runtime_instance is not None:
+            participants = session.exec(
+                select(ConversationAgent).where(
+                    ConversationAgent.conversation_id == conversation.id
+                )
+            ).all()
+            organizer = next(
+                (item for item in participants if item.role == ConversationAgentRole.MAIN),
+                None,
+            )
+            revision = create_configuration_revision(
+                session,
+                conversation,
+                current_user.id,
+                organizer_agent_id=organizer.id if organizer else None,
+                participant_ids=[item.id for item in participants],
+            )
+            attach_execution_bindings(session, revision, v09_bindings)
+        else:
+            ensure_current_configuration(session, conversation, current_user.id)
         if project is not None:
             create_context_snapshot(session, conversation, current_user.id)
         session.commit()
@@ -409,7 +498,7 @@ def list_configuration_revisions(
         .order_by(col(ConversationConfigurationRevision.revision))
     ).all()
     return {
-        "data": [configuration_public(row) for row in rows],
+        "data": [configuration_public(row, session) for row in rows],
         "count": len(rows),
         "current_configuration_revision_id": conversation.current_configuration_revision_id,
     }
@@ -429,6 +518,10 @@ def update_configuration(
     conversation = session.exec(
         select(Conversation).where(Conversation.id == conversation.id).with_for_update()
     ).one()
+    if conversation.runtime_instance_id is None:
+        raise HTTPException(
+            410, "Legacy conversation configuration is read-only in v0.9"
+        )
     active = session.exec(
         select(ConversationMessage).where(
             ConversationMessage.conversation_id == conversation.id,
@@ -451,7 +544,36 @@ def update_configuration(
                 "current": configuration_public(current),
             },
         )
-    if conversation.mode == ConversationMode.CHAT:
+    if (
+        conversation.mode == ConversationMode.CHAT
+        and conversation.runtime_instance_id is not None
+    ):
+        if (
+            body.chat_model_selection is None
+            or body.provider_config_id is not None
+            or body.model_id is not None
+            or body.participant_runtime_agent_release_ids
+            or body.organizer_runtime_agent_release_id is not None
+            or body.participant_selections
+        ):
+            raise HTTPException(422, "v0.9 Chat configuration requires one exact model selection")
+        runtime_instance = session.get(
+            RuntimeInstance, conversation.runtime_instance_id
+        )
+        if runtime_instance is None:
+            raise HTTPException(409, "Conversation Runtime is unavailable")
+        execution_binding = resolve_v09_execution_binding(
+            session,
+            runtime=runtime_instance,
+            role_key="chat",
+            mode=body.chat_model_selection.mode,
+            exact_binding_id=body.chat_model_selection.runtime_model_binding_id,
+        )
+        revision = create_configuration_revision(
+            session, conversation, current_user.id
+        )
+        attach_execution_bindings(session, revision, [execution_binding])
+    elif conversation.mode == ConversationMode.CHAT:
         if (
             body.provider_config_id is None
             or body.model_id is None
@@ -473,6 +595,95 @@ def update_configuration(
             provider_config_id=body.provider_config_id,
             model_id=body.model_id,
         )
+    elif conversation.runtime_instance_id is not None:
+        runtime_instance = session.get(
+            RuntimeInstance, conversation.runtime_instance_id
+        )
+        selections = body.participant_selections
+        organizer_binding_id = body.organizer_runtime_agent_release_id
+        binding_ids = [item.runtime_agent_release_id for item in selections]
+        if (
+            runtime_instance is None
+            or body.provider_config_id is not None
+            or body.model_id is not None
+            or body.chat_model_selection is not None
+            or body.participant_runtime_agent_release_ids
+            or not selections
+            or organizer_binding_id is None
+            or organizer_binding_id not in binding_ids
+            or len(binding_ids) != len(set(binding_ids))
+        ):
+            raise HTTPException(
+                422,
+                "v0.9 Agent configuration requires unique selections and one organizer",
+            )
+        existing = session.exec(
+            select(ConversationAgent).where(
+                ConversationAgent.conversation_id == conversation.id
+            )
+        ).all()
+        by_binding = {item.runtime_agent_release_id: item for item in existing}
+        selected: list[ConversationAgent] = []
+        execution_bindings: list[ConversationExecutionBinding] = []
+        for selection in selections:
+            binding, release = validate_v09_agent_binding(
+                session,
+                conversation.namespace_id,
+                runtime_instance.id,
+                selection.runtime_agent_release_id,
+            )
+            participant = by_binding.get(selection.runtime_agent_release_id)
+            if participant is None:
+                participant = add_conversation_agent(
+                    session,
+                    conversation,
+                    binding,
+                    release,
+                    ConversationAgentRole.COLLABORATOR,
+                    current_user.id,
+                )
+                session.flush()
+                by_binding[selection.runtime_agent_release_id] = participant
+            elif (
+                participant.agent_release_id != release.id
+                or participant.resolved_spec_digest != release.resolved_spec_digest
+            ):
+                raise HTTPException(
+                    409,
+                    "Historical participant Release changed; derive a new conversation",
+                )
+            assert selection.model_selection is not None
+            execution_bindings.append(
+                resolve_v09_execution_binding(
+                    session,
+                    runtime=runtime_instance,
+                    role_key=str(participant.id),
+                    mode=selection.model_selection.mode,
+                    exact_binding_id=selection.model_selection.runtime_model_binding_id,
+                    runtime_agent_release=binding,
+                    release=release,
+                )
+            )
+            selected.append(participant)
+        organizer = by_binding[organizer_binding_id]
+        for participant in existing:
+            participant.role = (
+                ConversationAgentRole.MAIN
+                if participant.id == organizer.id
+                else ConversationAgentRole.COLLABORATOR
+            )
+            session.add(participant)
+        organizer.role = ConversationAgentRole.MAIN
+        session.add(organizer)
+        session.flush()
+        revision = create_configuration_revision(
+            session,
+            conversation,
+            current_user.id,
+            organizer_agent_id=organizer.id,
+            participant_ids=[item.id for item in selected],
+        )
+        attach_execution_bindings(session, revision, execution_bindings)
     else:
         binding_ids = body.participant_runtime_agent_release_ids
         organizer_binding_id = body.organizer_runtime_agent_release_id
@@ -550,6 +761,85 @@ def update_configuration(
     return conversation_public(session, conversation)
 
 
+@router.post("/conversations/{conversation_id}/configuration-revisions/precheck")
+def precheck_configuration(
+    conversation_id: uuid.UUID,
+    body: ConversationConfigurationUpdate,
+    session: SessionDep,
+    current_user: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_member),
+) -> dict[str, Any]:
+    conversation = require_conversation_access(
+        session, conversation_id, namespace_id, current_user, participate=True
+    )
+    if conversation.runtime_instance_id is None:
+        raise HTTPException(409, "Precheck is available only for v0.9 conversations")
+    current = ensure_current_configuration(session, conversation, current_user.id)
+    if current.revision != body.expected_revision:
+        raise HTTPException(
+            409,
+            {"code": "configuration_revision_conflict", "actual": current.revision},
+        )
+    runtime = session.get(RuntimeInstance, conversation.runtime_instance_id)
+    if runtime is None:
+        raise HTTPException(409, "Conversation Runtime is unavailable")
+    previews: list[ConversationExecutionBinding] = []
+    if conversation.mode == ConversationMode.CHAT:
+        if body.chat_model_selection is None:
+            raise HTTPException(422, "Chat model selection is required")
+        previews.append(
+            resolve_v09_execution_binding(
+                session,
+                runtime=runtime,
+                role_key="chat",
+                mode=body.chat_model_selection.mode,
+                exact_binding_id=body.chat_model_selection.runtime_model_binding_id,
+            )
+        )
+    else:
+        if not body.participant_selections:
+            raise HTTPException(422, "Agent participant selections are required")
+        for selection in body.participant_selections:
+            if selection.model_selection is None:
+                raise HTTPException(422, "Each Agent requires model selection")
+            active, release = validate_v09_agent_binding(
+                session,
+                conversation.namespace_id,
+                runtime.id,
+                selection.runtime_agent_release_id,
+            )
+            previews.append(
+                resolve_v09_execution_binding(
+                    session,
+                    runtime=runtime,
+                    role_key=str(selection.runtime_agent_release_id),
+                    mode=selection.model_selection.mode,
+                    exact_binding_id=selection.model_selection.runtime_model_binding_id,
+                    runtime_agent_release=active,
+                    release=release,
+                )
+            )
+    return {
+        "deployable": True,
+        "bindings": [
+            {
+                "role_key": item.role_key,
+                "runtime_instance_id": item.runtime_instance_id,
+                "agent_release_id": item.agent_release_id,
+                "model_selection_mode": item.model_selection_mode,
+                "preferred_model_definition_id": item.preferred_model_definition_id,
+                "runtime_model_binding_id": item.runtime_model_binding_id,
+                "selection_source": item.selection_source,
+                "runtime_configuration_revision_id": item.runtime_configuration_revision_id,
+                "runtime_capability_report_id": item.runtime_capability_report_id,
+                "model_catalog_fingerprint": item.model_catalog_fingerprint,
+                "effective_spec_digest": item.effective_spec_digest,
+            }
+            for item in previews
+        ],
+    }
+
+
 @router.get("/conversations/{conversation_id}")
 def read_conversation(
     conversation_id: uuid.UUID,
@@ -560,7 +850,7 @@ def read_conversation(
     conversation = require_conversation_access(
         session, conversation_id, namespace_id, current_user
     )
-    if conversation.mode == ConversationMode.AGENT:
+    if conversation.mode == ConversationMode.AGENT or conversation.runtime_instance_id:
         if reconcile_agent_messages(session, conversation):
             session.commit()
     return conversation_public(session, conversation)
@@ -900,8 +1190,19 @@ async def create_message(
         session.flush()
         append_message_event(session, user_message, "message_created")
         append_message_event(session, response_message, "message_created")
-        session.commit()
-        await _execute_chat_message(session, locked, response_message)
+        if conversation.runtime_instance_id is not None:
+            history, system_prompt = _chat_history(session, conversation)
+            create_chat_task(
+                session,
+                conversation,
+                response_message,
+                json.dumps(history, ensure_ascii=False),
+                system_prompt,
+            )
+            session.commit()
+        else:
+            session.commit()
+            await _execute_chat_message(session, locked, response_message)
     else:
         participants = target_participants(
             session, conversation, body.target_type, body.target_agent_id
@@ -1107,12 +1408,20 @@ def derive_conversation(
                 409, "Idempotency-Key was reused with a different request"
             )
         return conversation_public(session, existing)
-    validate_chat_route(
+    runtime = session.get(RuntimeInstance, body.runtime_instance_id)
+    if (
+        runtime is None
+        or runtime.namespace_id != namespace_id
+        or not runtime.enabled
+        or runtime.status != RuntimeInstanceStatus.AVAILABLE
+    ):
+        raise HTTPException(422, "Runtime does not belong to the namespace or is unavailable")
+    execution_binding = resolve_v09_execution_binding(
         session,
-        namespace_id,
-        body.runtime_id,
-        body.provider_config_id,
-        body.model_id,
+        runtime=runtime,
+        role_key="chat",
+        mode=body.chat_model_selection.mode,
+        exact_binding_id=body.chat_model_selection.runtime_model_binding_id,
     )
     derived = Conversation(
         namespace_id=namespace_id,
@@ -1122,16 +1431,15 @@ def derive_conversation(
         title=body.title or f"{source.title}（派生）",
         mode=ConversationMode.CHAT,
         visibility=source.visibility,
-        runtime_id=body.runtime_id,
-        provider_config_id=body.provider_config_id,
-        model_id=body.model_id,
+        runtime_instance_id=body.runtime_instance_id,
         idempotency_key=key,
         creation_fingerprint=fingerprint,
     )
     session.add(derived)
     try:
         session.flush()
-        ensure_current_configuration(session, derived, current_user.id)
+        revision = create_configuration_revision(session, derived, current_user.id)
+        attach_execution_bindings(session, revision, [execution_binding])
         if source.project_id:
             create_context_snapshot(session, derived, current_user.id)
         session.commit()

@@ -421,13 +421,41 @@ class WorkflowExecutionNodeBinding(SQLModel, table=True):
         index=True,
     )
     node_key: str = Field(max_length=128)
-    runtime_profile_id: uuid.UUID = Field(
-        foreign_key="runtime_profile.id", nullable=False, ondelete="RESTRICT"
+    runtime_profile_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_profile.id", ondelete="RESTRICT"
+    )
+    runtime_instance_id: uuid.UUID | None = Field(
+        default=None,
+        foreign_key="runtime_instance.id",
+        ondelete="RESTRICT",
+        index=True,
+    )
+    runtime_agent_release_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_agent_release.id", ondelete="RESTRICT"
     )
     agent_release_id: uuid.UUID | None = Field(
         default=None, foreign_key="agent_release.id", ondelete="RESTRICT"
     )
     resolved_spec_digest: str | None = Field(default=None, max_length=64)
+    model_selection_mode: str | None = Field(default=None, max_length=32)
+    preferred_model_definition_id: uuid.UUID | None = Field(
+        default=None, foreign_key="llm_model_definition.id", ondelete="RESTRICT"
+    )
+    runtime_model_binding_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_model_binding.id", ondelete="RESTRICT"
+    )
+    selection_source: str | None = Field(default=None, max_length=32)
+    runtime_configuration_revision_id: uuid.UUID | None = Field(
+        default=None,
+        foreign_key="runtime_configuration_revision.id",
+        ondelete="RESTRICT",
+    )
+    runtime_capability_report_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_capability_report.id", ondelete="RESTRICT"
+    )
+    runtime_model_catalog_fingerprint: str | None = Field(default=None, max_length=64)
+    adapter_version: str | None = Field(default=None, max_length=64)
+    effective_spec_digest: str | None = Field(default=None, max_length=64)
 
 
 class WorkflowInstance(SQLModel, table=True):
@@ -520,8 +548,14 @@ class WorkflowInstanceAgentBinding(SQLModel, table=True):
         index=True,
     )
     role_key: str = Field(max_length=128)
-    runtime_profile_id: uuid.UUID = Field(
-        foreign_key="runtime_profile.id", nullable=False, ondelete="RESTRICT"
+    runtime_profile_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_profile.id", ondelete="RESTRICT"
+    )
+    runtime_instance_id: uuid.UUID | None = Field(
+        default=None,
+        foreign_key="runtime_instance.id",
+        ondelete="RESTRICT",
+        index=True,
     )
     agent_release_id: uuid.UUID = Field(
         foreign_key="agent_release.id", nullable=False, ondelete="RESTRICT"
@@ -582,6 +616,12 @@ class WorkflowNodeInstance(SQLModel, table=True):
         foreign_key="runtime_profile.id",
         nullable=True,
         ondelete="RESTRICT",
+    )
+    resolved_runtime_instance_id: uuid.UUID | None = Field(
+        default=None,
+        foreign_key="runtime_instance.id",
+        ondelete="RESTRICT",
+        index=True,
     )
     created_at: datetime = Field(
         default_factory=utcnow, sa_type=DateTime(timezone=True)
@@ -652,8 +692,14 @@ class WorkflowNodeExecution(SQLModel, table=True):
     )
     input_revision: int
     attempt: int
-    runtime_id: uuid.UUID = Field(
-        foreign_key="runtime_profile.id", nullable=False, ondelete="RESTRICT"
+    runtime_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_profile.id", ondelete="RESTRICT"
+    )
+    runtime_instance_id: uuid.UUID | None = Field(
+        default=None,
+        foreign_key="runtime_instance.id",
+        ondelete="RESTRICT",
+        index=True,
     )
     agent_task_id: uuid.UUID | None = Field(
         default=None, foreign_key="agent_task.id", ondelete="SET NULL"

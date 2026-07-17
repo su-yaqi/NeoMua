@@ -7,7 +7,13 @@ from typing import Any, cast
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import Session, col, select
 
-from app.runtime.models import AgentEvent, AgentEventType, AgentSession, AgentTask
+from app.runtime.models import (
+    AgentEvent,
+    AgentEventType,
+    AgentSession,
+    AgentTask,
+    AgentTaskModelUsage,
+)
 from app.runtime.policy import (
     InvalidTaskTransition,
     TaskStatus,
@@ -139,6 +145,32 @@ def append_and_apply_event(
     if task is None:
         raise LookupError("task not found")
     redacted = redact_event_payload(payload)
+    if (
+        task.runtime_instance_id is not None
+        and event_type != AgentEventType.USER_MESSAGE
+    ):
+        usage = session.exec(
+            select(AgentTaskModelUsage).where(
+                AgentTaskModelUsage.task_id == task.id
+            )
+        ).first()
+        if usage is None:
+            raise ValueError("v0.9 task model usage evidence is missing")
+        redacted = {
+            **redacted,
+            "model_execution": {
+                "model_usage_id": str(usage.id),
+                "runtime_instance_id": str(usage.runtime_instance_id),
+                "runtime_model_binding_id": str(usage.runtime_model_binding_id),
+                "model_definition_id": str(usage.model_definition_id),
+                "engine_type": usage.engine_type,
+                "engine_version": usage.engine_version,
+                "adapter_version": usage.adapter_version,
+                "route_type": usage.route_type,
+                "selection_source": usage.selection_source,
+                "effective_spec_digest": usage.effective_spec_digest,
+            },
+        }
     event_table = cast(Any, AgentEvent).__table__
     statement = (
         pg_insert(event_table)
@@ -233,10 +265,14 @@ def retry_task(
         namespace_id=original.namespace_id,
         session_id=original.session_id,
         runtime_profile_id=original.runtime_profile_id,
+        runtime_instance_id=original.runtime_instance_id,
         target_node_id=original.target_node_id,
         task_kind=original.task_kind,
         prompt=original.prompt,
         snapshot=original.snapshot,
+        agent_release_id=original.agent_release_id,
+        runtime_agent_release_id=original.runtime_agent_release_id,
+        resolved_spec_digest=original.resolved_spec_digest,
         retry_of_task_id=original.id,
         created_by=original.created_by,
         idempotency_key=idempotency_key,

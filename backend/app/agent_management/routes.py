@@ -53,7 +53,12 @@ from app.api.deps import (
     require_namespace_admin,
     require_namespace_runtime_user,
 )
-from app.models import LlmProviderConfig, LlmProviderModel, NamespaceRole
+from app.models import (
+    LlmModelDefinition,
+    LlmProviderConfig,
+    LlmProviderModel,
+    NamespaceRole,
+)
 
 router = APIRouter(tags=["agent-management"])
 
@@ -97,6 +102,8 @@ def _draft_public(draft: AgentDraft) -> AgentDraftPublic:
         harness_profile_id=draft.harness_profile_id,
         provider_config_id=draft.provider_config_id,
         model_id=draft.model_id,
+        preferred_model_definition_id=draft.preferred_model_definition_id,
+        execution_policy=draft.execution_policy,
         system_prompt=draft.system_prompt,
         config=draft.config,
         validated_revision=draft.validated_revision,
@@ -140,6 +147,7 @@ def _agent_list_item(
         validation_status=draft_validation_status(draft),
         harness_type=harness_type,
         model_id=draft.model_id,
+        preferred_model_definition_id=draft.preferred_model_definition_id,
     )
 
 
@@ -197,6 +205,7 @@ def create_agent_endpoint(
     current_user: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_admin),
 ) -> AgentPublic:
+    raise HTTPException(410, "Use /agents/complete for v0.9 Agent creation")
     try:
         agent = create_agent(
             session,
@@ -220,26 +229,21 @@ def create_agent_complete(
     current_user: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_admin),
 ) -> dict[str, Any]:
-    config_errors = validate_config(body.config, is_profile=False)
-    if config_errors:
-        raise HTTPException(
-            422, {"errors": [item.model_dump() for item in config_errors]}
+    profile: HarnessProfile | None = None
+    provider: LlmProviderConfig | None = None
+    model: LlmProviderModel | None = None
+    if body.preferred_model_definition_id is not None:
+        definition = session.get(
+            LlmModelDefinition, body.preferred_model_definition_id
         )
-    profile = session.get(HarnessProfile, body.harness_profile_id)
-    if profile is None or profile.namespace_id != namespace_id or profile.archived:
-        raise HTTPException(422, "Active Harness profile is required")
-    provider = session.get(LlmProviderConfig, body.provider_config_id)
-    if provider is None or provider.namespace_id != namespace_id or not provider.enabled:
-        raise HTTPException(422, "Enabled provider config is required")
-    model = session.exec(
-        select(LlmProviderModel).where(
-            LlmProviderModel.provider_config_id == provider.id,
-            LlmProviderModel.model_id == body.model_id,
-            LlmProviderModel.is_enabled.is_(True),
-        )
-    ).first()
-    if model is None:
-        raise HTTPException(422, "Enabled model is required")
+        if (
+            definition is None
+            or definition.namespace_id != namespace_id
+            or not definition.enabled
+        ):
+            raise HTTPException(422, "Enabled model definition is required")
+        if body.config:
+            raise HTTPException(422, "v0.9 Agent does not accept Harness config")
     try:
         agent = create_agent(
             session,
@@ -250,9 +254,11 @@ def create_agent_complete(
             user_id=current_user.id,
         )
         draft = _get_draft(session, agent)
-        draft.harness_profile_id = profile.id
-        draft.provider_config_id = provider.id
-        draft.model_id = model.model_id
+        draft.harness_profile_id = profile.id if profile else None
+        draft.provider_config_id = provider.id if provider else None
+        draft.model_id = model.model_id if model else None
+        draft.preferred_model_definition_id = body.preferred_model_definition_id
+        draft.execution_policy = body.execution_policy
         draft.system_prompt = body.system_prompt
         draft.config = body.config
         session.add(draft)
@@ -374,6 +380,7 @@ def save_draft_endpoint(
     namespace_id: uuid.UUID = Depends(require_namespace_admin),
 ) -> AgentDraftPublic:
     agent = _get_agent(session, agent_id, namespace_id)
+    current_draft = _get_draft(session, agent)
     _require_admin(session, current_user, namespace_id)
     if agent.status == AgentStatus.ARCHIVED:
         raise HTTPException(409, "Archived agent cannot be edited")
@@ -383,6 +390,13 @@ def save_draft_endpoint(
         if diags:
             raise HTTPException(422, {"errors": [d.model_dump() for d in diags]})
     provided = body.model_fields_set
+    if any(
+        key in provided and getattr(body, key) is not None
+        for key in ("harness_profile_id", "provider_config_id", "model_id")
+    ):
+        raise HTTPException(410, "Legacy Harness/model fields are read-only in v0.9")
+    if body.config:
+        raise HTTPException(422, "v0.9 Agent does not accept Harness config")
     if "harness_profile_id" in provided and body.harness_profile_id is not None:
         profile = session.get(HarnessProfile, body.harness_profile_id)
         if profile is None or profile.namespace_id != namespace_id:
@@ -397,26 +411,75 @@ def save_draft_endpoint(
             raise HTTPException(
                 422, "Provider config must belong to the current namespace"
             )
+    if (
+        "preferred_model_definition_id" in provided
+        and body.preferred_model_definition_id is not None
+    ):
+        definition = session.get(
+            LlmModelDefinition, body.preferred_model_definition_id
+        )
+        if (
+            definition is None
+            or definition.namespace_id != namespace_id
+            or not definition.enabled
+        ):
+            raise HTTPException(
+                422, "Model definition must be enabled in the current namespace"
+            )
+        if any(
+            key in provided and getattr(body, key) is not None
+            for key in ("harness_profile_id", "provider_config_id", "model_id")
+        ):
+            raise HTTPException(
+                422, "v0.9 Agent fields cannot be mixed with legacy Harness fields"
+            )
     # Use model_fields_set to distinguish "field omitted" (_UNSET -> unchanged)
     # from "field explicitly null" (None -> clear the field). The frontend sends
     # the full intended state on every save, sending null to clear optional
     # fields like harness_profile_id.
     try:
+        v09_draft = (
+            body.preferred_model_definition_id
+            if "preferred_model_definition_id" in provided
+            else current_draft.preferred_model_definition_id
+        ) is not None
         draft = save_draft(
             session,
             agent,
             expected_revision=body.expected_revision,
             harness_profile_id=(
-                body.harness_profile_id if "harness_profile_id" in provided else _UNSET
+                None
+                if v09_draft
+                else body.harness_profile_id
+                if "harness_profile_id" in provided
+                else _UNSET
             ),
             provider_config_id=(
-                body.provider_config_id if "provider_config_id" in provided else _UNSET
+                None
+                if v09_draft
+                else body.provider_config_id
+                if "provider_config_id" in provided
+                else _UNSET
             ),
-            model_id=body.model_id if "model_id" in provided else _UNSET,
+            model_id=(
+                None
+                if v09_draft
+                else body.model_id
+                if "model_id" in provided
+                else _UNSET
+            ),
+            preferred_model_definition_id=(
+                body.preferred_model_definition_id
+                if "preferred_model_definition_id" in provided
+                else _UNSET
+            ),
+            execution_policy=(
+                body.execution_policy if "execution_policy" in provided else _UNSET
+            ),
             system_prompt=(
                 body.system_prompt if "system_prompt" in provided else _UNSET
             ),
-            config=body.config if "config" in provided else _UNSET,
+            config={} if v09_draft else body.config if "config" in provided else _UNSET,
         )
         session.commit()
         session.refresh(draft)
@@ -473,6 +536,7 @@ def create_profile(
     current_user: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_admin),
 ) -> HarnessProfilePublic:
+    raise HTTPException(410, "Harness Profiles are read-only history in v0.9")
     _require_admin(session, current_user, namespace_id)
     # Schema-layer security validation before persisting.
     errors: list[Diagnostic] = []
@@ -541,6 +605,7 @@ def update_profile(
     current_user: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_admin),
 ) -> HarnessProfilePublic:
+    raise HTTPException(410, "Harness Profiles are read-only history in v0.9")
     profile = session.get(HarnessProfile, profile_id)
     if profile is None or profile.namespace_id != namespace_id:
         raise HTTPException(404, "Harness profile not found")
@@ -590,6 +655,7 @@ def delete_profile(
     current_user: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_admin),
 ) -> None:
+    raise HTTPException(410, "Harness Profiles are read-only history in v0.9")
     profile = session.get(HarnessProfile, profile_id)
     if profile is None or profile.namespace_id != namespace_id:
         raise HTTPException(404, "Harness profile not found")

@@ -10,7 +10,9 @@
 
 ## 任务执行
 
-任务创建时冻结模型路由、模型、工具、目录 allowlist、权限模式、超时和执行器版本。同一 session 同时最多一个在途任务。控制面先按 connection generation 建立短期 reservation，再向节点发送；节点先把 `(task_id, revision)` 写入 SQLite 才确认调度。事件在任务行锁内原子写入并推进状态，相同序列/载荷幂等，不同载荷形成可诊断协议冲突。平台与节点超时都先 interrupt，grace 后取消并写入 `task_timeout`。租约过期只标记 interrupted，必须显式 retry。
+任务创建时选择 Runtime Instance 和具体 Runtime Model Binding，冻结模型路由、模型、工具、目录 allowlist、权限模式、超时、配置摘要、能力指纹和执行器版本。同一 session 同时最多一个在途任务。控制面先持久化 Task 与模型准备记录，再按 connection generation 建立短期 reservation；Runtime 应在首次模型调用前复核本地实际配置和路由并回报证据。当前 Node 实现只回显服务端快照，尚未达到该流程的可信证明要求。
+
+事件在任务行锁内原子写入并推进状态，相同序列/载荷幂等，不同载荷形成可诊断协议冲突。平台与节点超时都先 interrupt，grace 后取消并写入 `task_timeout`。租约过期只标记 interrupted，必须显式 retry。
 
 ## 内容分发
 

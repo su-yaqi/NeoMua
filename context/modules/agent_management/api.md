@@ -2,7 +2,7 @@
 
 所有空间接口要求 `X-Namespace-Id`。Admin 可 mutation，Developer 可读取运行时所需的脱敏状态，User 无权访问。创建/发布类 mutation 使用 CAS revision 或 `Idempotency-Key`。
 
-- Agent/Harness：管理身份与草稿；Skill 按身份绑定，Plugin/MCP 按精确版本或 Revision 绑定；正式校验并生成签名 Release。
+- Agent：管理身份、CAS 草稿、稳定模型偏好和引擎中立执行策略；Skill 按身份绑定，Plugin/MCP 按精确版本或 Revision 绑定；正式校验并生成签名 Release。Harness 写接口在 v0.9 返回 410，历史数据只读。
 - Skill/Tool：文件草稿工作台、ZIP 导入、安全扫描、不可变签名 Version、显式 current version、平台风险基线与只可收紧策略。
 - MCP：不可变 Revision、明确 Runtime target、平台密文/节点 `secret_ref`、校验历史、Tool 快照和 Runtime 重启。
 - Plugin：四类声明式 contribution、依赖图校验、精确 dependency lock 与签名 Version。
@@ -30,3 +30,5 @@ v0.8 Skill 正式接口：
 - `PUT /agents/{id}/draft/skills` 只接受 Skill identity 与 enabled；Plugin 草稿 Skill contribution 同样不接受版本锁定。
 
 内部 claim/result API 只接受 `X-Runtime-Token`；节点 MCP 校验和 deployment 结果通过设备鉴权 WSS 回传。任意响应、manifest 和任务 snapshot 均不得包含 secret value。
+
+v0.9 的 Agent Release 不固定 Runtime、engine 或供应商路由；Activation 目标必须是 Runtime Instance。Precheck 应同时验证在线状态、applied 配置、Adapter、能力/安全上限、Skill、MCP 和模型目录。当前开发快照缺少独立 compatibility API，且 precheck 对在线/过期状态和部分安全策略的验证不完整，发布前仍需整改。

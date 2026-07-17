@@ -5,14 +5,13 @@ import logging
 import os
 import random
 import tempfile
-import time
 from pathlib import Path
 from typing import Any
 
 import httpx
 from workflow_runtime.executor import execute_runtime_job
 
-from runtime_worker.agent_shell import AgentShell, RunCommand
+from runtime_worker.agent_shell import EngineShell, RunCommand
 from runtime_worker.mcp_manager import McpRuntimeManager
 from runtime_worker.release_store import AgentReleaseStore, canonical_bytes
 from runtime_worker.skill_store import SkillCacheMiss, SkillStore
@@ -44,7 +43,6 @@ class RuntimeWorker:
         max_backoff: float = 60,
         interrupt_grace: float = 10,
         harness_capabilities: dict[str, Any] | None = None,
-        capability_report_interval: float = 60,
         release_store: AgentReleaseStore | None = None,
         skill_store: SkillStore | None = None,
         mcp_manager: McpRuntimeManager | None = None,
@@ -52,13 +50,11 @@ class RuntimeWorker:
         self.client = client
         self.headers = {"X-Runtime-Token": internal_token}
         self.worker_id = worker_id
-        self.shell = shell or AgentShell()
+        self.shell = shell or EngineShell()
         self.lease_interval = lease_interval
         self.max_backoff = max_backoff
         self.interrupt_grace = interrupt_grace
         self.harness_capabilities = harness_capabilities
-        self.capability_report_interval = capability_report_interval
-        self._last_capability_report = 0.0
         self.release_store = release_store
         self.skill_store = skill_store
         self.mcp_manager = mcp_manager
@@ -98,6 +94,148 @@ class RuntimeWorker:
             f"/api/v1/internal/runtime/mcp-validations/{command['attempt_id']}/result",
             headers=self.headers,
             json=body,
+        )
+        self._classify_response(reported)
+        return True
+
+    async def apply_configuration_once(self) -> bool:
+        response = await self.client.post(
+            "/api/v1/internal/runtime/configurations/claim",
+            headers=self.headers,
+            json={"worker_id": self.worker_id},
+        )
+        if response.status_code == 204:
+            return False
+        self._classify_response(response)
+        payload = response.json()
+        engine_type = str(payload["engine_type"])
+        engine = (
+            self.harness_capabilities.get(engine_type)
+            if self.harness_capabilities
+            else None
+        )
+        body: dict[str, Any]
+        try:
+            if not isinstance(engine, dict):
+                raise ValueError(f"Runtime engine is not installed: {engine_type}")
+            executable_name = Path(str(payload["executable"])).name
+            allowed_names = {
+                "claude_code": {"claude", "claude-code"},
+                "codex": {"codex"},
+            }.get(engine_type, set())
+            if executable_name not in allowed_names:
+                raise ValueError("configured executable does not match Runtime engine")
+            if payload.get("arguments"):
+                raise ValueError(
+                    "adapter_contract_unsupported: configured base arguments"
+                )
+            capabilities = {
+                "tools": list(engine.get("builtin_tools", [])),
+                "permission_modes": list(engine.get("permission_modes", [])),
+                "supports_tool_filters": bool(
+                    engine.get("supports_tool_filters", False)
+                ),
+                "supports_per_tool_approval": bool(
+                    engine.get("supports_per_tool_approval", False)
+                ),
+                "supports_mcp_injection": bool(
+                    engine.get("supports_mcp_injection", False)
+                ),
+            }
+            body = {
+                "status": "applied",
+                "engine_version": engine.get("cli_version"),
+                "adapter_version": engine.get("adapter_version")
+                or engine.get("harness_version"),
+                "capabilities": capabilities,
+                "discovered_models": [],
+            }
+        except (KeyError, TypeError, ValueError) as exc:
+            body = {
+                "status": "failed",
+                "engine_version": engine.get("cli_version")
+                if isinstance(engine, dict)
+                else None,
+                "adapter_version": (
+                    engine.get("adapter_version")
+                    or engine.get("harness_version")
+                    or "unknown"
+                )
+                if isinstance(engine, dict)
+                else "unknown",
+                "error": {
+                    "code": "runtime_configuration_apply_failed",
+                    "message": str(exc),
+                },
+            }
+        reported = await self.client.post(
+            "/api/v1/internal/runtime/configurations/result",
+            headers=self.headers,
+            json={
+                "worker_id": self.worker_id,
+                "runtime_instance_id": payload["runtime_instance_id"],
+                "configuration_revision_id": payload[
+                    "configuration_revision_id"
+                ],
+                "configuration_digest": payload["configuration_digest"],
+                **body,
+            },
+        )
+        self._classify_response(reported)
+        return True
+
+    async def validate_native_model_once(self) -> bool:
+        response = await self.client.post(
+            "/api/v1/internal/runtime/model-validations/claim",
+            headers=self.headers,
+            json={"worker_id": self.worker_id},
+        )
+        if response.status_code == 204:
+            return False
+        self._classify_response(response)
+        payload = response.json()
+        sequence = 0
+        terminal = False
+        error: str | None = None
+        try:
+            command = RunCommand(
+                engine_type=str(payload["engine_type"]),
+                prompt="Reply with OK.",
+                model=str(payload["engine_model_id"]),
+                permission_mode="plan",
+                timeout_seconds=60,
+            )
+            async for event in self.shell.run_session(command):
+                sequence += 1
+                if event.get("event_type") == "error":
+                    error = str(event.get("payload", {}).get("message", "failed"))
+                if event.get("event_type") == "result":
+                    terminal = True
+            if error or not terminal:
+                raise ValueError(error or "Runtime engine returned no terminal result")
+            body: dict[str, Any] = {
+                "status": "succeeded",
+                "evidence": {"event_count": sequence, "terminal_result": True},
+            }
+        except Exception as exc:
+            body = {
+                "status": "failed",
+                "error": {
+                    "code": "runtime_native_model_validation_failed",
+                    "message": str(exc),
+                },
+            }
+        reported = await self.client.post(
+            "/api/v1/internal/runtime/model-validations/result",
+            headers=self.headers,
+            json={
+                "worker_id": self.worker_id,
+                "runtime_model_binding_id": payload["runtime_model_binding_id"],
+                "attempt_no": payload["attempt_no"],
+                "engine_model_id": payload["engine_model_id"],
+                "route_key": payload["route_key"],
+                **body,
+            },
         )
         self._classify_response(reported)
         return True
@@ -224,23 +362,6 @@ class RuntimeWorker:
             )
             self._classify_response(committed)
         return True
-
-    async def report_capabilities(self) -> None:
-        if self.harness_capabilities is None:
-            return
-        try:
-            response = await self.client.post(
-                "/api/v1/internal/runtime/capabilities",
-                headers=self.headers,
-                json={
-                    "worker_id": self.worker_id,
-                    "harness_capabilities": self.harness_capabilities,
-                },
-            )
-        except httpx.TransportError as exc:
-            raise TransientWorkerError("capability report failed") from exc
-        self._classify_response(response)
-        self._last_capability_report = time.monotonic()
 
     async def run_runtime_job_once(self) -> bool:
         try:
@@ -416,6 +537,47 @@ class RuntimeWorker:
                 return result
             await asyncio.sleep(2)
 
+    async def _prepare_task_model(
+        self,
+        task_id: str,
+        revision: int,
+        preparation: dict[str, Any],
+    ) -> dict[str, str]:
+        evidence = dict(preparation)
+        engine_type = str(evidence["engine_type"])
+        if self.harness_capabilities is not None:
+            detected = self.harness_capabilities.get(engine_type)
+            if not isinstance(detected, dict):
+                raise PermanentWorkerError(
+                    f"Runtime engine is not installed: {engine_type}"
+                )
+            actual_engine_version = detected.get("cli_version")
+            expected_engine_version = evidence.get("engine_version")
+            if (
+                expected_engine_version is not None
+                and actual_engine_version != expected_engine_version
+            ):
+                evidence["engine_version"] = actual_engine_version
+            actual_adapter_version = detected.get("adapter_version") or detected.get(
+                "harness_version"
+            )
+            if actual_adapter_version is not None:
+                evidence["adapter_version"] = actual_adapter_version
+        response = await self.client.post(
+            f"/api/v1/internal/runtime/tasks/{task_id}/model-prepared",
+            headers=self.headers,
+            json={"worker_id": self.worker_id, "revision": revision, **evidence},
+        )
+        self._classify_response(response, task_scoped=True)
+        payload = response.json()
+        environment = payload.get("environment", {})
+        if not isinstance(environment, dict) or not all(
+            isinstance(key, str) and isinstance(value, str)
+            for key, value in environment.items()
+        ):
+            raise TransientWorkerError("model preparation response is invalid")
+        return environment
+
     async def run_once(self) -> bool:
         try:
             response = await self.client.post(
@@ -433,6 +595,13 @@ class RuntimeWorker:
             command = RunCommand(**payload["command"])
             task_id = str(payload["task_id"])
             revision = int(payload["revision"])
+            if payload.get("requires_model_preparation"):
+                preparation = payload.get("model_preparation")
+                if not isinstance(preparation, dict):
+                    raise ValueError("model_preparation is missing")
+                command.env.update(
+                    await self._prepare_task_model(task_id, revision, preparation)
+                )
             command.task_revision = revision
             command.approval_callback = self._request_tool_approval
             command.delegation_callback = self._request_agent_delegation
@@ -452,13 +621,20 @@ class RuntimeWorker:
                     release_binding["resolved_spec_digest"],
                 )
                 command.add_dirs = [str(release_path)]
-                if release_binding.get("resolved_spec_schema_version") == "1.1":
+                if release_binding.get("resolved_spec_schema_version") in {
+                    "1.1",
+                    "2.0",
+                }:
                     if self.skill_store is None:
                         raise TransientWorkerError("Skill store is unavailable")
                     try:
+                        runtime_target_key = str(
+                            release_binding.get("runtime_instance_id")
+                            or release_binding["runtime_profile_id"]
+                        )
                         skill_path, evidence = self.skill_store.bind_task(
                             task_id,
-                            str(release_binding["runtime_profile_id"]),
+                            runtime_target_key,
                             list(release_binding.get("skills", [])),
                         )
                     except ValueError as exc:
@@ -473,9 +649,19 @@ class RuntimeWorker:
                             f"/api/v1/internal/runtime/skill-sync/tasks/{task_id}/preparation-failed",
                             headers=self.headers,
                             json={
-                                "runtime_profile_id": release_binding[
-                                    "runtime_profile_id"
-                                ],
+                                **(
+                                    {
+                                        "runtime_instance_id": release_binding[
+                                            "runtime_instance_id"
+                                        ]
+                                    }
+                                    if release_binding.get("runtime_instance_id")
+                                    else {
+                                        "runtime_profile_id": release_binding[
+                                            "runtime_profile_id"
+                                        ]
+                                    }
+                                ),
                                 "revision": revision,
                                 "code": code,
                                 "message": message,
@@ -487,7 +673,19 @@ class RuntimeWorker:
                         f"/api/v1/internal/runtime/skill-sync/tasks/{task_id}/usage",
                         headers=self.headers,
                         json={
-                            "runtime_profile_id": release_binding["runtime_profile_id"],
+                            **(
+                                {
+                                    "runtime_instance_id": release_binding[
+                                        "runtime_instance_id"
+                                    ]
+                                }
+                                if release_binding.get("runtime_instance_id")
+                                else {
+                                    "runtime_profile_id": release_binding[
+                                        "runtime_profile_id"
+                                    ]
+                                }
+                            ),
                             "skills": evidence,
                         },
                     )
@@ -497,9 +695,19 @@ class RuntimeWorker:
                             f"/api/v1/internal/runtime/skill-sync/tasks/{task_id}/preparation-failed",
                             headers=self.headers,
                             json={
-                                "runtime_profile_id": release_binding[
-                                    "runtime_profile_id"
-                                ],
+                                **(
+                                    {
+                                        "runtime_instance_id": release_binding[
+                                            "runtime_instance_id"
+                                        ]
+                                    }
+                                    if release_binding.get("runtime_instance_id")
+                                    else {
+                                        "runtime_profile_id": release_binding[
+                                            "runtime_profile_id"
+                                        ]
+                                    }
+                                ),
                                 "revision": revision,
                                 "code": "skill_usage_evidence_rejected",
                                 "message": "Control plane rejected Skill usage evidence",
@@ -672,13 +880,9 @@ class RuntimeWorker:
         attempt = 0
         while True:
             try:
-                if (
-                    self.harness_capabilities is not None
-                    and time.monotonic() - self._last_capability_report
-                    >= self.capability_report_interval
-                ):
-                    await self.report_capabilities()
                 validated_mcp = await self.validate_mcp_once()
+                applied_configuration = await self.apply_configuration_once()
+                validated_model = await self.validate_native_model_once()
                 synced_skill = await self.sync_skill_once()
                 applied = await self.apply_release_once()
                 ran_runtime_job = await self.run_runtime_job_once()
@@ -688,6 +892,8 @@ class RuntimeWorker:
                     not worked
                     and not applied
                     and not validated_mcp
+                    and not applied_configuration
+                    and not validated_model
                     and not synced_skill
                     and not ran_runtime_job
                 ):

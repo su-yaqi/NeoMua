@@ -10,7 +10,16 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, cast
 
-from sqlalchemy import JSON, Column, ForeignKey, Text, UniqueConstraint, Uuid
+from sqlalchemy import (
+    JSON,
+    Column,
+    ForeignKey,
+    Index,
+    Text,
+    UniqueConstraint,
+    Uuid,
+    text,
+)
 from sqlalchemy import DateTime as _DateTime
 from sqlalchemy import Enum as _SAEnum
 from sqlmodel import Field, SQLModel
@@ -148,13 +157,13 @@ class SkillVersion(SQLModel, table=True):
 
 class SkillDraft(SQLModel, table=True):
     __tablename__ = "skill_draft"
+    __table_args__ = (UniqueConstraint("skill_id", name="uq_skill_draft_skill_id"),)
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     skill_id: uuid.UUID = Field(
         foreign_key="skill_definition.id",
         nullable=False,
         ondelete="CASCADE",
-        unique=True,
         index=True,
     )
     revision: int = 1
@@ -428,6 +437,14 @@ class McpTargetBinding(SQLModel, table=True):
     __tablename__ = "mcp_target_binding"
     __table_args__ = (
         UniqueConstraint("revision_id", "runtime_profile_id", name="uq_mcp_target"),
+        Index(
+            "uq_mcp_target_v09",
+            "revision_id",
+            "runtime_instance_id",
+            unique=True,
+            postgresql_where=text("runtime_instance_id IS NOT NULL"),
+            sqlite_where=text("runtime_instance_id IS NOT NULL"),
+        ),
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
@@ -437,8 +454,14 @@ class McpTargetBinding(SQLModel, table=True):
         ondelete="CASCADE",
         index=True,
     )
-    runtime_profile_id: uuid.UUID = Field(
-        foreign_key="runtime_profile.id", nullable=False, ondelete="CASCADE", index=True
+    runtime_profile_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_profile.id", ondelete="CASCADE", index=True
+    )
+    runtime_instance_id: uuid.UUID | None = Field(
+        default=None,
+        foreign_key="runtime_instance.id",
+        ondelete="RESTRICT",
+        index=True,
     )
     secret_ref: str | None = Field(default=None, max_length=255)
     capability_fingerprint: str | None = Field(default=None, max_length=255)
@@ -715,6 +738,15 @@ class AgentRelease(SQLModel, table=True):
     )
     version: str = Field(max_length=64)
     draft_revision: int
+    preferred_model_definition_id: uuid.UUID | None = Field(
+        default=None,
+        foreign_key="llm_model_definition.id",
+        ondelete="RESTRICT",
+        index=True,
+    )
+    required_capabilities: dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(JSON, nullable=False)
+    )
     resolved_spec_schema_version: str = Field(max_length=32)
     resolved_spec: dict[str, Any] = Field(
         default_factory=dict, sa_column=Column(JSON, nullable=False)
@@ -788,6 +820,12 @@ class AgentActivation(SQLModel, table=True):
     release_id: uuid.UUID = Field(
         foreign_key="agent_release.id", nullable=False, ondelete="RESTRICT"
     )
+    runtime_instance_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_instance.id", ondelete="RESTRICT", index=True
+    )
+    precheck_id: uuid.UUID | None = Field(
+        default=None, foreign_key="agent_activation_precheck.id", ondelete="RESTRICT"
+    )
     idempotency_key: str = Field(max_length=255)
     status: ActivationStatus = Field(
         default=ActivationStatus.VALIDATING,
@@ -825,8 +863,11 @@ class AgentDeployment(SQLModel, table=True):
         ondelete="CASCADE",
         index=True,
     )
-    runtime_profile_id: uuid.UUID = Field(
-        foreign_key="runtime_profile.id", nullable=False, ondelete="CASCADE", index=True
+    runtime_profile_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_profile.id", ondelete="CASCADE", index=True
+    )
+    runtime_instance_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_instance.id", ondelete="RESTRICT", index=True
     )
     attempt: int = 1
     status: AgentDeploymentStatus = Field(
@@ -857,13 +898,24 @@ class RuntimeAgentRelease(SQLModel, table=True):
         UniqueConstraint(
             "runtime_profile_id", "agent_id", name="uq_runtime_agent_release"
         ),
+        Index(
+            "uq_runtime_agent_release_v09",
+            "runtime_instance_id",
+            "agent_id",
+            unique=True,
+            postgresql_where=text("runtime_instance_id IS NOT NULL"),
+            sqlite_where=text("runtime_instance_id IS NOT NULL"),
+        ),
     )
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     namespace_id: uuid.UUID = Field(
         foreign_key="namespace.id", nullable=False, ondelete="CASCADE", index=True
     )
-    runtime_profile_id: uuid.UUID = Field(
-        foreign_key="runtime_profile.id", nullable=False, ondelete="CASCADE", index=True
+    runtime_profile_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_profile.id", ondelete="CASCADE", index=True
+    )
+    runtime_instance_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_instance.id", ondelete="RESTRICT", index=True
     )
     agent_id: uuid.UUID = Field(
         foreign_key="agent_definition.id",
@@ -879,7 +931,86 @@ class RuntimeAgentRelease(SQLModel, table=True):
     )
     applied_digest: str = Field(max_length=64)
     materialization_digest: str = Field(max_length=64)
+    runtime_configuration_revision_id: uuid.UUID | None = Field(
+        default=None,
+        foreign_key="runtime_configuration_revision.id",
+        ondelete="RESTRICT",
+    )
+    runtime_capability_report_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_capability_report.id", ondelete="RESTRICT"
+    )
+    adapter_version: str | None = Field(default=None, max_length=64)
+    runtime_model_catalog_fingerprint: str | None = Field(default=None, max_length=64)
+    effective_spec_digest: str | None = Field(default=None, max_length=64)
     updated_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+
+
+class AgentReleaseRuntimeCompatibility(SQLModel, table=True):
+    __tablename__ = "agent_release_runtime_compatibility"
+    __table_args__ = (
+        UniqueConstraint(
+            "release_id",
+            "runtime_instance_id",
+            name="uq_agent_release_runtime_compatibility",
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    namespace_id: uuid.UUID = Field(
+        foreign_key="namespace.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    release_id: uuid.UUID = Field(
+        foreign_key="agent_release.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    runtime_instance_id: uuid.UUID = Field(
+        foreign_key="runtime_instance.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    runtime_capability_report_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_capability_report.id", ondelete="SET NULL"
+    )
+    model_catalog_fingerprint: str | None = Field(default=None, max_length=64)
+    deployable: bool = False
+    preference_status: str = Field(default="unavailable", max_length=32)
+    diagnostics: list[dict[str, Any]] = Field(
+        default_factory=list, sa_column=Column(JSON, nullable=False)
+    )
+    checked_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+
+
+class AgentActivationPrecheck(SQLModel, table=True):
+    __tablename__ = "agent_activation_precheck"
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    namespace_id: uuid.UUID = Field(
+        foreign_key="namespace.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    release_id: uuid.UUID = Field(
+        foreign_key="agent_release.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    runtime_instance_id: uuid.UUID = Field(
+        foreign_key="runtime_instance.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    runtime_configuration_revision_id: uuid.UUID | None = Field(
+        default=None,
+        foreign_key="runtime_configuration_revision.id",
+        ondelete="SET NULL",
+    )
+    runtime_capability_report_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_capability_report.id", ondelete="SET NULL"
+    )
+    model_catalog_fingerprint: str = Field(max_length=64)
+    preference_status: str = Field(max_length=32)
+    deployable: bool
+    checks: list[dict[str, Any]] = Field(
+        default_factory=list, sa_column=Column(JSON, nullable=False)
+    )
+    precheck_digest: str = Field(max_length=64, index=True)
+    expires_at: datetime = Field(sa_type=DateTime(timezone=True))
+    created_at: datetime = Field(
         default_factory=utcnow, sa_type=DateTime(timezone=True)
     )
 

@@ -158,8 +158,6 @@ export interface PlatformUserCreateBody {
   namespace_assignments?: UserNamespaceAssignment[]
 }
 
-export type RuntimeRouteMode = "platform_gateway" | "direct_anthropic"
-
 export interface HarnessCapability {
   cli_version: string
   sdk_version: string
@@ -169,19 +167,6 @@ export interface HarnessCapability {
 export interface HarnessCapabilities {
   claude_code?: HarnessCapability
   mcp_executables?: string[]
-}
-
-export interface PlatformRuntime {
-  id: string
-  namespace_id: string
-  route_mode: RuntimeRouteMode
-  model_id: string
-  provider_config_id: string | null
-  base_url: string | null
-  permission_mode: string
-  secret_masked: string | null
-  compatibility_verified: boolean
-  harness_capabilities: HarnessCapabilities
 }
 
 export interface RuntimeNode {
@@ -197,6 +182,68 @@ export interface RuntimeNode {
   last_seen_at: string | null
   revoked_at: string | null
   runtime_profile_id: string | null
+}
+
+export interface RuntimeInstanceSummary {
+  id: string
+  namespace_id: string
+  runtime_node_id: string | null
+  location_type: "platform" | "node"
+  name: string
+  installation_key: string
+  engine_type: "claude_code" | "codex"
+  engine_version: string | null
+  adapter_version: string
+  status:
+    | "discovered"
+    | "available"
+    | "unavailable"
+    | "incompatible"
+    | "disabled"
+  enabled: boolean
+  available_model_count: number
+  applied_configuration_revision_id: string | null
+  current_capability_report_id: string | null
+  last_seen_at: string | null
+}
+
+export interface ModelDefinition {
+  id: string
+  namespace_id: string
+  provider_family: string
+  model_key: string
+  display_name: string | null
+  capability_tags: string[]
+  enabled: boolean
+}
+
+export interface RuntimeModelBinding {
+  id: string
+  runtime_instance_id: string
+  model_definition_id: string
+  provider_config_id: string | null
+  provider_model_id: string | null
+  route_type: "provider_config" | "runtime_native" | "legacy_direct"
+  route_key: string
+  engine_model_id: string
+  status: "declared" | "available" | "unmapped" | "failed" | "disabled"
+  validation_fingerprint: string | null
+  last_validated_at: string | null
+  last_error: Record<string, unknown> | null
+}
+
+export interface RuntimeConfigurationRevision {
+  id: string
+  revision: number
+  executable: string
+  arguments: string[]
+  working_directory_policy: string
+  environment_allowlist: string[]
+  security_policy: Record<string, unknown>
+  resource_limits: Record<string, unknown>
+  configuration_digest: string
+  status: "desired" | "applying" | "applied" | "failed"
+  error: Record<string, unknown> | null
 }
 
 export interface RuntimeEvent {
@@ -417,37 +464,6 @@ export const tenantApi = {
     )
     return data
   },
-  readPlatformRuntime: async () => {
-    const { data } = await api.get<PlatformRuntime>("/api/v1/runtimes/platform")
-    return data
-  },
-  upsertPlatformRuntime: async (body: Record<string, unknown>) => {
-    const { data } = await api.put<PlatformRuntime>(
-      "/api/v1/runtimes/platform",
-      body,
-    )
-    return data
-  },
-  validatePlatformRuntime: async () => {
-    const { data } = await api.post<PlatformRuntime>(
-      "/api/v1/runtimes/platform/validate",
-    )
-    return data
-  },
-  createRuntimeSession: async (runtimeAgentReleaseId: string) => {
-    const { data } = await api.post<{ id: string }>(
-      "/api/v1/runtimes/platform/sessions",
-      { runtime_agent_release_id: runtimeAgentReleaseId },
-    )
-    return data
-  },
-  sendRuntimeMessage: async (sessionId: string, prompt: string) => {
-    const { data } = await api.post<{ id: string; status: string }>(
-      `/api/v1/runtimes/sessions/${sessionId}/messages`,
-      { prompt },
-    )
-    return data
-  },
   readRuntimeEvents: async (taskId: string, afterSequence = -1) => {
     const { data } = await api.get<RuntimeEvent[]>(
       `/api/v1/runtimes/tasks/${taskId}/events`,
@@ -507,16 +523,6 @@ export const tenantApi = {
       token: string
       expires_at: string
     }>("/api/v1/runtimes/nodes/enrollment-tokens")
-    return data
-  },
-  configureNodeRuntime: async (
-    nodeId: string,
-    body: Record<string, unknown>,
-  ) => {
-    const { data } = await api.put(
-      `/api/v1/runtimes/nodes/${nodeId}/runtime`,
-      body,
-    )
     return data
   },
   revokeNodeCredential: async (nodeId: string) => {
@@ -619,6 +625,98 @@ export const tenantApi = {
   },
 }
 
+export const runtimeInstancesApi = {
+  list: async () =>
+    (
+      await api.get<{ data: RuntimeInstanceSummary[]; count: number }>(
+        "/api/v1/runtimes",
+      )
+    ).data,
+  get: async (runtimeId: string) =>
+    (
+      await api.get<
+        RuntimeInstanceSummary & {
+          configurations: RuntimeConfigurationRevision[]
+          capability_reports: Array<Record<string, unknown>>
+        }
+      >(`/api/v1/runtimes/${runtimeId}`)
+    ).data,
+  listNode: async (nodeId: string) =>
+    (
+      await api.get<{ data: RuntimeInstanceSummary[]; count: number }>(
+        `/api/v1/runtime-nodes/${nodeId}/runtimes`,
+      )
+    ).data,
+  enableNode: async (nodeId: string, runtimeId: string) =>
+    (
+      await api.post<RuntimeInstanceSummary>(
+        `/api/v1/runtime-nodes/${nodeId}/runtimes/${runtimeId}/enable`,
+      )
+    ).data,
+  createPlatform: async (body: Record<string, unknown>) =>
+    (
+      await api.post<RuntimeInstanceSummary>(
+        "/api/v1/runtimes/platform",
+        body,
+        {
+          headers: { "Idempotency-Key": crypto.randomUUID() },
+        },
+      )
+    ).data,
+  saveConfiguration: async (runtimeId: string, body: Record<string, unknown>) =>
+    (await api.put(`/api/v1/runtimes/${runtimeId}/configuration`, body)).data,
+  applyConfiguration: async (runtimeId: string, revisionId: string) =>
+    (
+      await api.post(`/api/v1/runtimes/${runtimeId}/configuration/apply`, {
+        configuration_revision_id: revisionId,
+      })
+    ).data,
+  listBindings: async (runtimeId: string) =>
+    (
+      await api.get<{ data: RuntimeModelBinding[]; count: number }>(
+        `/api/v1/runtimes/${runtimeId}/model-bindings`,
+      )
+    ).data,
+  createBinding: async (runtimeId: string, body: Record<string, unknown>) =>
+    (
+      await api.post<RuntimeModelBinding>(
+        `/api/v1/runtimes/${runtimeId}/model-bindings`,
+        body,
+      )
+    ).data,
+  validateBinding: async (runtimeId: string, bindingId: string) =>
+    (
+      await api.post(
+        `/api/v1/runtimes/${runtimeId}/model-bindings/${bindingId}/validate`,
+        {},
+        { headers: { "Idempotency-Key": crypto.randomUUID() } },
+      )
+    ).data,
+  disableBinding: async (runtimeId: string, bindingId: string) =>
+    (
+      await api.post(
+        `/api/v1/runtimes/${runtimeId}/model-bindings/${bindingId}/disable`,
+      )
+    ).data,
+}
+
+export const modelDefinitionsApi = {
+  list: async () =>
+    (
+      await api.get<{ data: ModelDefinition[]; count: number }>(
+        "/api/v1/llm/model-definitions",
+      )
+    ).data,
+  create: async (body: {
+    provider_family: string
+    model_key: string
+    display_name?: string
+    capability_tags?: string[]
+  }) =>
+    (await api.post<ModelDefinition>("/api/v1/llm/model-definitions", body))
+      .data,
+}
+
 export interface AgentDefinition {
   id: string
   namespace_id: string
@@ -635,6 +733,7 @@ export interface AgentListItem extends AgentDefinition {
   validation_status: "unvalidated" | "validated" | "stale" | "error"
   harness_type: string | null
   model_id: string | null
+  preferred_model_definition_id: string | null
 }
 
 export interface AgentDraftPublic {
@@ -643,6 +742,8 @@ export interface AgentDraftPublic {
   harness_profile_id: string | null
   provider_config_id: string | null
   model_id: string | null
+  preferred_model_definition_id: string | null
+  execution_policy: Record<string, unknown>
   system_prompt: string
   config: Record<string, unknown>
   validated_revision: number | null
@@ -732,9 +833,8 @@ export const agentsApi = {
     slug: string
     name: string
     description?: string
-    harness_profile_id: string
-    provider_config_id: string
-    model_id: string
+    preferred_model_definition_id: string
+    execution_policy?: Record<string, unknown>
     system_prompt: string
     config: Record<string, unknown>
   }) => {
@@ -782,9 +882,8 @@ export const agentsApi = {
     agentId: string,
     body: {
       expected_revision: number
-      harness_profile_id?: string | null
-      provider_config_id?: string | null
-      model_id?: string | null
+      preferred_model_definition_id?: string | null
+      execution_policy?: Record<string, unknown>
       system_prompt?: string
       config?: Record<string, unknown>
     },
@@ -989,11 +1088,18 @@ const identityApi = (path: string) => ({
 
 export const skillsApi = {
   ...identityApi("/api/v1/skills"),
-  list: async (params?: { q?: string; archived?: boolean; draft_dirty?: boolean }) =>
+  list: async (params?: {
+    q?: string
+    archived?: boolean
+    draft_dirty?: boolean
+  }) =>
     (
-      await api.get<{ data: SkillIdentity[]; count: number }>("/api/v1/skills", {
-        params,
-      })
+      await api.get<{ data: SkillIdentity[]; count: number }>(
+        "/api/v1/skills",
+        {
+          params,
+        },
+      )
     ).data,
   get: async (skillId: string) =>
     (
@@ -1060,7 +1166,10 @@ export const skillsApi = {
     ).data,
   versionFiles: async (skillId: string, version: string) =>
     (
-      await api.get<{ data: Array<{ path: string; size: number; sha256: string }>; count: number }>(
+      await api.get<{
+        data: Array<{ path: string; size: number; sha256: string }>
+        count: number
+      }>(
         `/api/v1/skills/${skillId}/versions/${encodeURIComponent(version)}/files`,
       )
     ).data,
@@ -1194,7 +1303,7 @@ export const mcpServersApi = {
       await api.post<{
         server: ManagedIdentity
         revision: Record<string, unknown>
-        target: { id: string; runtime_profile_id: string; status: string }
+        target: { id: string; runtime_instance_id: string; status: string }
       }>("/api/v1/mcp-servers/complete", body)
     ).data,
   revisions: async (serverId: string) =>
@@ -1210,7 +1319,7 @@ export const mcpServersApi = {
       .data,
   createTarget: async (
     revisionId: string,
-    body: { runtime_profile_id: string; secret_ref?: string },
+    body: { runtime_instance_id: string; secret_ref?: string },
   ) =>
     (await api.post(`/api/v1/mcp-revisions/${revisionId}/targets`, body)).data,
   setTargetSecret: async (
@@ -1284,19 +1393,24 @@ export const releasesApi = {
     ).data,
   get: async (releaseId: string) =>
     (await api.get(`/api/v1/agent-releases/${releaseId}`)).data,
-  activate: async (releaseId: string, runtimeProfileIds: string[]) =>
+  activate: async (
+    releaseId: string,
+    body: {
+      runtime_instance_id: string
+      precheck_id: string
+      precheck_digest: string
+    },
+  ) =>
     (
-      await api.post(
-        `/api/v1/agent-releases/${releaseId}/activations`,
-        { runtime_profile_ids: runtimeProfileIds },
-        { headers: { "Idempotency-Key": crypto.randomUUID() } },
-      )
+      await api.post(`/api/v1/agent-releases/${releaseId}/activations`, body, {
+        headers: { "Idempotency-Key": crypto.randomUUID() },
+      })
     ).data,
-  precheckActivation: async (releaseId: string, runtimeProfileIds: string[]) =>
+  precheckActivation: async (releaseId: string, runtimeInstanceId: string) =>
     (
       await api.post(
         `/api/v1/agent-releases/${releaseId}/activations/precheck`,
-        { runtime_profile_ids: runtimeProfileIds },
+        { runtime_instance_id: runtimeInstanceId },
       )
     ).data,
   runtimeAgents: async () => (await api.get("/api/v1/runtime-agents")).data,
@@ -1338,6 +1452,7 @@ export interface ProjectSummary {
   description: string | null
   status: ProjectStatus
   default_runtime_id: string | null
+  default_runtime_instance_id: string | null
   member_ids: string[]
   created_at: string
   updated_at: string
@@ -1373,18 +1488,20 @@ export interface ProjectSpecLocation {
 
 export interface ConversationRuntime {
   id: string
+  runtime_instance_id: string
+  runtime_node_id: string | null
   runtime_type: "platform" | "node"
-  route_mode: RuntimeRouteMode
-  model_id: string
+  engine_type: "codex" | "claude_code"
+  name: string
   compatible: boolean
 }
 
 export interface ConversationModelCatalogItem {
-  provider_config_id: string
-  provider_name: string
-  provider_slug: string
-  model_id: string
-  display_name: string | null
+  runtime_model_binding_id: string
+  model_definition_id: string
+  engine_model_id: string
+  route_type: "provider_config" | "runtime_native" | "legacy_direct"
+  route_key: string | null
 }
 
 export interface ConversationAgentCatalogItem {
@@ -1395,6 +1512,8 @@ export interface ConversationAgentCatalogItem {
   release_id: string
   release_version: string
   resolved_spec_digest: string
+  preferred_model_definition_id: string
+  preference_binding_ids: string[]
   active: boolean
 }
 
@@ -1417,6 +1536,19 @@ export interface ConversationConfigurationRevision {
   model_id: string | null
   organizer_agent_id: string | null
   participant_ids: string[]
+  execution_bindings: Array<{
+    id: string
+    role_key: string
+    runtime_instance_id: string
+    runtime_agent_release_id: string | null
+    agent_release_id: string | null
+    model_selection_mode: "exact" | "agent_preference"
+    preferred_model_definition_id: string | null
+    runtime_model_binding_id: string
+    selection_source: string
+    effective_spec_digest: string
+  }>
+  runtime_model_catalog_fingerprint: string | null
   created_by: string | null
   created_at: string
 }
@@ -1427,7 +1559,8 @@ export interface ConversationSummary {
   mode: "chat" | "agent"
   visibility: "private" | "project"
   status: "active" | "archived"
-  runtime_id: string
+  runtime_id: string | null
+  runtime_instance_id: string | null
   provider_config_id: string | null
   model_id: string | null
   project_id: string | null
@@ -1504,12 +1637,19 @@ export interface WorkflowExecutionConfiguration {
   content_digest: string
   bindings: Array<{
     node_key: string
-    runtime_id: string
+    runtime_id: string | null
+    runtime_instance_id: string | null
+    runtime_agent_release_id: string | null
     agent_release_id: string | null
     agent_id: string | null
     agent_name: string | null
     release_version: string | null
     resolved_spec_digest: string | null
+    model_selection_mode: "exact" | "agent_preference" | null
+    preferred_model_definition_id: string | null
+    runtime_model_binding_id: string | null
+    selection_source: string | null
+    effective_spec_digest: string | null
   }>
   created_by: string | null
   created_at: string
@@ -1768,15 +1908,13 @@ export const workspaceApi = {
   listConversationModels: async (runtimeId: string) =>
     (
       await api.get<{ data: ConversationModelCatalogItem[]; count: number }>(
-        "/api/v1/conversation-catalog/models",
-        { params: { runtime_id: runtimeId } },
+        `/api/v1/conversation-catalog/runtimes/${runtimeId}/models`,
       )
     ).data,
   listConversationAgents: async (runtimeId: string) =>
     (
       await api.get<{ data: ConversationAgentCatalogItem[]; count: number }>(
-        "/api/v1/conversation-catalog/agents",
-        { params: { runtime_id: runtimeId } },
+        `/api/v1/conversation-catalog/runtimes/${runtimeId}/agents`,
       )
     ).data,
   listConversations: async () =>
@@ -1910,6 +2048,21 @@ export const workspaceApi = {
         execution_configuration: WorkflowExecutionConfiguration
       }>(
         `/api/v1/workflow-templates/${templateId}/versions/${versionId}/execution-configuration`,
+        body,
+      )
+    ).data,
+  precheckWorkflowExecutionConfiguration: async (
+    templateId: string,
+    versionId: string,
+    body: Record<string, unknown>,
+  ) =>
+    (
+      await api.post<{
+        passed: boolean
+        errors: Array<Record<string, unknown>>
+        resolved_bindings: Record<string, unknown>
+      }>(
+        `/api/v1/workflow-templates/${templateId}/versions/${versionId}/execution-configuration/precheck`,
         body,
       )
     ).data,

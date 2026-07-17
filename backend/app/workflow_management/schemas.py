@@ -1,8 +1,9 @@
 import uuid
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.runtime.models import ModelSelectionMode
 from app.workflow_management.models import ConfirmationDecision
 
 
@@ -27,8 +28,36 @@ class WorkflowPreflight(StrictBody):
 
 
 class WorkflowExecutionNodeBindingInput(StrictBody):
-    runtime_id: uuid.UUID
+    runtime_id: uuid.UUID | None = None
+    runtime_instance_id: uuid.UUID | None = None
     agent_release_id: uuid.UUID | None = None
+    runtime_agent_release_id: uuid.UUID | None = None
+    model_selection_mode: ModelSelectionMode | None = None
+    runtime_model_binding_id: uuid.UUID | None = None
+
+    @model_validator(mode="after")
+    def validate_target(self) -> "WorkflowExecutionNodeBindingInput":
+        legacy = self.runtime_id is not None
+        current = self.runtime_instance_id is not None
+        if legacy == current:
+            raise ValueError("submit exactly one Runtime target")
+        if (
+            self.model_selection_mode == ModelSelectionMode.EXACT
+            and self.runtime_model_binding_id is None
+        ):
+            raise ValueError("exact mode requires runtime_model_binding_id")
+        if (
+            self.model_selection_mode == ModelSelectionMode.AGENT_PREFERENCE
+            and self.runtime_model_binding_id is not None
+        ):
+            raise ValueError("agent_preference does not accept runtime_model_binding_id")
+        if legacy and (
+            self.runtime_agent_release_id is not None
+            or self.model_selection_mode is not None
+            or self.runtime_model_binding_id is not None
+        ):
+            raise ValueError("Legacy node cannot include v0.9 execution fields")
+        return self
 
 
 class WorkflowExecutionConfigurationUpdate(StrictBody):

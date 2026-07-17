@@ -19,12 +19,11 @@ from app.project_management.service import (
     normalize_spec_path,
 )
 from app.runtime.models import (
+    RuntimeConfigurationRevision,
     RuntimeJob,
     RuntimeJobStatus,
-    RuntimeProfile,
-    RuntimeRouteMode,
-    RuntimeType,
 )
+from tests.api.routes.test_agent_tasks import ready_runtime
 from tests.utils.user import authentication_token_from_email, create_random_user
 from tests.utils.utils import random_lower_string
 
@@ -305,23 +304,21 @@ def test_repository_validation_is_runtime_queued_and_proof_is_persisted(
     admin = create_random_user(db)
     namespace = _namespace(db, admin.id)
     remote_url = "https://example.test/team/runtime-verified.git"
-    runtime = RuntimeProfile(
-        namespace_id=namespace.id,
-        runtime_type=RuntimeType.PLATFORM,
-        route_mode=RuntimeRouteMode.PLATFORM_GATEWAY,
-        model_id="repository-probe-model",
-        config={
-            "compatibility_verified": True,
-            "allowed_working_roots": ["/workspaces"],
-            "repository_workspaces": {
-                remote_url: {
-                    "workspace_ref": "workspace://runtime-verified",
-                    "workspace_path": "/workspaces/runtime-verified",
-                }
-            },
-        },
+    runtime, _binding = ready_runtime(db, namespace.id)
+    configuration = db.get(
+        RuntimeConfigurationRevision, runtime.applied_configuration_revision_id
     )
-    db.add(runtime)
+    assert configuration is not None
+    configuration.resource_limits = {
+        "allowed_working_roots": ["/workspaces"],
+        "repository_workspaces": {
+            remote_url: {
+                "workspace_ref": "workspace://runtime-verified",
+                "workspace_path": "/workspaces/runtime-verified",
+            }
+        },
+    }
+    db.add(configuration)
     db.commit()
     headers = {
         **authentication_token_from_email(client=client, email=admin.email, db=db),
@@ -333,7 +330,7 @@ def test_repository_validation_is_runtime_queued_and_proof_is_persisted(
         json={
             "slug": "runtime-verified-project",
             "name": "Runtime Verified Project",
-            "default_runtime_id": str(runtime.id),
+            "default_runtime_instance_id": str(runtime.id),
         },
     ).json()
     repository = client.post(
@@ -344,7 +341,7 @@ def test_repository_validation_is_runtime_queued_and_proof_is_persisted(
     queued = client.post(
         f"{settings.API_V1_STR}/projects/{project['id']}/repositories/{repository['id']}/validate",
         headers=headers,
-        json={"runtime_id": str(runtime.id)},
+        json={"runtime_instance_id": str(runtime.id)},
     )
     assert queued.status_code == 202, queued.text
     assert queued.json()["status"] == "unvalidated"

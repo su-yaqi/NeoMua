@@ -6,6 +6,15 @@
 
 敏感字段规则：注册令牌只返回一次；设备私钥永不上传；模型和制品密钥不进入浏览器响应；下载 token 绑定 deployment/node/artifact/storage key 和过期时间。
 
+## Runtime Instance 与模型
+
+- `/runtime-instances` 和 `/runtime-instances/{id}` 读取一对多 Node/Instance 库存、desired/applied 配置、当前能力报告及模型目录。
+- `PUT /runtimes/{id}/configuration` 使用 expected revision 创建不可变配置；`POST .../configuration/apply` 触发平台 Worker 或 Node 应用。
+- `/llm/model-definitions` 保存稳定模型身份；`/runtimes/{id}/model-bindings` 保存具体 Runtime 上的 provider/runtime-native 路由，验证通过后才进入执行目录。
+- 新 Task 必须选择 exact binding 或把 Agent 偏好唯一解析到该 Runtime 的 Binding，并冻结配置、能力、模型目录和 effective spec 摘要。
+
+当前 v0.9 快照尚未完成可信本地证据和全部安全上限执行：Node `model_evidence` 仍回显任务快照，环境/网络/资源限制没有在执行器完整落地，离线与过期依赖也未统一从目录失效。以上接口不能据此宣称运行时已满足生产安全门禁。
+
 ## Skill 同步与使用
 
 - `GET /skills/{skill_id}/runtime-sync` 与 `GET /runtimes/{runtime_id}/skills` 向 admin/developer 返回 desired/applied、generation、订阅数、状态和脱敏错误。

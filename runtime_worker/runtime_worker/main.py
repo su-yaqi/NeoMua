@@ -5,7 +5,7 @@ from pathlib import Path
 
 import httpx
 
-from runtime_worker.capabilities import discover_harness_capabilities
+from runtime_worker.capabilities import discover_runtime_capabilities
 from runtime_worker.mcp_manager import McpRuntimeManager
 from runtime_worker.release_store import AgentReleaseStore
 from runtime_worker.skill_store import SkillStore
@@ -24,7 +24,7 @@ async def main() -> None:
         release_root = Path(
             os.environ.get("NEOMUA_AGENT_RELEASE_ROOT", "/var/lib/neomua/releases")
         )
-        capabilities = discover_harness_capabilities()
+        capabilities = discover_runtime_capabilities()
         workers = [
             RuntimeWorker(
                 client,

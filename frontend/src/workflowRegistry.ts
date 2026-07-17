@@ -46,11 +46,19 @@ const registry: Record<string, WorkflowFrontendRegistration> = {
     Create: ProjectDeliveryCreateV1_0_6,
     Task: ProjectDeliveryTaskV1_0_6,
   },
+  "workflow.project_delivery.v1_0_7": {
+    Create: ProjectDeliveryCreateV1_0_6,
+    Task: ProjectDeliveryTaskV1_0_6,
+  },
   "workflow.web_platform_development.v1_0_0": {
     Create: WebPlatformDevelopmentCreate,
     Task: WebPlatformDevelopmentTask,
   },
   "workflow.web_platform_development.v1_0_1": {
+    Create: WebPlatformDevelopmentCreateV1_0_1,
+    Task: WebPlatformDevelopmentTaskV1_0_1,
+  },
+  "workflow.web_platform_development.v1_0_2": {
     Create: WebPlatformDevelopmentCreateV1_0_1,
     Task: WebPlatformDevelopmentTaskV1_0_1,
   },

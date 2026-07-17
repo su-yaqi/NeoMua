@@ -87,30 +87,28 @@ async function mockAgentManagement(
 test.describe("Agent and Harness management roles", () => {
   test.use({ storageState: { cookies: [], origins: [] } })
 
-  test("admin can create a Harness Profile", async ({ page }) => {
+  test("Harness history is read-only in v0.9", async ({ page }) => {
     await mockAgentManagement(page, "admin")
     await page.goto("/system/harnesses")
-    await page.getByRole("button", { name: "创建 Profile" }).click()
-    await page
-      .getByRole("dialog")
-      .locator("input")
-      .first()
-      .fill("Playwright Profile")
-    const requestPromise = page.waitForRequest(
-      (request) =>
+    await expect(
+      page.getByRole("heading", { name: "Harness 历史配置" }),
+    ).toBeVisible()
+    await expect(
+      page.getByText("Harness 已归入 Runtime 引擎适配层"),
+    ).toBeVisible()
+    await expect(
+      page.getByRole("button", { name: /创建|修改|删除/ }),
+    ).toHaveCount(0)
+    const legacyWrites: string[] = []
+    page.on("request", (request) => {
+      if (
         request.url().endsWith("/api/v1/harness-profiles") &&
-        request.method() === "POST",
-    )
-    await page.getByRole("button", { name: "创建", exact: true }).click()
-    const request = await requestPromise
-    expect(request.postDataJSON()).toMatchObject({
-      name: "Playwright Profile",
-      config: {
-        permission_mode: "default",
-        working_directory_strategy: "inherit",
-      },
+        request.method() !== "GET"
+      )
+        legacyWrites.push(request.method())
     })
-    await expect(page.getByText("Profile 已创建")).toBeVisible()
+    await page.waitForTimeout(100)
+    expect(legacyWrites).toEqual([])
   })
 
   test("admin copies an Agent with an explicit new name and slug", async ({
@@ -218,25 +216,42 @@ test.describe("Agent and Harness management roles", () => {
         },
       }),
     )
-    await page.route("**/api/v1/runtimes/platform", (route) =>
+    await page.route("**/api/v1/runtimes", (route) =>
       route.fulfill({
         json: {
-          id: runtimeId,
-          harness_capabilities: { claude_code: { cli_version: "2.1.191" } },
+          data: [
+            {
+              id: runtimeId,
+              namespace_id: namespaceId,
+              runtime_node_id: null,
+              location_type: "platform",
+              name: "平台运行时",
+              installation_key: "platform-claude",
+              engine_type: "claude_code",
+              engine_version: "2.1.191",
+              adapter_version: "1.0.0",
+              status: "available",
+              enabled: true,
+              available_model_count: 1,
+            },
+          ],
+          count: 1,
         },
       }),
-    )
-    await page.route("**/api/v1/runtimes/nodes", (route) =>
-      route.fulfill({ json: { data: [], count: 0 } }),
     )
     await page.route(
       `**/api/v1/agent-releases/${releaseId}/activations/precheck`,
       (route) =>
         route.fulfill({
           json: {
+            id: "00000000-0000-0000-0000-000000000063",
             release_id: releaseId,
-            compatible: true,
-            targets: [{ runtime_profile_id: runtimeId, status: "pending" }],
+            runtime_instance_id: runtimeId,
+            deployable: true,
+            preference_status: "available",
+            precheck_digest: "c".repeat(64),
+            checks: [{ key: "runtime", status: "passed" }],
+            expires_at: "2030-01-01T00:00:00Z",
           },
         }),
     )
@@ -257,13 +272,17 @@ test.describe("Agent and Harness management roles", () => {
     await page.goto(`/system/agents/${sourceAgent.id}/releases/${releaseId}`)
     const activate = page.getByRole("button", { name: "创建激活批次" })
     await expect(activate).toBeDisabled()
-    await page.getByRole("checkbox", { name: /^平台运行时/ }).check()
+    await page
+      .getByRole("combobox")
+      .filter({ hasText: "选择一个 Runtime Instance" })
+      .click()
+    await page.getByRole("option", { name: /平台运行时/ }).click()
     const precheckRequest = page.waitForRequest((request) =>
       request.url().endsWith("/activations/precheck"),
     )
     await page.getByRole("button", { name: "运行目标预检" }).click()
     expect((await precheckRequest).postDataJSON()).toEqual({
-      runtime_profile_ids: [runtimeId],
+      runtime_instance_id: runtimeId,
     })
     await expect(activate).toBeEnabled()
     await activate.click()

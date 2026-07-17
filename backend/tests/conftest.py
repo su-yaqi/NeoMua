@@ -6,6 +6,7 @@ from sqlmodel import Session, SQLModel, delete, update
 
 from app.agent_management.capability_models import (
     AgentActivation,
+    AgentActivationPrecheck,
     AgentDeployment,
     AgentDraftMcp,
     AgentDraftPlugin,
@@ -13,6 +14,7 @@ from app.agent_management.capability_models import (
     AgentDraftToolPolicy,
     AgentRelease,
     AgentReleaseComponent,
+    AgentReleaseRuntimeCompatibility,
     CliSession,
     McpPlatformSecret,
     McpRuntimeEvent,
@@ -48,6 +50,7 @@ from app.conversation_management.models import (
     ConversationConfigurationRevision,
     ConversationContextSnapshot,
     ConversationEvent,
+    ConversationExecutionBinding,
     ConversationMessage,
 )
 from app.core.config import settings
@@ -67,6 +70,7 @@ from app.runtime.models import (
     AgentEvent,
     AgentSession,
     AgentTask,
+    AgentTaskModelUsage,
     AgentTaskSkillUsage,
     ArtifactDeployment,
     ArtifactRelease,
@@ -74,7 +78,12 @@ from app.runtime.models import (
     NodeEnrollmentToken,
     NodeHandshakeNonce,
     RuntimeArtifact,
+    RuntimeCapabilityReport,
+    RuntimeConfigurationRevision,
+    RuntimeInstance,
     RuntimeJob,
+    RuntimeModelBinding,
+    RuntimeModelValidationAttempt,
     RuntimeNode,
     RuntimeNodeArtifact,
     RuntimeProfile,
@@ -145,6 +154,7 @@ def isolate_runtime_data(db: Session) -> Generator[None, None, None]:
             )
         )
         db.execute(delete(ConversationContextSnapshot))
+        db.execute(delete(ConversationExecutionBinding))
         db.execute(delete(ConversationConfigurationRevision))
         db.execute(delete(ConversationAgent))
         db.execute(delete(Conversation))
@@ -162,6 +172,8 @@ def isolate_runtime_data(db: Session) -> Generator[None, None, None]:
         db.execute(delete(AgentDeployment))
         db.execute(delete(RuntimeAgentRelease))
         db.execute(delete(AgentActivation))
+        db.execute(delete(AgentActivationPrecheck))
+        db.execute(delete(AgentReleaseRuntimeCompatibility))
         db.execute(delete(AgentDraftPlugin))
         db.execute(delete(AgentDraftMcp))
         db.execute(delete(AgentDraftSkill))
@@ -195,6 +207,7 @@ def isolate_runtime_data(db: Session) -> Generator[None, None, None]:
         db.execute(delete(AgentDefinition))
         db.execute(delete(HarnessProfile))
         db.execute(delete(AgentEvent))
+        db.execute(delete(AgentTaskModelUsage))
         db.execute(delete(AgentTask))
         db.execute(delete(AgentSession))
         db.execute(delete(RefreshSession))
@@ -202,6 +215,18 @@ def isolate_runtime_data(db: Session) -> Generator[None, None, None]:
         db.execute(delete(RuntimeNodeArtifact))
         db.execute(delete(ArtifactRelease))
         db.execute(delete(RuntimeArtifact))
+        db.execute(delete(RuntimeModelValidationAttempt))
+        db.execute(delete(RuntimeModelBinding))
+        db.execute(
+            update(RuntimeInstance).values(
+                desired_configuration_revision_id=None,
+                applied_configuration_revision_id=None,
+                current_capability_report_id=None,
+            )
+        )
+        db.execute(delete(RuntimeCapabilityReport))
+        db.execute(delete(RuntimeConfigurationRevision))
+        db.execute(delete(RuntimeInstance))
         db.execute(delete(NodeCredential))
         db.execute(delete(NodeEnrollmentToken))
         db.execute(delete(NodeHandshakeNonce))

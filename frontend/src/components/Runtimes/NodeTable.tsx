@@ -5,9 +5,7 @@ import { tenantApi } from "@/api/tenantApi"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import DispatchTaskSheet from "./DispatchTaskSheet"
 import EnrollNodeDialog from "./EnrollNodeDialog"
-import NodeRuntimeConfigDialog from "./NodeRuntimeConfigDialog"
 
 export default function NodeTable({ canManage }: { canManage: boolean }) {
   const queryClient = useQueryClient()
@@ -66,38 +64,27 @@ export default function NodeTable({ canManage }: { canManage: boolean }) {
                     <td>
                       <div>Node {node.agent_version}</div>
                       <div className="text-xs text-muted-foreground">
-                        CLI{" "}
-                        {node.harness_capabilities.claude_code?.cli_version ??
-                          "unknown"}
-                        {" · "}SDK{" "}
-                        {node.harness_capabilities.claude_code?.sdk_version ??
-                          "unknown"}
+                        Runtime 实例由节点发现协议独立上报
                       </div>
                     </td>
                     <td>
                       <div className="flex justify-end gap-2">
-                        <DispatchTaskSheet node={node} />
                         {canManage ? (
-                          <>
-                            <NodeRuntimeConfigDialog node={node} />
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              disabled={
-                                revoke.isPending || Boolean(node.revoked_at)
-                              }
-                              onClick={() => {
-                                if (
-                                  window.confirm(
-                                    `确认吊销 ${node.name} 的凭证？`,
-                                  )
-                                )
-                                  revoke.mutate(node.id)
-                              }}
-                            >
-                              吊销
-                            </Button>
-                          </>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            disabled={
+                              revoke.isPending || Boolean(node.revoked_at)
+                            }
+                            onClick={() => {
+                              if (
+                                window.confirm(`确认吊销 ${node.name} 的凭证？`)
+                              )
+                                revoke.mutate(node.id)
+                            }}
+                          >
+                            吊销
+                          </Button>
                         ) : null}
                       </div>
                     </td>

@@ -73,7 +73,11 @@ function Page() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <p className="font-medium">
-                      目标 {String(deployment.runtime_profile_id)}
+                      目标 Runtime{" "}
+                      {String(
+                        deployment.runtime_instance_id ||
+                          deployment.runtime_profile_id,
+                      )}
                     </p>
                     <p className="text-sm">
                       attempt {String(deployment.attempt)} · {status}

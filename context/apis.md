@@ -120,15 +120,19 @@
 
 | Method | Path | 权限与用途 |
 |---|---|---|
-| GET/PUT | `/runtimes/platform` | admin 配置；admin/developer 读取空间平台运行时 |
-| POST | `/runtimes/platform/sessions` | admin/developer 创建多轮测试会话 |
-| POST | `/runtimes/sessions/{id}/messages` | admin/developer 提交会话消息 |
+| GET/POST | `/runtime-instances` | admin/developer 读取 Runtime Instance；admin 创建明确 engine/location 的实例 |
+| GET | `/runtime-instances/{id}` | 返回实例、当前配置、能力报告、模型目录与绑定摘要 |
+| PUT | `/runtimes/{id}/configuration` | admin 以 expected revision 创建不可变配置修订 |
+| POST | `/runtimes/{id}/configuration/apply` | admin 请求应用 desired 配置 |
+| POST | `/runtimes/{id}/model-bindings` | admin 声明稳定模型在该 Runtime 上的精确路由 |
+| POST | `/runtimes/{id}/model-bindings/{binding_id}/validate` | admin 发起 provider 或 runtime-native 模型验证 |
+| GET/POST | `/llm/model-definitions` | 读取稳定模型目录；admin 对明确模型身份建档 |
 | GET | `/runtimes/tasks/{id}/events` | 读取完整持久事件 |
 | GET | `/runtimes/tasks/{id}/stream` | 支持 Last-Event-ID 的鉴权 SSE |
 | POST/GET | `/runtimes/nodes/enrollment-tokens` | admin 创建一次性令牌/读取无明文列表 |
 | POST | `/node/enroll` | 节点使用一次性令牌和 Ed25519 公钥注册 |
 | WS | `/node/ws` | 设备 JWT + 时间戳签名鉴权的 WSS 心跳、任务和内容通道 |
-| GET/PUT | `/runtimes/nodes[/{id}/runtime]` | admin/developer 列表；admin 配置节点模型/API |
+| GET | `/runtimes/nodes` | admin/developer 读取机器节点及其 Runtime Instance 摘要 |
 | DELETE | `/runtimes/nodes/{id}/credential` | admin 吊销节点及全部凭证 |
 | POST/GET | `/runtime-tasks` | admin/developer 下发普通任务；admin 才可下发管理任务 |
 | POST | `/runtime-tasks/{id}/cancel|retry` | 显式取消或新建 retry 任务，要求幂等键 |
@@ -137,13 +141,13 @@
 | POST | `/runtime-artifacts/deployments/{id}/retry|rollback` | admin 显式重试或回滚 |
 | GET | `/node/artifacts/{id}/download` | 节点凭短期、部署范围 JWT 下载 |
 
-内部 `/internal/runtime/*` 仅接受独立服务凭证；浏览器 JWT 无法访问。Model Gateway token 绑定 namespace/runtime/task/model，不能换模型或跨空间使用。
+旧 `/runtimes/platform`、节点 Runtime Profile 与 Harness 写接口仅保留迁移期只读/410 语义，不参与 v0.9 新执行配置。内部 `/internal/runtime/*` 仅接受独立服务凭证；浏览器 JWT 无法访问。Model Gateway token 绑定 namespace/runtime/task/model，不能换模型或跨空间使用。
 
-### agent management（v0.5-v0.8）
+### agent management（v0.5-v0.9）
 
 | 资源 | 主要正式接口 |
 |---|---|
-| Agent/Harness | `/agents`、`/agents/{id}/draft`、`/agents/{id}/draft/validate`、`/harness-profiles` |
+| Agent | `/agents`、`/agents/{id}/draft`、`/agents/{id}/draft/validate`；v0.9 草稿使用稳定模型偏好和引擎中立策略，Harness 只读 |
 | Skill/Tool | `/skills`、`/skills/complete/editor`、`/skills/{id}/draft[/files]`、`/skills/{id}/draft/validate|publish|import`、`/skills/{id}/current-version`、`/skills/{id}/versions`、`/tools/catalog`、`/tools/{key}/namespace-policy`、`/agents/{id}/draft/skills|tools` |
 | MCP | `/mcp-servers[/{id}/revisions]`、`/mcp-revisions/{id}/targets`、`/mcp-targets/{id}/secret|validate|validations|runtime` |
 | Plugin | `/plugins[/{id}/draft|versions]`、`/agents/{id}/draft/plugins` |
@@ -152,6 +156,8 @@
 | Operator CLI | `/cli/login|refresh|logout`、`/capabilities`；其余命令复用以上正式接口 |
 
 发布、激活、Plugin Version、retry/rollback 和任务创建使用 `Idempotency-Key`。MCP/Release Worker 领取与回传继续位于受独立服务凭证保护的 `/internal/runtime/*`；节点结果经已鉴权 WSS 转发。读接口不返回 secret value。
+
+v0.9 Activation precheck 按 Runtime Instance 的 applied 配置、能力报告、模型目录、Skill 和 MCP 状态生成短时证据；Task 创建冻结 exact model binding 或唯一解析的 Agent 偏好。PRD 规定的独立 `GET /agent-releases/{release_id}/compatibility` 和逐次 `task_model_usage` 上报在当前开发快照中尚未完成，不能按已交付接口使用。
 
 v0.7 为 Agent、Skill、MCP 与 Plugin 增加 complete-create 接口，由一次请求原子创建身份与必要初始草稿/版本/Revision；失败不遗留只有名称和标识的半成品。用户输入字段仍使用稳定的 `slug` API 名称，但 UI 展示为“唯一标识”。
 
@@ -187,20 +193,20 @@ v0.8 的 `POST /skills/complete/editor` 原子创建 Skill 身份、草稿与初
 
 配置 mutation 仅 namespace Admin/Developer 可用。仓库验证只接受 Runtime 已上报的 workspace ref 与 commit，不在控制面匿名 clone 或猜测结果。
 
-`POST /projects/complete` 可在一次事务中创建项目、默认 Runtime、初始成员及可选仓库；`POST /spec-standards/complete` 同时创建标准身份与第一个不可变版本，避免不完整顶层实体。
+`POST /projects/complete` 可在一次事务中创建项目、默认 Runtime Instance、初始成员及可选仓库；`POST /spec-standards/complete` 同时创建标准身份与第一个不可变版本，避免不完整顶层实体。
 
-### conversation management（v0.6）
+### conversation management（v0.6-v0.9）
 
 | 资源 | 主要接口 |
 |---|---|
-| 可用目录 | `/conversation-catalog/runtimes|models|agents` |
+| 可用目录 | `/conversation-catalog/runtimes|models|agents`，模型目录返回具体 Runtime Model Binding |
 | 会话 | `GET/POST /conversations`、`GET/PATCH /conversations/{id}`、`POST /conversations/{id}/derive` |
 | 配置修订 | `POST /conversations/{id}/configuration-revisions`，使用 `expected_revision` 更新模型或 Agent 参与配置 |
 | 消息/圆桌 | `GET/POST /conversations/{id}/messages`、`GET/POST /conversations/{id}/delegations` |
 | 附件 | `GET/POST /conversations/{id}/attachments`（严格扫描 UTF-8 文本、Markdown、JSON） |
 | 项目上下文 | `POST /conversations/{id}/context-snapshots` |
 
-创建、派生、消息与委派使用 `Idempotency-Key`。项目与 Runtime 创建后固定；Chat 可为后续消息切换 provider/model 且不下发 Tool；Agent 可增减参与者并指定唯一组织 Agent。配置变更在存在在途轮次、修订冲突或目标失效时明确阻断。
+创建、派生、消息与委派使用 `Idempotency-Key`。项目与 Runtime Instance 创建后固定；Chat 使用 exact binding，Agent 参与者可使用 exact 或 `agent_preference`，保存时冻结解析证据。当前表约束仍禁止同一 Agent/Release 以多个独立角色重复出现，是已记录的 v0.9 缺口。
 
 ### workflow management（v0.6）
 

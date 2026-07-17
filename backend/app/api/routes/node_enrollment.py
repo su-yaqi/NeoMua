@@ -207,6 +207,7 @@ def configure_node_runtime(
     _: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_admin),
 ) -> NodeRuntimePublic:
+    raise HTTPException(410, "RuntimeProfile writes are read-only history in v0.9")
     node = session.get(RuntimeNode, node_id)
     if node is None or node.namespace_id != namespace_id or node.revoked_at is not None:
         raise HTTPException(404, "Active node not found")

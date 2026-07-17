@@ -12,16 +12,12 @@ from app.agent_management.capability_models import (
     McpPlatformSecret,
     McpTargetBinding,
     McpTargetStatus,
+    RuntimeAgentRelease,
 )
 from app.api.deps import SessionDep
 from app.conversation_management.models import (
     AgentDelegation,
     Conversation,
-    ConversationConfigurationRevision,
-    ConversationMessage,
-    ConversationMode,
-    MessageAuthorType,
-    MessageStatus,
 )
 from app.conversation_management.service import (
     create_runtime_delegation,
@@ -29,19 +25,22 @@ from app.conversation_management.service import (
 )
 from app.core.config import settings
 from app.llm_provider_service import open_secret_payload
-from app.models import LlmProviderConfig
-from app.runtime.capabilities import HarnessCapabilities
+from app.models import LlmProviderConfig, LlmProviderModel
 from app.runtime.gateway import UnsupportedGatewayProvider, gateway_provider_kind
 from app.runtime.models import (
     AgentEventType,
     AgentSession,
     AgentTask,
+    AgentTaskModelUsage,
+    RuntimeCapabilityReport,
+    RuntimeConfigurationRevision,
+    RuntimeInstance,
     RuntimeJob,
     RuntimeJobStatus,
-    RuntimeProfile,
-    RuntimeRouteMode,
-    RuntimeSecret,
-    RuntimeType,
+    RuntimeLocationType,
+    RuntimeModelBinding,
+    RuntimeModelBindingStatus,
+    RuntimeModelRouteType,
 )
 from app.runtime.policy import TaskStatus
 from app.runtime.repository import EventSequenceConflict, append_and_apply_event
@@ -51,7 +50,11 @@ from app.runtime.security import (
     require_internal_runtime,
     verify_gateway_token,
 )
-from app.runtime.skill_sync import release_skills_committing
+from app.runtime.skill_sync import (
+    release_skill_blockers,
+    release_skills_committing,
+    release_skills_ready,
+)
 
 router = APIRouter(
     prefix="/internal/runtime",
@@ -80,11 +83,6 @@ class LeaseInput(BaseModel):
     revision: int
 
 
-class CapabilityReport(BaseModel):
-    worker_id: str
-    harness_capabilities: HarnessCapabilities
-
-
 class RuntimeDelegationInput(BaseModel):
     source_task_id: uuid.UUID
     source_task_revision: int
@@ -98,6 +96,22 @@ class RuntimeJobResultInput(BaseModel):
     status: RuntimeJobStatus
     result: dict[str, Any] | None = None
     error: dict[str, Any] | None = None
+
+
+class ModelPreparedInput(BaseModel):
+    worker_id: str
+    revision: int
+    runtime_instance_id: uuid.UUID
+    runtime_model_binding_id: uuid.UUID
+    engine_type: str
+    engine_version: str | None = None
+    adapter_version: str
+    engine_model_id: str
+    route_type: str
+    route_reference: str
+    runtime_configuration_digest: str
+    capability_fingerprint: str
+    effective_spec_digest: str
 
 
 @router.get("/signing-probe")
@@ -116,23 +130,12 @@ def signing_probe() -> dict[str, str]:
     }
 
 
-@router.post("/capabilities")
-def report_platform_capabilities(
-    body: CapabilityReport, session: SessionDep
-) -> dict[str, int]:
-    runtimes = session.exec(
-        select(RuntimeProfile).where(
-            RuntimeProfile.runtime_type == RuntimeType.PLATFORM
-        )
-    ).all()
-    capabilities = body.harness_capabilities.model_dump(exclude_none=True)
-    now = datetime.now(timezone.utc)
-    for runtime in runtimes:
-        runtime.harness_capabilities = capabilities
-        runtime.updated_at = now
-        session.add(runtime)
-    session.commit()
-    return {"updated": len(runtimes)}
+@router.post("/capabilities", status_code=410)
+def report_legacy_platform_capabilities() -> None:
+    raise HTTPException(
+        410,
+        "Harness capability reporting is read-only in v0.9; report each RuntimeInstance capability instead",
+    )
 
 
 @router.post("/events")
@@ -209,12 +212,12 @@ def claim_platform_runtime_job(body: ClaimInput, session: SessionDep) -> dict[st
     job = session.exec(
         select(RuntimeJob)
         .join(
-            RuntimeProfile,
-            col(RuntimeJob.runtime_profile_id) == RuntimeProfile.id,
+            RuntimeInstance,
+            col(RuntimeJob.runtime_instance_id) == RuntimeInstance.id,
         )
         .where(
             RuntimeJob.status == RuntimeJobStatus.QUEUED,
-            RuntimeProfile.runtime_type == RuntimeType.PLATFORM,
+            RuntimeInstance.location_type == RuntimeLocationType.PLATFORM,
         )
         .order_by(col(RuntimeJob.created_at))
         .with_for_update(skip_locked=True)
@@ -295,144 +298,324 @@ def complete_platform_runtime_job(
 
 @router.post("/tasks/claim")
 def claim_platform_task(body: ClaimInput, session: SessionDep) -> dict[str, Any]:
-    task = session.exec(
+    v09_task = session.exec(
         select(AgentTask)
-        .join(RuntimeProfile, col(AgentTask.runtime_profile_id) == RuntimeProfile.id)
+        .join(
+            RuntimeInstance,
+            col(AgentTask.runtime_instance_id) == RuntimeInstance.id,
+        )
         .where(
             AgentTask.status == TaskStatus.QUEUED,
-            RuntimeProfile.runtime_type == RuntimeType.PLATFORM,
+            RuntimeInstance.location_type == RuntimeLocationType.PLATFORM,
         )
         .order_by(col(AgentTask.created_at))
         .with_for_update(skip_locked=True)
     ).first()
-    if task is None:
-        raise HTTPException(204)
-    runtime = session.get(RuntimeProfile, task.runtime_profile_id)
-    if runtime is None:
-        raise HTTPException(409, "Runtime is unavailable")
-    release = (
-        session.get(AgentRelease, task.agent_release_id)
-        if task.agent_release_id
-        else None
-    )
-    if release is None or task.resolved_spec_digest != release.resolved_spec_digest:
+    if v09_task is not None:
+        runtime_instance = session.get(RuntimeInstance, v09_task.runtime_instance_id)
+        usage = session.exec(
+            select(AgentTaskModelUsage).where(
+                AgentTaskModelUsage.task_id == v09_task.id
+            )
+        ).first()
+        binding = (
+            session.get(RuntimeModelBinding, usage.runtime_model_binding_id)
+            if usage
+            else None
+        )
+        configuration = (
+            session.get(
+                RuntimeConfigurationRevision,
+                runtime_instance.applied_configuration_revision_id,
+            )
+            if runtime_instance and runtime_instance.applied_configuration_revision_id
+            else None
+        )
+        capability = (
+            session.get(
+                RuntimeCapabilityReport,
+                runtime_instance.current_capability_report_id,
+            )
+            if runtime_instance and runtime_instance.current_capability_report_id
+            else None
+        )
+        snapshot = v09_task.snapshot
+        if (
+            runtime_instance is None
+            or usage is None
+            or binding is None
+            or binding.status != RuntimeModelBindingStatus.AVAILABLE
+            or binding.runtime_instance_id != runtime_instance.id
+            or configuration is None
+            or capability is None
+            or configuration.configuration_digest
+            != snapshot.get("runtime_configuration_digest")
+            or capability.capability_fingerprint
+            != snapshot.get("capability_fingerprint")
+            or str(binding.id) != snapshot.get("runtime_model_binding_id")
+        ):
+            v09_task.status = TaskStatus.REJECTED
+            v09_task.final_result = {"code": "frozen_execution_binding_changed"}
+            v09_task.completed_at = datetime.now(timezone.utc)
+            session.add(v09_task)
+            session.commit()
+            raise HTTPException(409, "frozen_execution_binding_changed")
+        release = (
+            session.get(AgentRelease, v09_task.agent_release_id)
+            if v09_task.agent_release_id
+            else None
+        )
+        active = (
+            session.get(RuntimeAgentRelease, v09_task.runtime_agent_release_id)
+            if v09_task.runtime_agent_release_id
+            else None
+        )
+        if release is not None and (
+            active is None
+            or active.runtime_instance_id != runtime_instance.id
+            or active.current_release_id != release.id
+            or active.applied_digest != release.resolved_spec_digest
+        ):
+            v09_task.status = TaskStatus.REJECTED
+            v09_task.final_result = {"code": "release_not_active"}
+            v09_task.completed_at = datetime.now(timezone.utc)
+            session.add(v09_task)
+            session.commit()
+            raise HTTPException(409, "release_not_active")
+        if release is not None:
+            blockers = release_skill_blockers(
+                session,
+                release,
+                runtime_instance_id=runtime_instance.id,
+            )
+            if blockers:
+                v09_task.status = TaskStatus.REJECTED
+                v09_task.final_result = {
+                    "code": "skill_sync_blocked",
+                    "skills": blockers,
+                }
+                v09_task.completed_at = datetime.now(timezone.utc)
+                session.add(v09_task)
+                session.commit()
+                raise HTTPException(409, "skill_sync_blocked")
+            if release_skills_committing(
+                session,
+                release,
+                runtime_instance_id=runtime_instance.id,
+            ) or not release_skills_ready(
+                session,
+                release,
+                runtime_instance_id=runtime_instance.id,
+            ):
+                raise HTTPException(204)
+        v09_task.status = TaskStatus.DISPATCHED
+        v09_task.claimed_by = body.worker_id
+        v09_task.lease_expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+        session.add(v09_task)
+        append_and_apply_event(
+            session,
+            v09_task.id,
+            1,
+            AgentEventType.STATUS,
+            {"state": TaskStatus.DISPATCHED.value, "executor": body.worker_id},
+        )
+        session.commit()
+        agent_session = (
+            session.get(AgentSession, v09_task.session_id)
+            if v09_task.session_id
+            else None
+        )
+        mcp_runtime_configs: list[dict[str, Any]] = []
+        for server in snapshot.get("mcp_servers", []):
+            target = session.exec(
+                select(McpTargetBinding).where(
+                    McpTargetBinding.revision_id
+                    == uuid.UUID(str(server["revision_id"])),
+                    McpTargetBinding.runtime_instance_id == runtime_instance.id,
+                    McpTargetBinding.status == McpTargetStatus.VERIFIED,
+                )
+            ).first()
+            mcp_secret = (
+                session.exec(
+                    select(McpPlatformSecret).where(
+                        McpPlatformSecret.target_binding_id == target.id
+                    )
+                ).first()
+                if target
+                else None
+            )
+            if (
+                target is None
+                or mcp_secret is None
+                or target.tool_digest not in server.get("tool_digests", [])
+            ):
+                v09_task.status = TaskStatus.REJECTED
+                v09_task.final_result = {
+                    "code": "mcp_target_not_ready",
+                    "server": server.get("slug"),
+                }
+                v09_task.completed_at = datetime.now(timezone.utc)
+                session.add(v09_task)
+                session.commit()
+                raise HTTPException(409, "mcp_target_not_ready")
+            mcp_runtime_configs.append(
+                {
+                    **server,
+                    "secret_inputs": open_secret_payload(
+                        mcp_secret.secret_ciphertext
+                    ),
+                }
+            )
+        return {
+            "task_id": str(v09_task.id),
+            "revision": v09_task.revision,
+            "requires_model_preparation": True,
+            "model_preparation": {
+                "runtime_instance_id": str(runtime_instance.id),
+                "runtime_model_binding_id": str(binding.id),
+                "engine_type": runtime_instance.engine_type.value,
+                "engine_version": capability.engine_version,
+                "adapter_version": capability.adapter_version,
+                "engine_model_id": binding.engine_model_id,
+                "route_type": binding.route_type.value,
+                "route_reference": binding.route_key,
+                "runtime_configuration_digest": configuration.configuration_digest,
+                "capability_fingerprint": capability.capability_fingerprint,
+                "effective_spec_digest": usage.effective_spec_digest,
+            },
+            "release_binding": {
+                "runtime_instance_id": str(runtime_instance.id),
+                "agent_id": str(release.agent_id) if release else None,
+                "release_id": str(release.id) if release else None,
+                "resolved_spec_digest": release.resolved_spec_digest
+                if release
+                else None,
+                "resolved_spec_schema_version": release.resolved_spec_schema_version
+                if release
+                else None,
+                "skills": release.resolved_spec.get("skills", []) if release else [],
+            }
+            if release
+            else None,
+            "mcp_runtime_configs": mcp_runtime_configs,
+            "command": {
+                "engine_type": runtime_instance.engine_type.value,
+                "prompt": v09_task.prompt,
+                "model": binding.engine_model_id,
+                "system_prompt": snapshot.get("system_prompt"),
+                "permission_mode": snapshot.get("permission_mode", "default"),
+                "tools": snapshot.get("tools", []),
+                "allowed_tools": snapshot.get("allowed_tools", []),
+                "disallowed_tools": snapshot.get("disallowed_tools", []),
+                "require_approval_tools": snapshot.get(
+                    "require_approval_tools", []
+                ),
+                "cwd": snapshot.get("working_directory"),
+                "env": {},
+                "sdk_session_id": agent_session.sdk_session_id
+                if agent_session
+                else None,
+                "start_sequence": 1,
+                "timeout_seconds": snapshot.get("timeout_seconds", 3600),
+                "roundtable_participants": snapshot.get(
+                    "roundtable_participants", []
+                ),
+            },
+        }
+    raise HTTPException(204)
+
+
+@router.post("/tasks/{task_id}/model-prepared")
+def prepare_task_model(
+    task_id: uuid.UUID, body: ModelPreparedInput, session: SessionDep
+) -> dict[str, Any]:
+    task = session.exec(
+        select(AgentTask).where(AgentTask.id == task_id).with_for_update()
+    ).first()
+    usage = session.exec(
+        select(AgentTaskModelUsage).where(AgentTaskModelUsage.task_id == task_id)
+    ).first()
+    if (
+        task is None
+        or usage is None
+        or task.claimed_by != body.worker_id
+        or task.revision != body.revision
+        or task.status not in {TaskStatus.DISPATCHED, TaskStatus.RUNNING}
+    ):
+        raise HTTPException(409, "Task model preparation scope mismatch")
+    expected = {
+        "runtime_instance_id": usage.runtime_instance_id,
+        "runtime_model_binding_id": usage.runtime_model_binding_id,
+        "engine_type": usage.engine_type,
+        "engine_version": usage.engine_version,
+        "adapter_version": usage.adapter_version,
+        "engine_model_id": task.snapshot.get("engine_model_id"),
+        "route_type": usage.route_type,
+        "route_reference": usage.route_reference,
+        "runtime_configuration_digest": usage.runtime_configuration_digest,
+        "capability_fingerprint": usage.capability_fingerprint,
+        "effective_spec_digest": usage.effective_spec_digest,
+    }
+    actual = body.model_dump(exclude={"worker_id", "revision"})
+    if actual != expected:
         task.status = TaskStatus.REJECTED
-        task.final_result = {"code": "release_not_active"}
+        task.final_result = {
+            "code": "runtime_model_evidence_mismatch",
+            "expected": {
+                key: str(value) if isinstance(value, uuid.UUID) else value
+                for key, value in expected.items()
+            },
+            "actual": {
+                key: str(value) if isinstance(value, uuid.UUID) else value
+                for key, value in actual.items()
+            },
+        }
         task.completed_at = datetime.now(timezone.utc)
         session.add(task)
         session.commit()
-        raise HTTPException(409, "release_not_active")
-    if release_skills_committing(session, release, runtime.id):
-        raise HTTPException(204)
-    mcp_runtime_configs: list[dict[str, Any]] = []
-    for server in task.snapshot.get("mcp_servers", []):
-        binding = session.exec(
-            select(McpTargetBinding).where(
-                McpTargetBinding.revision_id == uuid.UUID(server["revision_id"]),
-                McpTargetBinding.runtime_profile_id == runtime.id,
-                McpTargetBinding.status == McpTargetStatus.VERIFIED,
-            )
-        ).first()
-        mcp_secret = (
-            session.exec(
-                select(McpPlatformSecret).where(
-                    McpPlatformSecret.target_binding_id == binding.id
-                )
-            ).first()
-            if binding
-            else None
-        )
-        if (
-            binding is None
-            or mcp_secret is None
-            or binding.tool_digest not in server.get("tool_digests", [])
-        ):
-            task.status = TaskStatus.REJECTED
-            task.final_result = {
-                "code": "mcp_target_not_ready",
-                "server": server.get("slug"),
-            }
-            task.completed_at = datetime.now(timezone.utc)
-            session.add(task)
-            session.commit()
-            raise HTTPException(409, "mcp_target_not_ready")
-        mcp_runtime_configs.append(
-            {
-                **server,
-                "secret_inputs": open_secret_payload(mcp_secret.secret_ciphertext),
-            }
-        )
-    env: dict[str, str]
-    if runtime.route_mode == RuntimeRouteMode.DIRECT_ANTHROPIC:
-        secret = session.exec(
-            select(RuntimeSecret).where(RuntimeSecret.runtime_profile_id == runtime.id)
-        ).first()
-        if secret is None:
-            raise HTTPException(409, "Runtime credential is not configured")
-        values = open_secret_payload(secret.secret_ciphertext)
-        api_key = (
-            values.get("api_key") or values.get("api_token") or values.get("token")
-        )
-        if not api_key:
-            raise HTTPException(409, "Runtime API key is missing")
-        env = {
-            "ANTHROPIC_BASE_URL": runtime.base_url or "",
-            "ANTHROPIC_API_KEY": api_key,
-        }
-    else:
-        gateway_token = issue_gateway_token(
-            task.namespace_id, runtime.id, task.id, task.snapshot["model_id"]
-        )
-        env = {
+        raise HTTPException(409, "runtime_model_evidence_mismatch")
+    binding = session.get(RuntimeModelBinding, usage.runtime_model_binding_id)
+    if (
+        binding is None
+        or binding.status != RuntimeModelBindingStatus.AVAILABLE
+        or binding.runtime_instance_id != usage.runtime_instance_id
+    ):
+        raise HTTPException(409, "runtime_model_binding_unavailable")
+    usage.runtime_evidence = {
+        key: str(value) if isinstance(value, uuid.UUID) else value
+        for key, value in actual.items()
+    }
+    usage.evidenced_at = datetime.now(timezone.utc)
+    session.add(usage)
+    session.commit()
+    if binding.route_type == RuntimeModelRouteType.RUNTIME_NATIVE:
+        return {"route_type": binding.route_type.value, "environment": {}}
+    if binding.route_type != RuntimeModelRouteType.PROVIDER_CONFIG:
+        raise HTTPException(409, "runtime_model_route_unsupported")
+    if binding.provider_config_id is None or binding.provider_model_id is None:
+        raise HTTPException(409, "provider_route_incomplete")
+    provider_model = session.get(LlmProviderModel, binding.provider_model_id)
+    if (
+        provider_model is None
+        or provider_model.provider_config_id != binding.provider_config_id
+        or provider_model.model_id != binding.engine_model_id
+    ):
+        raise HTTPException(409, "provider_route_model_mismatch")
+    token = issue_gateway_token(
+        task.namespace_id,
+        usage.runtime_instance_id,
+        task.id,
+        binding.engine_model_id,
+        provider_config_id=binding.provider_config_id,
+        runtime_model_binding_id=binding.id,
+    )
+    return {
+        "route_type": binding.route_type.value,
+        "environment": {
             "ANTHROPIC_BASE_URL": (
                 f"{settings.MODEL_GATEWAY_URL.rstrip('/')}/tasks/{task.id}"
             ),
-            "ANTHROPIC_API_KEY": gateway_token,
-        }
-    task.status = TaskStatus.DISPATCHED
-    task.claimed_by = body.worker_id
-    task.lease_expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
-    session.add(task)
-    append_and_apply_event(
-        session,
-        task.id,
-        1,
-        AgentEventType.STATUS,
-        {"state": TaskStatus.DISPATCHED.value, "executor": body.worker_id},
-    )
-    session.commit()
-    agent_session = (
-        session.get(AgentSession, task.session_id) if task.session_id else None
-    )
-    return {
-        "task_id": str(task.id),
-        "revision": task.revision,
-        "release_binding": {
-            "runtime_profile_id": str(runtime.id),
-            "agent_id": str(release.agent_id),
-            "release_id": str(release.id),
-            "resolved_spec_digest": release.resolved_spec_digest,
-            "resolved_spec_schema_version": release.resolved_spec_schema_version,
-            "skills": release.resolved_spec.get("skills", []),
-        },
-        "mcp_runtime_configs": mcp_runtime_configs,
-        "command": {
-            "prompt": task.prompt,
-            "model": task.snapshot.get("model_id", runtime.model_id),
-            "system_prompt": task.snapshot.get("system_prompt"),
-            "permission_mode": task.snapshot.get(
-                "permission_mode", runtime.permission_mode
-            ),
-            "tools": task.snapshot.get("tools", []),
-            "allowed_tools": task.snapshot.get("allowed_tools", []),
-            "disallowed_tools": task.snapshot.get("disallowed_tools", []),
-            "require_approval_tools": task.snapshot.get("require_approval_tools", []),
-            "cwd": task.snapshot.get("working_directory"),
-            "env": env,
-            "sdk_session_id": agent_session.sdk_session_id if agent_session else None,
-            "start_sequence": 1,
-            "timeout_seconds": task.snapshot.get("timeout_seconds", 3600),
-            "roundtable_participants": task.snapshot.get("roundtable_participants", []),
+            "ANTHROPIC_API_KEY": token,
         },
     }
 
@@ -482,16 +665,26 @@ def resolve_route(
         )
     except GatewayScopeError as exc:
         raise HTTPException(403, str(exc))
-    runtime = session.get(RuntimeProfile, runtime_id)
-    if runtime is None or str(runtime.namespace_id) != claims["namespace_id"]:
-        raise HTTPException(404, "Runtime route not found")
     task = session.get(AgentTask, task_id)
-    chat_provider_id: uuid.UUID | None = None
-    if task is not None:
+    if task is not None and task.runtime_instance_id == runtime_id:
+        usage = session.exec(
+            select(AgentTaskModelUsage).where(
+                AgentTaskModelUsage.task_id == task.id
+            )
+        ).first()
+        binding = (
+            session.get(RuntimeModelBinding, usage.runtime_model_binding_id)
+            if usage
+            else None
+        )
         if (
-            task.namespace_id != runtime.namespace_id
-            or task.runtime_profile_id != runtime.id
-            or task.snapshot.get("model_id") != model_id
+            usage is None
+            or usage.evidenced_at is None
+            or binding is None
+            or binding.route_type != RuntimeModelRouteType.PROVIDER_CONFIG
+            or binding.provider_config_id is None
+            or binding.engine_model_id != model_id
+            or task.namespace_id.hex != uuid.UUID(claims["namespace_id"]).hex
             or task.status
             not in {
                 TaskStatus.DISPATCHED,
@@ -500,60 +693,28 @@ def resolve_route(
             }
         ):
             raise HTTPException(403, "Task route is not active or is out of scope")
-    else:
-        # Chat deliberately uses the same scoped gateway without creating an
-        # agent_task: the running model message is the auditable execution record.
-        message = session.get(ConversationMessage, task_id)
-        conversation = (
-            session.get(Conversation, message.conversation_id) if message else None
-        )
-        configuration = (
-            session.get(
-                ConversationConfigurationRevision,
-                message.configuration_revision_id,
+        try:
+            verify_gateway_token(
+                authorization[7:],
+                runtime_id=runtime_id,
+                task_id=task_id,
+                model_id=model_id,
+                provider_config_id=binding.provider_config_id,
+                runtime_model_binding_id=binding.id,
             )
-            if message and message.configuration_revision_id
-            else None
-        )
-        if (
-            message is None
-            or conversation is None
-            or configuration is None
-            or conversation.namespace_id != runtime.namespace_id
-            or conversation.runtime_id != runtime.id
-            or conversation.mode != ConversationMode.CHAT
-            or configuration.conversation_id != conversation.id
-            or configuration.model_id != model_id
-            or message.author_type != MessageAuthorType.MODEL
-            or message.status != MessageStatus.RUNNING
-            or configuration.provider_config_id is None
-        ):
-            raise HTTPException(403, "Chat route is not active or is out of scope")
-        chat_provider_id = configuration.provider_config_id
-    if runtime.route_mode == RuntimeRouteMode.DIRECT_ANTHROPIC:
-        secret = session.exec(
-            select(RuntimeSecret).where(RuntimeSecret.runtime_profile_id == runtime.id)
-        ).first()
-        if secret is None:
-            raise HTTPException(409, "Runtime credential is not configured")
+        except GatewayScopeError as exc:
+            raise HTTPException(403, str(exc))
+        provider = session.get(LlmProviderConfig, binding.provider_config_id)
+        if provider is None or not provider.enabled:
+            raise HTTPException(409, "Provider config is unavailable")
+        try:
+            provider_kind = gateway_provider_kind(provider.provider_slug)
+        except UnsupportedGatewayProvider as exc:
+            raise HTTPException(422, str(exc)) from exc
         return {
-            "provider_kind": "anthropic",
-            "base_url": runtime.base_url,
-            "model_id": runtime.model_id,
-            "secret_inputs": open_secret_payload(secret.secret_ciphertext),
+            "provider_kind": provider_kind,
+            "base_url": provider.base_url,
+            "model_id": model_id,
+            "secret_inputs": open_secret_payload(provider.secret_ciphertext),
         }
-    provider = session.get(
-        LlmProviderConfig, chat_provider_id or runtime.provider_config_id
-    )
-    if provider is None or not provider.enabled:
-        raise HTTPException(409, "Provider config is unavailable")
-    try:
-        provider_kind = gateway_provider_kind(provider.provider_slug)
-    except UnsupportedGatewayProvider as exc:
-        raise HTTPException(422, str(exc)) from exc
-    return {
-        "provider_kind": provider_kind,
-        "base_url": provider.base_url,
-        "model_id": model_id,
-        "secret_inputs": open_secret_payload(provider.secret_ciphertext),
-    }
+    raise HTTPException(404, "RuntimeInstance route not found")

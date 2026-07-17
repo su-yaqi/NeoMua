@@ -158,7 +158,7 @@ class SkillStore:
             manifest,
             destination,
             int(payload["generation"]),
-            str(payload["runtime_profile_id"]),
+            str(payload.get("runtime_instance_id") or payload["runtime_profile_id"]),
         )
         return result
 

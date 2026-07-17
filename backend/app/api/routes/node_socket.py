@@ -39,6 +39,14 @@ from app.agent_management.release_routes import (
     request_tool_approval,
 )
 from app.api.deps import SessionDep
+from app.api.routes.runtime_instances import (
+    ConfigurationResultInput,
+    NativeModelValidationResult,
+    RuntimeDiscoveryReport,
+    report_native_model_validation_result,
+    report_runtime_configuration_result,
+    report_runtime_discovery,
+)
 from app.api.routes.runtime_skills import (
     SkillSyncResult,
     SkillUsageItem,
@@ -63,6 +71,7 @@ from app.runtime.artifacts.security import issue_artifact_download_token
 from app.runtime.artifacts.service import ArtifactReleaseService
 from app.runtime.artifacts.signing import configured_artifact_signer
 from app.runtime.capabilities import validate_harness_capabilities
+from app.runtime.catalog import RuntimeCatalogError, current_runtime_evidence
 from app.runtime.connections import (
     NodeAuthenticationError,
     authenticate_node_connection,
@@ -76,12 +85,20 @@ from app.runtime.jobs import reserve_node_runtime_jobs
 from app.runtime.models import (
     AgentEventType,
     AgentTask,
+    AgentTaskModelUsage,
     ArtifactDeployment,
     ArtifactRelease,
     DeploymentStatus,
     RuntimeArtifact,
+    RuntimeConfigurationRevision,
+    RuntimeConfigurationStatus,
+    RuntimeInstance,
     RuntimeJob,
     RuntimeJobStatus,
+    RuntimeModelBinding,
+    RuntimeModelBindingStatus,
+    RuntimeModelRouteType,
+    RuntimeModelValidationAttempt,
     RuntimeNode,
     RuntimeNodeArtifact,
     RuntimeProfile,
@@ -151,6 +168,121 @@ async def _send_pending_control(
     for task in queued:
         if not await _connection_is_current(websocket, session, node.id, connection_id):
             return
+        runtime_instance = (
+            session.get(RuntimeInstance, task.runtime_instance_id)
+            if task.runtime_instance_id
+            else None
+        )
+        if runtime_instance is not None:
+            usage = session.exec(
+                select(AgentTaskModelUsage).where(
+                    AgentTaskModelUsage.task_id == task.id
+                )
+            ).first()
+            model_binding = (
+                session.get(RuntimeModelBinding, usage.runtime_model_binding_id)
+                if usage
+                else None
+            )
+            if (
+                runtime_instance.runtime_node_id != node.id
+                or usage is None
+                or model_binding is None
+                or model_binding.status != RuntimeModelBindingStatus.AVAILABLE
+                or model_binding.runtime_instance_id != runtime_instance.id
+            ):
+                task.status = TaskStatus.REJECTED
+                task.final_result = {"code": "frozen_execution_binding_changed"}
+                task.dispatch_connection_id = None
+                task.dispatch_reserved_until = None
+                session.add(task)
+                session.commit()
+                continue
+            release = (
+                session.get(AgentRelease, task.agent_release_id)
+                if task.agent_release_id
+                else None
+            )
+            if release is not None:
+                blockers = release_skill_blockers(
+                    session,
+                    release,
+                    runtime_instance_id=runtime_instance.id,
+                )
+                if blockers:
+                    task.status = TaskStatus.REJECTED
+                    task.final_result = {
+                        "code": "skill_sync_blocked",
+                        "skills": blockers,
+                    }
+                    session.add(task)
+                    session.commit()
+                    continue
+                if not release_skills_ready(
+                    session,
+                    release,
+                    runtime_instance_id=runtime_instance.id,
+                ):
+                    release_task_reservation(session, task.id, connection_id)
+                    continue
+            snapshot = dict(task.snapshot)
+            mcp_servers: list[dict[str, Any]] = []
+            for server in snapshot.get("mcp_servers", []):
+                target = session.exec(
+                    select(McpTargetBinding).where(
+                        McpTargetBinding.revision_id
+                        == uuid.UUID(str(server["revision_id"])),
+                        McpTargetBinding.runtime_instance_id == runtime_instance.id,
+                        McpTargetBinding.status == McpTargetStatus.VERIFIED,
+                    )
+                ).first()
+                if (
+                    target is None
+                    or not target.secret_ref
+                    or target.tool_digest not in server.get("tool_digests", [])
+                ):
+                    task.status = TaskStatus.REJECTED
+                    task.final_result = {
+                        "code": "mcp_target_not_ready",
+                        "server": server.get("slug"),
+                    }
+                    session.add(task)
+                    session.commit()
+                    break
+                mcp_servers.append(
+                    {
+                        **server,
+                        "secret_handles": [
+                            {
+                                "runtime_instance_id": str(runtime_instance.id),
+                                "secret_ref": target.secret_ref,
+                            }
+                        ],
+                    }
+                )
+            else:
+                snapshot["mcp_servers"] = mcp_servers
+                try:
+                    await websocket.send_json(
+                        _envelope(
+                            "task_dispatch",
+                            node.id,
+                            {
+                                "task_id": str(task.id),
+                                "revision": task.revision,
+                                "prompt": task.prompt,
+                                "snapshot": snapshot,
+                                "route": {"mode": "pending"},
+                                "requires_model_preparation": True,
+                                "event_sequence_start": 1,
+                            },
+                        )
+                    )
+                except Exception:
+                    release_task_reservation(session, task.id, connection_id)
+                    raise
+                continue
+            continue
         runtime = session.get(RuntimeProfile, task.runtime_profile_id)
         if runtime is None:
             task.status = TaskStatus.REJECTED
@@ -262,6 +394,123 @@ async def _send_pending_runtime_jobs(
             session.add(job)
             session.commit()
             raise
+
+
+async def _send_pending_runtime_instance_configurations(
+    websocket: WebSocket,
+    session: SessionDep,
+    node: RuntimeNode,
+    connection_id: uuid.UUID,
+) -> None:
+    if not await _connection_is_current(websocket, session, node.id, connection_id):
+        return
+    configuration = session.exec(
+        select(RuntimeConfigurationRevision)
+        .join(
+            RuntimeInstance,
+            col(RuntimeConfigurationRevision.runtime_instance_id)
+            == RuntimeInstance.id,
+        )
+        .where(
+            RuntimeInstance.runtime_node_id == node.id,
+            RuntimeInstance.enabled.is_(True),
+            RuntimeInstance.desired_configuration_revision_id
+            == RuntimeConfigurationRevision.id,
+            RuntimeConfigurationRevision.status
+            == RuntimeConfigurationStatus.DESIRED,
+        )
+        .order_by(col(RuntimeConfigurationRevision.created_at))
+        .with_for_update(skip_locked=True)
+    ).first()
+    if configuration is None:
+        return
+    runtime = session.get(RuntimeInstance, configuration.runtime_instance_id)
+    if runtime is None:
+        return
+    worker_id = f"node:{node.id}"
+    configuration.status = RuntimeConfigurationStatus.APPLYING
+    configuration.error = {"apply_worker_id": worker_id}
+    session.add(configuration)
+    session.commit()
+    try:
+        await websocket.send_json(
+            _envelope(
+                "runtime_instance_configuration",
+                node.id,
+                {
+                    "runtime_instance_id": str(runtime.id),
+                    "installation_key": runtime.installation_key,
+                    "engine_type": runtime.engine_type.value,
+                    "configuration_revision_id": str(configuration.id),
+                    "revision": configuration.revision,
+                    "configuration_digest": configuration.configuration_digest,
+                    "executable": configuration.executable,
+                    "arguments": configuration.arguments,
+                    "working_directory_policy": configuration.working_directory_policy,
+                    "environment_allowlist": configuration.environment_allowlist,
+                    "security_policy": configuration.security_policy,
+                    "resource_limits": configuration.resource_limits,
+                },
+            )
+        )
+    except Exception:
+        configuration.status = RuntimeConfigurationStatus.DESIRED
+        configuration.error = None
+        session.add(configuration)
+        session.commit()
+        raise
+
+
+async def _send_pending_native_model_validations(
+    websocket: WebSocket,
+    session: SessionDep,
+    node: RuntimeNode,
+    connection_id: uuid.UUID,
+) -> None:
+    if not await _connection_is_current(websocket, session, node.id, connection_id):
+        return
+    attempt = session.exec(
+        select(RuntimeModelValidationAttempt)
+        .join(
+            RuntimeModelBinding,
+            col(RuntimeModelValidationAttempt.runtime_model_binding_id)
+            == RuntimeModelBinding.id,
+        )
+        .join(
+            RuntimeInstance,
+            col(RuntimeModelBinding.runtime_instance_id) == RuntimeInstance.id,
+        )
+        .where(
+            RuntimeInstance.runtime_node_id == node.id,
+            RuntimeModelBinding.route_type == RuntimeModelRouteType.RUNTIME_NATIVE,
+            RuntimeModelValidationAttempt.status == "pending",
+        )
+        .order_by(col(RuntimeModelValidationAttempt.started_at))
+        .with_for_update(skip_locked=True)
+    ).first()
+    if attempt is None:
+        return
+    binding = session.get(RuntimeModelBinding, attempt.runtime_model_binding_id)
+    runtime = session.get(RuntimeInstance, binding.runtime_instance_id) if binding else None
+    if binding is None or runtime is None:
+        return
+    attempt.status = "running"
+    attempt.error = {"worker_id": f"node:{node.id}"}
+    session.add(attempt)
+    session.commit()
+    await websocket.send_json(
+        _envelope(
+            "runtime_model_validation",
+            node.id,
+            {
+                "runtime_model_binding_id": str(binding.id),
+                "attempt_no": attempt.attempt_no,
+                "engine_type": runtime.engine_type.value,
+                "engine_model_id": binding.engine_model_id,
+                "route_key": binding.route_key,
+            },
+        )
+    )
 
 
 async def _send_runtime_config(
@@ -382,24 +631,32 @@ async def _send_pending_agent_releases(
     node: RuntimeNode,
     connection_id: uuid.UUID,
 ) -> None:
-    if node.runtime_profile_id is None or not await _connection_is_current(
+    if not await _connection_is_current(
         websocket, session, node.id, connection_id
     ):
         return
     await _send_pending_skill_sync(websocket, session, node, connection_id)
+    runtime_instance_ids = session.exec(
+        select(RuntimeInstance.id).where(RuntimeInstance.runtime_node_id == node.id)
+    ).all()
     deployments = session.exec(
         select(AgentDeployment)
         .where(
-            AgentDeployment.runtime_profile_id == node.runtime_profile_id,
+            or_(
+                AgentDeployment.runtime_profile_id == node.runtime_profile_id,
+                col(AgentDeployment.runtime_instance_id).in_(runtime_instance_ids),
+            ),
             AgentDeployment.status == AgentDeploymentStatus.PENDING,
         )
         .order_by(col(AgentDeployment.created_at))
         .with_for_update(skip_locked=True)
     ).all()
     now = datetime.now(timezone.utc)
-    runtime = session.get(RuntimeProfile, node.runtime_profile_id)
-    if runtime is None:
-        return
+    runtime = (
+        session.get(RuntimeProfile, node.runtime_profile_id)
+        if node.runtime_profile_id
+        else None
+    )
     for deployment in deployments:
         if deployment.expires_at and deployment.expires_at <= now:
             deployment.status = AgentDeploymentStatus.EXPIRED
@@ -413,6 +670,93 @@ async def _send_pending_agent_releases(
         if release is None:
             deployment.status = AgentDeploymentStatus.FAILED
             deployment.error = {"code": "release_missing"}
+            session.add(deployment)
+            continue
+        if deployment.runtime_instance_id is not None:
+            runtime_instance = session.get(
+                RuntimeInstance, deployment.runtime_instance_id
+            )
+            if runtime_instance is None or runtime_instance.runtime_node_id != node.id:
+                deployment.status = AgentDeploymentStatus.FAILED
+                deployment.error = {"code": "runtime_instance_unavailable"}
+                session.add(deployment)
+                continue
+            try:
+                configuration, capability, catalog = current_runtime_evidence(
+                    session, runtime_instance
+                )
+            except RuntimeCatalogError as exc:
+                deployment.status = AgentDeploymentStatus.INCOMPATIBLE
+                deployment.error = {"code": exc.code, "message": exc.message}
+                session.add(deployment)
+                continue
+            if deployment.capability_fingerprint != capability.capability_fingerprint:
+                deployment.status = AgentDeploymentStatus.INCOMPATIBLE
+                deployment.error = {"code": "stale_capability_fingerprint"}
+                session.add(deployment)
+                continue
+            blockers = release_skill_blockers(
+                session,
+                release,
+                runtime_instance_id=runtime_instance.id,
+            )
+            if blockers:
+                deployment.status = AgentDeploymentStatus.FAILED
+                deployment.error = {
+                    "code": "skill_sync_blocked",
+                    "skills": blockers,
+                }
+                session.add(deployment)
+                continue
+            if not release_skills_ready(
+                session,
+                release,
+                runtime_instance_id=runtime_instance.id,
+            ):
+                continue
+            deployment.status = AgentDeploymentStatus.DISPATCHED
+            deployment.updated_at = now
+            session.add(deployment)
+            session.commit()
+            try:
+                await websocket.send_json(
+                    _envelope(
+                        "agent_release_deploy",
+                        node.id,
+                        {
+                            "deployment_id": str(deployment.id),
+                            "runtime_instance_id": str(runtime_instance.id),
+                            "engine_type": runtime_instance.engine_type.value,
+                            "configuration": {
+                                "id": str(configuration.id),
+                                "revision": configuration.revision,
+                                "digest": configuration.configuration_digest,
+                            },
+                            "capability_fingerprint": capability.capability_fingerprint,
+                            "capability_inventory": {
+                                "engine_type": runtime_instance.engine_type.value,
+                                "engine_version": capability.engine_version,
+                                "adapter_version": capability.adapter_version,
+                                "configuration_digest": capability.configuration_digest,
+                                "capabilities": capability.capabilities,
+                                "discovered_models": capability.discovered_models,
+                            },
+                            "model_catalog_fingerprint": catalog,
+                            "release": _release_public(release),
+                            "resolved_spec": release.resolved_spec,
+                            "materialization": release.manifest["materialization"],
+                        },
+                    )
+                )
+            except Exception:
+                deployment.status = AgentDeploymentStatus.PENDING
+                session.add(deployment)
+                session.commit()
+                raise
+            continue
+        if runtime is None:
+            deployment.status = AgentDeploymentStatus.FAILED
+            deployment.error = {"code": "runtime_unavailable"}
             session.add(deployment)
             continue
         blockers = release_skill_blockers(session, release, runtime.id)
@@ -480,14 +824,20 @@ async def _send_pending_skill_sync(
     node: RuntimeNode,
     connection_id: uuid.UUID,
 ) -> None:
-    if node.runtime_profile_id is None or not await _connection_is_current(
+    if not await _connection_is_current(
         websocket, session, node.id, connection_id
     ):
         return
+    runtime_instance_ids = session.exec(
+        select(RuntimeInstance.id).where(RuntimeInstance.runtime_node_id == node.id)
+    ).all()
     state = session.exec(
         select(RuntimeSkillState)
         .where(
-            RuntimeSkillState.runtime_profile_id == node.runtime_profile_id,
+            or_(
+                RuntimeSkillState.runtime_profile_id == node.runtime_profile_id,
+                col(RuntimeSkillState.runtime_instance_id).in_(runtime_instance_ids),
+            ),
             RuntimeSkillState.subscription_count > 0,
             or_(
                 RuntimeSkillState.status == "pending",
@@ -579,11 +929,14 @@ async def _send_pending_mcp_validations(
     node: RuntimeNode,
     connection_id: uuid.UUID,
 ) -> None:
-    if node.runtime_profile_id is None or not await _connection_is_current(
+    if not await _connection_is_current(
         websocket, session, node.id, connection_id
     ):
         return
     now = datetime.now(timezone.utc)
+    runtime_instance_ids = session.exec(
+        select(RuntimeInstance.id).where(RuntimeInstance.runtime_node_id == node.id)
+    ).all()
     attempts = session.exec(
         select(McpValidationAttempt)
         .join(
@@ -591,16 +944,15 @@ async def _send_pending_mcp_validations(
             col(McpValidationAttempt.target_binding_id) == McpTargetBinding.id,
         )
         .where(
-            McpTargetBinding.runtime_profile_id == node.runtime_profile_id,
+            or_(
+                McpTargetBinding.runtime_profile_id == node.runtime_profile_id,
+                col(McpTargetBinding.runtime_instance_id).in_(runtime_instance_ids),
+            ),
             McpValidationAttempt.status == McpTargetStatus.PENDING,
         )
         .order_by(col(McpValidationAttempt.created_at))
         .with_for_update(skip_locked=True)
     ).all()
-    runtime = session.get(RuntimeProfile, node.runtime_profile_id)
-    if runtime is None:
-        return
-    fingerprint = runtime_capability_fingerprint(runtime, node.harness_capabilities)
     for attempt in attempts:
         if attempt.expires_at and attempt.expires_at <= now:
             attempt.status = McpTargetStatus.EXPIRED
@@ -623,6 +975,30 @@ async def _send_pending_mcp_validations(
         server = session.get(McpServer, revision.server_id) if revision else None
         if target is None or revision is None or server is None:
             continue
+        runtime_instance = (
+            session.get(RuntimeInstance, target.runtime_instance_id)
+            if target.runtime_instance_id
+            else None
+        )
+        runtime = (
+            session.get(RuntimeProfile, target.runtime_profile_id)
+            if target.runtime_profile_id
+            else None
+        )
+        if runtime_instance is not None:
+            try:
+                _configuration, capability, _catalog = current_runtime_evidence(
+                    session, runtime_instance
+                )
+            except RuntimeCatalogError:
+                continue
+            fingerprint = capability.capability_fingerprint
+        elif runtime is not None:
+            fingerprint = runtime_capability_fingerprint(
+                runtime, node.harness_capabilities
+            )
+        else:
+            continue
         attempt.result = {"claimed_until": (now + timedelta(seconds=60)).isoformat()}
         session.add(attempt)
         session.commit()
@@ -638,6 +1014,9 @@ async def _send_pending_mcp_validations(
                         "transport": revision.transport.value,
                         "config": revision.config,
                         "protocol_version": revision.protocol_version,
+                        "runtime_instance_id": str(target.runtime_instance_id)
+                        if target.runtime_instance_id
+                        else None,
                         "secret_ref": target.secret_ref,
                         "capability_fingerprint": fingerprint,
                     },
@@ -783,6 +1162,12 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
         )
     await _send_pending_control(websocket, session, node, connection_id)
     await _send_pending_runtime_jobs(websocket, session, node, connection_id)
+    await _send_pending_runtime_instance_configurations(
+        websocket, session, node, connection_id
+    )
+    await _send_pending_native_model_validations(
+        websocket, session, node, connection_id
+    )
     await _send_pending_artifacts(websocket, session, node, connection_id)
     await _send_pending_agent_releases(websocket, session, node, connection_id)
     await _send_pending_mcp_validations(websocket, session, node, connection_id)
@@ -822,7 +1207,39 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
             if message.node_id != node.id:
                 await websocket.close(code=4403, reason="node scope mismatch")
                 return
-            if message.type == "heartbeat":
+            if message.type == "runtime_discovery_report":
+                try:
+                    result = report_runtime_discovery(
+                        RuntimeDiscoveryReport(
+                            node_id=node.id,
+                            generation=message.payload["generation"],
+                            installations=message.payload["installations"],
+                        ),
+                        session,
+                    )
+                except (KeyError, ValidationError, HTTPException) as exc:
+                    detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
+                    await websocket.send_json(
+                        _envelope(
+                            "error",
+                            node.id,
+                            {"code": "runtime_discovery_rejected", "detail": detail},
+                            message.message_id,
+                        )
+                    )
+                    continue
+                await websocket.send_json(
+                    _envelope(
+                        "runtime_discovery_ack",
+                        node.id,
+                        result,
+                        message.message_id,
+                    )
+                )
+                await _send_pending_agent_releases(
+                    websocket, session, current, connection_id
+                )
+            elif message.type == "heartbeat":
                 if "harness_capabilities" in message.payload:
                     try:
                         current.harness_capabilities = validate_harness_capabilities(
@@ -868,26 +1285,35 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                             )
                         )
                         continue
-                    if current.runtime_profile_id:
-                        targets = session.exec(
-                            select(McpTargetBinding).where(
+                    runtime_instance_ids = session.exec(
+                        select(RuntimeInstance.id).where(
+                            RuntimeInstance.runtime_node_id == current.id
+                        )
+                    ).all()
+                    targets = session.exec(
+                        select(McpTargetBinding).where(
+                            or_(
                                 McpTargetBinding.runtime_profile_id
                                 == current.runtime_profile_id,
-                                col(McpTargetBinding.secret_ref).is_not(None),
-                            )
-                        ).all()
-                        for target in targets:
-                            reported = fingerprints.get(str(target.secret_ref))
-                            previous = target.secret_fingerprint
-                            if reported != previous:
-                                target.secret_fingerprint = reported
-                                if (
-                                    previous is not None
-                                    or target.status == McpTargetStatus.VERIFIED
-                                ):
-                                    target.status = McpTargetStatus.STALE
-                                target.updated_at = datetime.now(timezone.utc)
-                                session.add(target)
+                                col(McpTargetBinding.runtime_instance_id).in_(
+                                    runtime_instance_ids
+                                ),
+                            ),
+                            col(McpTargetBinding.secret_ref).is_not(None),
+                        )
+                    ).all()
+                    for target in targets:
+                        reported = fingerprints.get(str(target.secret_ref))
+                        previous = target.secret_fingerprint
+                        if reported != previous:
+                            target.secret_fingerprint = reported
+                            if (
+                                previous is not None
+                                or target.status == McpTargetStatus.VERIFIED
+                            ):
+                                target.status = McpTargetStatus.STALE
+                            target.updated_at = datetime.now(timezone.utc)
+                            session.add(target)
                 current.last_seen_at = datetime.now(timezone.utc)
                 session.add(current)
                 session.commit()
@@ -896,6 +1322,12 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                 )
                 await _send_pending_control(websocket, session, current, connection_id)
                 await _send_pending_runtime_jobs(
+                    websocket, session, current, connection_id
+                )
+                await _send_pending_runtime_instance_configurations(
+                    websocket, session, current, connection_id
+                )
+                await _send_pending_native_model_validations(
                     websocket, session, current, connection_id
                 )
                 await _send_pending_artifacts(
@@ -911,6 +1343,12 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                     websocket, session, current, connection_id
                 )
                 await _send_pending_runtime_jobs(
+                    websocket, session, current, connection_id
+                )
+                await _send_pending_runtime_instance_configurations(
+                    websocket, session, current, connection_id
+                )
+                await _send_pending_native_model_validations(
                     websocket, session, current, connection_id
                 )
                 await _send_pending_delegation_results(
@@ -1364,7 +1802,10 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                 )
                 task.updated_at = datetime.now(timezone.utc)
                 session.add(task)
-                if task.snapshot.get("resolved_spec_schema_version") == "1.1":
+                if task.snapshot.get("resolved_spec_schema_version") in {
+                    "1.1",
+                    "2.0",
+                }:
                     try:
                         evidence = [
                             SkillUsageItem.model_validate(item)
@@ -1373,8 +1814,11 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                         record_task_skill_usage(
                             session,
                             task,
-                            current.runtime_profile_id,
+                            current.runtime_profile_id
+                            if task.runtime_instance_id is None
+                            else None,
                             evidence,
+                            runtime_instance_id=task.runtime_instance_id,
                         )
                     except (HTTPException, ValidationError) as exc:
                         session.rollback()
@@ -1413,12 +1857,95 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                             )
                         )
                         continue
+                ack_payload: dict[str, Any] = {"task_id": str(task.id)}
+                if task.runtime_instance_id is not None:
+                    usage = session.exec(
+                        select(AgentTaskModelUsage).where(
+                            AgentTaskModelUsage.task_id == task.id
+                        )
+                    ).first()
+                    binding = (
+                        session.get(RuntimeModelBinding, usage.runtime_model_binding_id)
+                        if usage
+                        else None
+                    )
+                    evidence = message.payload.get("model_evidence")
+                    expected = (
+                        {
+                            "runtime_instance_id": str(usage.runtime_instance_id),
+                            "runtime_model_binding_id": str(usage.runtime_model_binding_id),
+                            "engine_type": usage.engine_type,
+                            "engine_version": usage.engine_version,
+                            "adapter_version": usage.adapter_version,
+                            "engine_model_id": task.snapshot.get("engine_model_id"),
+                            "route_type": usage.route_type,
+                            "route_reference": usage.route_reference,
+                            "runtime_configuration_digest": usage.runtime_configuration_digest,
+                            "capability_fingerprint": usage.capability_fingerprint,
+                            "effective_spec_digest": usage.effective_spec_digest,
+                        }
+                        if usage
+                        else None
+                    )
+                    if (
+                        not isinstance(evidence, dict)
+                        or evidence != expected
+                        or binding is None
+                        or binding.status != RuntimeModelBindingStatus.AVAILABLE
+                    ):
+                        session.rollback()
+                        rejected = session.get(AgentTask, task.id)
+                        if rejected is not None:
+                            rejected.status = TaskStatus.REJECTED
+                            rejected.final_result = {"code": "runtime_model_evidence_mismatch"}
+                            rejected.completed_at = datetime.now(timezone.utc)
+                            session.add(rejected)
+                            session.commit()
+                        await websocket.send_json(
+                            _envelope(
+                                "task_accept_rejected",
+                                node.id,
+                                {
+                                    "code": "runtime_model_evidence_mismatch",
+                                    "task_id": str(task.id),
+                                },
+                                message.message_id,
+                            )
+                        )
+                        continue
+                    usage.runtime_evidence = evidence
+                    usage.evidenced_at = datetime.now(timezone.utc)
+                    session.add(usage)
+                    if binding.route_type == RuntimeModelRouteType.RUNTIME_NATIVE:
+                        ack_payload["route"] = {"mode": "runtime_native"}
+                    elif binding.route_type == RuntimeModelRouteType.PROVIDER_CONFIG:
+                        if (
+                            not settings.MODEL_GATEWAY_PUBLIC_URL
+                            or binding.provider_config_id is None
+                        ):
+                            raise HTTPException(409, "Model Gateway route is unavailable")
+                        token = issue_gateway_token(
+                            task.namespace_id,
+                            task.runtime_instance_id,
+                            task.id,
+                            binding.engine_model_id,
+                            provider_config_id=binding.provider_config_id,
+                            runtime_model_binding_id=binding.id,
+                        )
+                        ack_payload["route"] = {
+                            "mode": "platform_gateway",
+                            "base_url": f"{settings.MODEL_GATEWAY_PUBLIC_URL.rstrip('/')}/tasks/{task.id}",
+                            "api_key": token,
+                            "runtime_id": str(task.runtime_instance_id),
+                        }
+                    else:
+                        raise HTTPException(409, "Runtime model route is unsupported")
                 session.commit()
                 await websocket.send_json(
                     _envelope(
                         "task_accept_ack",
                         node.id,
-                        {"task_id": str(task.id)},
+                        ack_payload,
                         message.message_id,
                     )
                 )
@@ -1536,6 +2063,74 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                     task.lease_expires_at = None
                     session.add(task)
                     session.commit()
+            elif message.type == "runtime_instance_configuration_result":
+                try:
+                    result = report_runtime_configuration_result(
+                        ConfigurationResultInput(
+                            worker_id=f"node:{node.id}",
+                            **message.payload,
+                        ),
+                        session,
+                    )
+                except (ValidationError, HTTPException) as exc:
+                    detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
+                    await websocket.send_json(
+                        _envelope(
+                            "error",
+                            node.id,
+                            {
+                                "code": "runtime_configuration_result_rejected",
+                                "detail": detail,
+                            },
+                            message.message_id,
+                        )
+                    )
+                    continue
+                await websocket.send_json(
+                    _envelope(
+                        "runtime_instance_configuration_ack",
+                        node.id,
+                        result,
+                        message.message_id,
+                    )
+                )
+                await _send_pending_runtime_instance_configurations(
+                    websocket, session, current, connection_id
+                )
+            elif message.type == "runtime_model_validation_result":
+                try:
+                    result = report_native_model_validation_result(
+                        NativeModelValidationResult(
+                            worker_id=f"node:{node.id}",
+                            **message.payload,
+                        ),
+                        session,
+                    )
+                except (ValidationError, HTTPException) as exc:
+                    detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
+                    await websocket.send_json(
+                        _envelope(
+                            "error",
+                            node.id,
+                            {
+                                "code": "runtime_model_validation_result_rejected",
+                                "detail": detail,
+                            },
+                            message.message_id,
+                        )
+                    )
+                    continue
+                await websocket.send_json(
+                    _envelope(
+                        "runtime_model_validation_ack",
+                        node.id,
+                        result,
+                        message.message_id,
+                    )
+                )
+                await _send_pending_native_model_validations(
+                    websocket, session, current, connection_id
+                )
             elif message.type in {"runtime_config_applied", "runtime_config_rejected"}:
                 runtime_id = uuid.UUID(message.payload["runtime_id"])
                 runtime = session.get(RuntimeProfile, runtime_id)
@@ -1623,16 +2218,32 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                 )
                 runtime = (
                     session.get(RuntimeProfile, validation_target.runtime_profile_id)
-                    if validation_target
+                    if validation_target and validation_target.runtime_profile_id
+                    else None
+                )
+                validation_runtime_instance = (
+                    session.get(
+                        RuntimeInstance, validation_target.runtime_instance_id
+                    )
+                    if validation_target and validation_target.runtime_instance_id
                     else None
                 )
                 if (
                     attempt is None
                     or validation_target is None
                     or server is None
-                    or runtime is None
-                    or validation_target.runtime_profile_id
-                    != current.runtime_profile_id
+                    or (
+                        validation_runtime_instance is not None
+                        and validation_runtime_instance.runtime_node_id != current.id
+                    )
+                    or (
+                        validation_runtime_instance is None
+                        and (
+                            runtime is None
+                            or validation_target.runtime_profile_id
+                            != current.runtime_profile_id
+                        )
+                    )
                 ):
                     await websocket.send_json(
                         _envelope(
@@ -1643,9 +2254,16 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                         )
                     )
                     continue
-                if body.capability_fingerprint != runtime_capability_fingerprint(
-                    runtime, current.harness_capabilities
-                ):
+                expected_fingerprint = (
+                    current_runtime_evidence(
+                        session, validation_runtime_instance
+                    )[1].capability_fingerprint
+                    if validation_runtime_instance is not None
+                    else runtime_capability_fingerprint(
+                        runtime, current.harness_capabilities
+                    )
+                )
+                if body.capability_fingerprint != expected_fingerprint:
                     body = McpValidationResult(
                         status="failed",
                         capability_fingerprint=body.capability_fingerprint,
@@ -1690,9 +2308,24 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                     .where(RuntimeSkillState.id == state_id)
                     .with_for_update()
                 ).first()
+                state_runtime_instance = (
+                    session.get(RuntimeInstance, state.runtime_instance_id)
+                    if state and state.runtime_instance_id
+                    else None
+                )
                 if (
                     state is None
-                    or state.runtime_profile_id != current.runtime_profile_id
+                    or (
+                        state.runtime_instance_id is not None
+                        and (
+                            state_runtime_instance is None
+                            or state_runtime_instance.runtime_node_id != current.id
+                        )
+                    )
+                    or (
+                        state.runtime_instance_id is None
+                        and state.runtime_profile_id != current.runtime_profile_id
+                    )
                     or state.generation != generation
                     or state.subscription_count <= 0
                 ):
@@ -1730,12 +2363,17 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                 payload = sync_payload(attempt, skill, version)
                 payload.update(
                     {
-                        "runtime_profile_id": str(state.runtime_profile_id),
+                        **(
+                            {"runtime_instance_id": str(state.runtime_instance_id)}
+                            if state.runtime_instance_id
+                            else {"runtime_profile_id": str(state.runtime_profile_id)}
+                        ),
                         "download_path": f"/api/v1/node/skill-sync/{attempt.id}/download",
                         "download_token": issue_skill_download_token(
                             attempt_id=attempt.id,
                             node_id=node.id,
                             runtime_profile_id=state.runtime_profile_id,
+                            runtime_instance_id=state.runtime_instance_id,
                             skill_id=state.skill_id,
                             version_id=version.id,
                             content_sha256=version.content_sha256,
@@ -1773,9 +2411,24 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                     ).first()
                 except (KeyError, ValueError, ValidationError):
                     state = None
+                state_runtime_instance = (
+                    session.get(RuntimeInstance, state.runtime_instance_id)
+                    if state and state.runtime_instance_id
+                    else None
+                )
                 if (
                     state is None
-                    or state.runtime_profile_id != current.runtime_profile_id
+                    or (
+                        state.runtime_instance_id is not None
+                        and (
+                            state_runtime_instance is None
+                            or state_runtime_instance.runtime_node_id != current.id
+                        )
+                    )
+                    or (
+                        state.runtime_instance_id is None
+                        and state.runtime_profile_id != current.runtime_profile_id
+                    )
                 ):
                     await websocket.send_json(
                         _envelope(
@@ -1851,11 +2504,26 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                     if activation
                     else None
                 )
+                deployment_runtime_instance = (
+                    session.get(RuntimeInstance, deployment.runtime_instance_id)
+                    if deployment and deployment.runtime_instance_id
+                    else None
+                )
                 if (
                     deployment is None
                     or activation is None
                     or release is None
-                    or deployment.runtime_profile_id != current.runtime_profile_id
+                    or (
+                        deployment.runtime_instance_id is not None
+                        and (
+                            deployment_runtime_instance is None
+                            or deployment_runtime_instance.runtime_node_id != current.id
+                        )
+                    )
+                    or (
+                        deployment.runtime_instance_id is None
+                        and deployment.runtime_profile_id != current.runtime_profile_id
+                    )
                     or deployment.status != AgentDeploymentStatus.DISPATCHED
                 ):
                     await websocket.send_json(
@@ -1892,8 +2560,13 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                     agent_binding = session.exec(
                         select(RuntimeAgentRelease)
                         .where(
-                            RuntimeAgentRelease.runtime_profile_id
-                            == deployment.runtime_profile_id,
+                            (
+                                RuntimeAgentRelease.runtime_instance_id
+                                == deployment.runtime_instance_id
+                                if deployment.runtime_instance_id
+                                else RuntimeAgentRelease.runtime_profile_id
+                                == deployment.runtime_profile_id
+                            ),
                             RuntimeAgentRelease.agent_id == release.agent_id,
                         )
                         .with_for_update()
@@ -1902,6 +2575,7 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                         agent_binding = RuntimeAgentRelease(
                             namespace_id=release.namespace_id,
                             runtime_profile_id=deployment.runtime_profile_id,
+                            runtime_instance_id=deployment.runtime_instance_id,
                             agent_id=release.agent_id,
                             current_release_id=release.id,
                             applied_digest=release.resolved_spec_digest,
@@ -1918,10 +2592,32 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                             release.resolved_spec_digest
                         )
                         agent_binding.updated_at = datetime.now(timezone.utc)
+                    if deployment_runtime_instance is not None:
+                        configuration, capability, catalog = current_runtime_evidence(
+                            session, deployment_runtime_instance
+                        )
+                        agent_binding.runtime_configuration_revision_id = configuration.id
+                        agent_binding.runtime_capability_report_id = capability.id
+                        agent_binding.adapter_version = capability.adapter_version
+                        agent_binding.runtime_model_catalog_fingerprint = catalog
+                        agent_binding.effective_spec_digest = canonical_digest(
+                            {
+                                "release_digest": release.resolved_spec_digest,
+                                "configuration_digest": configuration.configuration_digest,
+                                "capability_fingerprint": capability.capability_fingerprint,
+                                "model_catalog_fingerprint": catalog,
+                            }
+                        )
                     session.add(agent_binding)
-                    reconcile_runtime_skill_subscriptions(
-                        session, deployment.runtime_profile_id
-                    )
+                    if deployment.runtime_profile_id is not None:
+                        reconcile_runtime_skill_subscriptions(
+                            session, deployment.runtime_profile_id
+                        )
+                    elif deployment.runtime_instance_id is not None:
+                        reconcile_runtime_skill_subscriptions(
+                            session,
+                            runtime_instance_id=deployment.runtime_instance_id,
+                        )
                 deployment.updated_at = datetime.now(timezone.utc)
                 session.add(deployment)
                 _recompute_activation(session, activation)

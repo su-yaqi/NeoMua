@@ -26,15 +26,17 @@ export const Route = createFileRoute(
 })
 
 type NodeBinding = {
-  runtime_id: string
-  agent_release_id: string | null
+  runtime_instance_id: string
+  runtime_agent_release_id: string | null
+  model_selection_mode: "exact" | "agent_preference" | null
+  runtime_model_binding_id: string | null
 }
 
 function RuntimeLabel({ runtime }: { runtime: ConversationRuntime }) {
   return (
     <>
-      {runtime.runtime_type === "platform" ? "平台" : "节点"} ·{" "}
-      {runtime.model_id}
+      {runtime.runtime_type === "platform" ? "平台" : "节点"} · {runtime.name} ·{" "}
+      {runtime.engine_type}
     </>
   )
 }
@@ -53,11 +55,23 @@ function NodeConfiguration({
   onChange: (binding: NodeBinding) => void
 }) {
   const agents = useQuery({
-    queryKey: ["conversation-agents", binding.runtime_id],
-    queryFn: () => workspaceApi.listConversationAgents(binding.runtime_id),
-    enabled: node.node_type === "agent" && Boolean(binding.runtime_id),
+    queryKey: ["conversation-agents", binding.runtime_instance_id],
+    queryFn: () =>
+      workspaceApi.listConversationAgents(binding.runtime_instance_id),
+    enabled: node.node_type === "agent" && Boolean(binding.runtime_instance_id),
   })
-  const activeAgents = agents.data?.data.filter((agent) => agent.active) || []
+  const models = useQuery({
+    queryKey: ["conversation-models", binding.runtime_instance_id],
+    queryFn: () =>
+      workspaceApi.listConversationModels(binding.runtime_instance_id),
+    enabled: node.node_type === "agent" && Boolean(binding.runtime_instance_id),
+  })
+  const activeAgents =
+    agents.data?.data.filter(
+      (agent) =>
+        agent.active &&
+        (!node.agent_release_id || agent.release_id === node.agent_release_id),
+    ) || []
 
   if (node.node_type === "human") {
     return (
@@ -94,9 +108,14 @@ function NodeConfiguration({
         <div className="space-y-2">
           <Label>运行环境</Label>
           <Select
-            value={binding.runtime_id}
+            value={binding.runtime_instance_id}
             onValueChange={(runtimeId) =>
-              onChange({ runtime_id: runtimeId, agent_release_id: null })
+              onChange({
+                runtime_instance_id: runtimeId,
+                runtime_agent_release_id: null,
+                model_selection_mode: null,
+                runtime_model_binding_id: null,
+              })
             }
           >
             <SelectTrigger>
@@ -120,16 +139,27 @@ function NodeConfiguration({
           <div className="space-y-2">
             <Label>负责的 Agent</Label>
             <Select
-              value={binding.agent_release_id || ""}
-              onValueChange={(releaseId) =>
-                onChange({ ...binding, agent_release_id: releaseId })
-              }
-              disabled={!binding.runtime_id || agents.isPending}
+              value={binding.runtime_agent_release_id || ""}
+              onValueChange={(releaseBindingId) => {
+                const agent = activeAgents.find(
+                  (item) => item.runtime_agent_release_id === releaseBindingId,
+                )
+                onChange({
+                  ...binding,
+                  runtime_agent_release_id: releaseBindingId,
+                  model_selection_mode:
+                    agent?.preference_binding_ids.length === 1
+                      ? "agent_preference"
+                      : "exact",
+                  runtime_model_binding_id: null,
+                })
+              }}
+              disabled={!binding.runtime_instance_id || agents.isPending}
             >
               <SelectTrigger>
                 <SelectValue
                   placeholder={
-                    binding.runtime_id
+                    binding.runtime_instance_id
                       ? "选择已发布的 Agent"
                       : "请先选择运行环境"
                   }
@@ -137,19 +167,82 @@ function NodeConfiguration({
               </SelectTrigger>
               <SelectContent>
                 {activeAgents.map((agent) => (
-                  <SelectItem key={agent.release_id} value={agent.release_id}>
+                  <SelectItem
+                    key={agent.runtime_agent_release_id}
+                    value={agent.runtime_agent_release_id}
+                  >
                     {agent.agent_name} · v{agent.release_version}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {binding.runtime_id &&
+            {binding.runtime_instance_id &&
               !agents.isPending &&
               !activeAgents.length && (
                 <p className="text-xs text-destructive">
                   该运行环境没有可用的 Agent 发布版本。
                 </p>
               )}
+            {binding.runtime_agent_release_id && (
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Select
+                  value={binding.model_selection_mode || ""}
+                  onValueChange={(mode) =>
+                    onChange({
+                      ...binding,
+                      model_selection_mode: mode as
+                        | "exact"
+                        | "agent_preference",
+                      runtime_model_binding_id: null,
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="模型选择策略" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem
+                      value="agent_preference"
+                      disabled={
+                        activeAgents.find(
+                          (item) =>
+                            item.runtime_agent_release_id ===
+                            binding.runtime_agent_release_id,
+                        )?.preference_binding_ids.length !== 1
+                      }
+                    >
+                      Agent 偏好
+                    </SelectItem>
+                    <SelectItem value="exact">精确指定</SelectItem>
+                  </SelectContent>
+                </Select>
+                {binding.model_selection_mode === "exact" && (
+                  <Select
+                    value={binding.runtime_model_binding_id || ""}
+                    onValueChange={(runtimeModelBindingId) =>
+                      onChange({
+                        ...binding,
+                        runtime_model_binding_id: runtimeModelBindingId,
+                      })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="选择模型" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {models.data?.data.map((model) => (
+                        <SelectItem
+                          key={model.runtime_model_binding_id}
+                          value={model.runtime_model_binding_id}
+                        >
+                          {model.engine_model_id} · {model.route_type}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            )}
           </div>
         ) : (
           <div className="space-y-2">
@@ -195,8 +288,10 @@ function WorkflowExecutionConfigurationPage() {
         detail.data.execution_configuration?.bindings.map((binding) => [
           binding.node_key,
           {
-            runtime_id: binding.runtime_id,
-            agent_release_id: binding.agent_release_id,
+            runtime_instance_id: binding.runtime_instance_id || "",
+            runtime_agent_release_id: binding.runtime_agent_release_id,
+            model_selection_mode: binding.model_selection_mode,
+            runtime_model_binding_id: binding.runtime_model_binding_id,
           },
         ]) || [],
       ),
@@ -217,16 +312,20 @@ function WorkflowExecutionConfigurationPage() {
         executableNodes?.every((node) => {
           const binding = bindings[node.node_key]
           return (
-            Boolean(binding?.runtime_id) &&
-            (node.node_type !== "agent" || Boolean(binding.agent_release_id))
+            Boolean(binding?.runtime_instance_id) &&
+            (node.node_type !== "agent" ||
+              (Boolean(binding.runtime_agent_release_id) &&
+                Boolean(binding.model_selection_mode) &&
+                (binding.model_selection_mode !== "exact" ||
+                  Boolean(binding.runtime_model_binding_id))))
           )
         }),
       ),
     [bindings, detail.data, executableNodes, projectId, projectMode],
   )
   const save = useMutation({
-    mutationFn: () =>
-      workspaceApi.updateWorkflowExecutionConfiguration(templateId, versionId, {
+    mutationFn: async () => {
+      const body = {
         expected_revision: detail.data?.execution_configuration?.revision || 0,
         project_id: projectId || null,
         node_bindings: Object.fromEntries(
@@ -235,7 +334,22 @@ function WorkflowExecutionConfigurationPage() {
             bindings[node.node_key],
           ]),
         ),
-      }),
+      }
+      const precheck =
+        await workspaceApi.precheckWorkflowExecutionConfiguration(
+          templateId,
+          versionId,
+          body,
+        )
+      if (!precheck.passed) {
+        throw new Error(JSON.stringify(precheck.errors))
+      }
+      return workspaceApi.updateWorkflowExecutionConfiguration(
+        templateId,
+        versionId,
+        body,
+      )
+    },
     onSuccess: async () => {
       setLoadedRevisionId(null)
       await Promise.all([
@@ -332,13 +446,16 @@ function WorkflowExecutionConfigurationPage() {
             key={node.id}
             node={node}
             runtime={runtimes.data?.data.find(
-              (item) => item.id === bindings[node.node_key]?.runtime_id,
+              (item) =>
+                item.id === bindings[node.node_key]?.runtime_instance_id,
             )}
             runtimes={compatibleRuntimes}
             binding={
               bindings[node.node_key] || {
-                runtime_id: "",
-                agent_release_id: null,
+                runtime_instance_id: "",
+                runtime_agent_release_id: null,
+                model_selection_mode: null,
+                runtime_model_binding_id: null,
               }
             }
             onChange={(binding) =>

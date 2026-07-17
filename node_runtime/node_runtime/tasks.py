@@ -4,7 +4,7 @@ import json
 from enum import Enum
 from typing import Protocol
 
-from runtime_worker.agent_shell import AgentShell, RunCommand
+from runtime_worker.agent_shell import EngineShell, RunCommand
 from runtime_worker.mcp_manager import McpRuntimeManager
 from runtime_worker.permissions import validate_permission_mode
 from runtime_worker.release_store import AgentReleaseStore
@@ -56,7 +56,7 @@ class NodeTaskExecutor:
         outbox: asyncio.Queue[Envelope],
         node_id: str,
         *,
-        shell: AgentShell | None = None,
+        shell: EngineShell | None = None,
         release_store: AgentReleaseStore | None = None,
         skill_store: SkillStore | None = None,
         approval_callback=None,
@@ -67,7 +67,7 @@ class NodeTaskExecutor:
         self.route_store = route_store
         self.outbox = outbox
         self.node_id = node_id
-        self.shell = shell or AgentShell()
+        self.shell = shell or EngineShell()
         self.running: dict[str, asyncio.Task] = {}
         self.cancelling: set[str] = set()
         self.release_store = release_store
@@ -78,18 +78,22 @@ class NodeTaskExecutor:
 
     def validate(self, command: dict) -> None:
         snapshot = command["snapshot"]
-        if self.release_store is None:
-            raise ValueError("release_not_active: Agent Release store is unavailable")
-        self.release_store.verify_installed(
-            str(snapshot["agent_id"]),
-            str(snapshot["agent_release_id"]),
-            str(snapshot["resolved_spec_digest"]),
-        )
-        if snapshot.get("resolved_spec_schema_version") == "1.1":
+        if snapshot.get("agent_release_id"):
+            if self.release_store is None:
+                raise ValueError("release_not_active: Agent Release store is unavailable")
+            self.release_store.verify_installed(
+                str(snapshot["agent_id"]),
+                str(snapshot["agent_release_id"]),
+                str(snapshot["resolved_spec_digest"]),
+            )
+        if snapshot.get("resolved_spec_schema_version") in {"1.1", "2.0"}:
             if self.skill_store is None:
                 raise ValueError("skill_store_unavailable")
             self.skill_store.usage_evidence(
-                str(snapshot["runtime_profile_id"]),
+                str(
+                    snapshot.get("runtime_instance_id")
+                    or snapshot["runtime_profile_id"]
+                ),
                 list(snapshot.get("skills", [])),
             )
         validate_permission_mode(snapshot.get("permission_mode", "default"))
@@ -99,7 +103,8 @@ class NodeTaskExecutor:
             cwd == root or cwd.startswith(f"{root.rstrip('/')}/") for root in roots
         ):
             raise ValueError("working directory is outside snapshot allowlist")
-        build_route_env(command["route"], snapshot, self.route_store)
+        if not command.get("requires_model_preparation"):
+            build_route_env(command["route"], snapshot, self.route_store)
 
     def start(self, task_id: str, revision: int, command: dict) -> None:
         if task_id in self.running:
@@ -110,14 +115,14 @@ class NodeTaskExecutor:
 
     def prepare_skill_binding(self, command: dict) -> list[dict]:
         snapshot = command["snapshot"]
-        if snapshot.get("resolved_spec_schema_version") != "1.1":
+        if snapshot.get("resolved_spec_schema_version") not in {"1.1", "2.0"}:
             return []
         if self.skill_store is None:
             raise ValueError("skill_store_unavailable")
         task_id = str(command["task_id"])
         path, evidence = self.skill_store.bind_task(
             task_id,
-            str(snapshot["runtime_profile_id"]),
+            str(snapshot.get("runtime_instance_id") or snapshot["runtime_profile_id"]),
             list(snapshot.get("skills", [])),
         )
         command["_skill_binding_path"] = str(path)
@@ -149,11 +154,23 @@ class NodeTaskExecutor:
         try:
             env = build_route_env(command["route"], snapshot, self.route_store)
             release_store = self.release_store
-            if release_store is None:
-                raise ValueError("agent_release_store_unavailable")
+            release_dirs: list[str] = []
+            if snapshot.get("agent_release_id"):
+                if release_store is None:
+                    raise ValueError("agent_release_store_unavailable")
+                release_dirs.append(
+                    str(
+                        release_store.verify_installed(
+                            str(snapshot["agent_id"]),
+                            str(snapshot["agent_release_id"]),
+                            str(snapshot["resolved_spec_digest"]),
+                        )
+                    )
+                )
             run_command = RunCommand(
+                engine_type=snapshot.get("engine_type", "claude_code"),
                 prompt=command["prompt"],
-                model=snapshot["model_id"],
+                model=snapshot.get("engine_model_id", snapshot.get("model_id")),
                 system_prompt=snapshot.get("system_prompt"),
                 permission_mode=snapshot.get("permission_mode", "default"),
                 tools=snapshot.get("tools", []),
@@ -168,13 +185,7 @@ class NodeTaskExecutor:
                 approval_callback=self.approval_callback,
                 delegation_callback=self.delegation_callback,
                 add_dirs=[
-                    str(
-                        release_store.verify_installed(
-                            str(snapshot["agent_id"]),
-                            str(snapshot["agent_release_id"]),
-                            str(snapshot["resolved_spec_digest"]),
-                        )
-                    ),
+                    *release_dirs,
                     *(
                         [str(command["_skill_binding_path"])]
                         if command.get("_skill_binding_path")
@@ -191,8 +202,10 @@ class NodeTaskExecutor:
                 handles = [
                     item
                     for item in server.get("secret_handles", [])
-                    if item.get("runtime_profile_id")
-                    == str(snapshot["runtime_profile_id"])
+                    if item.get("runtime_instance_id")
+                    == str(snapshot.get("runtime_instance_id"))
+                    or item.get("runtime_profile_id")
+                    == str(snapshot.get("runtime_profile_id"))
                 ]
                 if len(handles) != 1 or not handles[0].get("secret_ref"):
                     raise ValueError(f"mcp_target_not_ready: {server.get('slug')}")
@@ -307,7 +320,7 @@ class NodeTaskController:
         spool: EventSpool,
         route_store: ModelRouteStore,
         *,
-        shell: AgentShell | None = None,
+        shell: EngineShell | None = None,
         release_store: AgentReleaseStore | None = None,
         skill_store: SkillStore | None = None,
     ) -> None:
@@ -380,10 +393,13 @@ class NodeTaskController:
                     decision == DispatchDecision.DUPLICATE
                     and self.executor.skill_store is not None
                     and message.payload["snapshot"].get("resolved_spec_schema_version")
-                    == "1.1"
+                    in {"1.1", "2.0"}
                 ):
                     evidence = self.executor.skill_store.usage_evidence(
-                        str(message.payload["snapshot"]["runtime_profile_id"]),
+                        str(
+                            message.payload["snapshot"].get("runtime_instance_id")
+                            or message.payload["snapshot"]["runtime_profile_id"]
+                        ),
                         list(message.payload["snapshot"].get("skills", [])),
                     )
                 else:
@@ -418,6 +434,21 @@ class NodeTaskController:
                             "revision": message.payload["revision"],
                             "duplicate": decision == DispatchDecision.DUPLICATE,
                             "skill_evidence": evidence,
+                            "model_evidence": {
+                                "runtime_instance_id": message.payload["snapshot"].get("runtime_instance_id"),
+                                "runtime_model_binding_id": message.payload["snapshot"].get("runtime_model_binding_id"),
+                                "engine_type": message.payload["snapshot"].get("engine_type"),
+                                "engine_version": message.payload["snapshot"].get("engine_version"),
+                                "adapter_version": message.payload["snapshot"].get("adapter_version"),
+                                "engine_model_id": message.payload["snapshot"].get("engine_model_id"),
+                                "route_type": message.payload["snapshot"].get("route_type"),
+                                "route_reference": message.payload["snapshot"].get("route_key"),
+                                "runtime_configuration_digest": message.payload["snapshot"].get("runtime_configuration_digest"),
+                                "capability_fingerprint": message.payload["snapshot"].get("capability_fingerprint"),
+                                "effective_spec_digest": message.payload["snapshot"].get("effective_spec_digest"),
+                            }
+                            if message.payload.get("requires_model_preparation")
+                            else None,
                         },
                     )
                 ]
@@ -437,6 +468,8 @@ class NodeTaskController:
             pending = self.pending_tasks.pop(task_id, None)
             if pending is not None:
                 revision, command = pending
+                if message.payload.get("route") is not None:
+                    command["route"] = message.payload["route"]
                 self.executor.start(task_id, revision, command)
             return []
         if message.type == "task_accept_rejected":
