@@ -120,8 +120,8 @@ def test_admin_lists_and_configures_enrolled_node_runtime(
             "secret_inputs": {"api_key": "node-secret"},
         },
     )
-    assert configured.status_code == 200
-    assert configured.json()["model_id"] == "claude-node"
+    assert configured.status_code == 410
+    assert "read-only" in configured.text
 
 
 def test_developer_can_list_but_cannot_configure_nodes(

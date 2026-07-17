@@ -3,7 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router"
 import { Plus } from "lucide-react"
 import { useState } from "react"
 import { toast } from "sonner"
-import { tenantApi, workspaceApi } from "@/api/tenantApi"
+import { runtimeInstancesApi, tenantApi, workspaceApi } from "@/api/tenantApi"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -53,35 +53,25 @@ function ProjectsPage() {
     queryFn: () => tenantApi.readNamespaceUsers(namespaceId!),
     enabled: Boolean(namespaceId && canManage),
   })
-  const platformRuntime = useQuery({
-    queryKey: ["platform-runtime"],
-    queryFn: tenantApi.readPlatformRuntime,
-    enabled: Boolean(namespaceId && canManage),
-    retry: false,
-  })
-  const runtimeNodes = useQuery({
-    queryKey: ["runtime-nodes"],
-    queryFn: tenantApi.readRuntimeNodes,
+  const runtimes = useQuery({
+    queryKey: ["runtime-instances"],
+    queryFn: runtimeInstancesApi.list,
     enabled: Boolean(namespaceId && canManage),
   })
-  const runtimeOptions = [
-    ...(platformRuntime.data
-      ? [{ id: platformRuntime.data.id, name: "平台运行时" }]
-      : []),
-    ...(runtimeNodes.data?.data
-      .filter((node) => node.runtime_profile_id)
-      .map((node) => ({
-        id: node.runtime_profile_id!,
-        name: `${node.name}（节点）`,
-      })) ?? []),
-  ]
+  const runtimeOptions =
+    runtimes.data?.data
+      .filter((runtime) => runtime.enabled && runtime.status === "available")
+      .map((runtime) => ({
+        id: runtime.id,
+        name: `${runtime.name}（${runtime.engine_type} / ${runtime.location_type}）`,
+      })) ?? []
   const createProject = useMutation({
     mutationFn: () =>
       workspaceApi.createProject({
         name,
         slug,
         description: description || null,
-        default_runtime_id: defaultRuntimeId,
+        default_runtime_instance_id: defaultRuntimeId || null,
         member_ids: memberIds,
         initial_repositories:
           remoteUrl && repositoryPurpose
@@ -175,6 +165,10 @@ function ProjectsPage() {
                       </option>
                     ))}
                   </select>
+                  <p className="text-xs text-muted-foreground">
+                    仅作为仓库验证与新配置的初始建议，不包含默认模型，也不会强制
+                    Conversation 或 Workflow 使用。
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <Label>初始成员</Label>

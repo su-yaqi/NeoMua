@@ -1,7 +1,11 @@
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import { useState } from "react"
-import { type AgentListItem, agentsApi } from "@/api/tenantApi"
+import {
+  type AgentListItem,
+  agentsApi,
+  modelDefinitionsApi,
+} from "@/api/tenantApi"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -34,6 +38,16 @@ export default function AgentList({ canManage }: { canManage: boolean }) {
     queryKey: ["agents"],
     queryFn: agentsApi.list,
   })
+  const models = useQuery({
+    queryKey: ["model-definitions"],
+    queryFn: modelDefinitionsApi.list,
+  })
+  const modelNames = new Map(
+    models.data?.data.map((item) => [
+      item.id,
+      item.display_name || item.model_key,
+    ]),
+  )
 
   return (
     <Card>
@@ -62,8 +76,7 @@ export default function AgentList({ canManage }: { canManage: boolean }) {
               <TableRow>
                 <TableHead>名称</TableHead>
                 <TableHead>Agent 标识</TableHead>
-                <TableHead>Harness</TableHead>
-                <TableHead>模型</TableHead>
+                <TableHead>模型偏好</TableHead>
                 <TableHead>草稿修订</TableHead>
                 <TableHead>校验状态</TableHead>
                 <TableHead>状态</TableHead>
@@ -90,8 +103,11 @@ export default function AgentList({ canManage }: { canManage: boolean }) {
                     <TableCell className="font-mono text-sm">
                       {agent.slug}
                     </TableCell>
-                    <TableCell>{agent.harness_type ?? "—"}</TableCell>
-                    <TableCell>{agent.model_id ?? "—"}</TableCell>
+                    <TableCell>
+                      {modelNames.get(
+                        agent.preferred_model_definition_id || "",
+                      ) ?? "—"}
+                    </TableCell>
                     <TableCell>r{agent.draft_revision}</TableCell>
                     <TableCell>
                       <Badge

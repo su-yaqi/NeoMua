@@ -17,6 +17,7 @@ from app.conversation_management.models import (
     ConversationConfigurationRevision,
     ConversationContextSnapshot,
     ConversationEvent,
+    ConversationExecutionBinding,
     ConversationMessage,
     ConversationStatus,
     ConversationVisibility,
@@ -38,9 +39,20 @@ from app.project_management.models import (
     SpecStandardVersion,
 )
 from app.project_management.service import verified_repository_runtime_proof
+from app.runtime.catalog import (
+    RuntimeCatalogError,
+    current_runtime_evidence,
+    resolve_model_binding,
+    validate_model_binding_route,
+)
+from app.runtime.connections import node_is_online
 from app.runtime.models import (
     AgentSession,
     AgentTask,
+    AgentTaskModelUsage,
+    ModelSelectionMode,
+    RuntimeInstance,
+    RuntimeModelBinding,
     RuntimeNode,
     RuntimeProfile,
     RuntimeRouteMode,
@@ -174,6 +186,109 @@ def validate_agent_binding(
     return binding, release
 
 
+def validate_v09_agent_binding(
+    session: Session,
+    namespace_id: uuid.UUID,
+    runtime_id: uuid.UUID,
+    binding_id: uuid.UUID,
+) -> tuple[RuntimeAgentRelease, AgentRelease]:
+    binding = session.get(RuntimeAgentRelease, binding_id)
+    if (
+        binding is None
+        or binding.namespace_id != namespace_id
+        or binding.runtime_instance_id != runtime_id
+    ):
+        raise HTTPException(409, "Agent Release is not active on the selected Runtime")
+    release = session.get(AgentRelease, binding.current_release_id)
+    if (
+        release is None
+        or release.resolved_spec_schema_version != "2.0"
+        or binding.applied_digest != release.resolved_spec_digest
+        or binding.materialization_digest != release.resolved_spec_digest
+    ):
+        raise HTTPException(409, "Agent Release digest is not active on the Runtime")
+    return binding, release
+
+
+def resolve_v09_execution_binding(
+    session: Session,
+    *,
+    runtime: RuntimeInstance,
+    role_key: str,
+    mode: ModelSelectionMode,
+    exact_binding_id: uuid.UUID | None,
+    runtime_agent_release: RuntimeAgentRelease | None = None,
+    release: AgentRelease | None = None,
+) -> ConversationExecutionBinding:
+    preferred = release.preferred_model_definition_id if release else None
+    try:
+        configuration, capability, catalog_fingerprint = current_runtime_evidence(
+            session, runtime
+        )
+        model_binding, source = resolve_model_binding(
+            session,
+            runtime=runtime,
+            mode=mode,
+            exact_binding_id=exact_binding_id,
+            preferred_model_definition_id=preferred,
+        )
+        validate_model_binding_route(session, model_binding)
+    except RuntimeCatalogError as exc:
+        raise HTTPException(409, {"code": exc.code, "message": exc.message}) from exc
+    if release is not None:
+        required_tools = set(release.required_capabilities.get("tools", []))
+        available_tools = set(capability.capabilities.get("tools", []))
+        missing = sorted(required_tools - available_tools)
+        if missing:
+            raise HTTPException(
+                409,
+                {"code": "required_tools_missing", "role_key": role_key, "missing": missing},
+            )
+    effective_digest = canonical_digest(
+        {
+            "runtime_instance_id": str(runtime.id),
+            "release_digest": release.resolved_spec_digest if release else None,
+            "runtime_configuration_digest": configuration.configuration_digest,
+            "capability_fingerprint": capability.capability_fingerprint,
+            "runtime_model_binding_id": str(model_binding.id),
+            "model_catalog_fingerprint": catalog_fingerprint,
+        }
+    )
+    return ConversationExecutionBinding(
+        configuration_revision_id=uuid.uuid4(),
+        role_key=role_key,
+        runtime_instance_id=runtime.id,
+        runtime_agent_release_id=runtime_agent_release.id
+        if runtime_agent_release
+        else None,
+        agent_release_id=release.id if release else None,
+        model_selection_mode=mode.value,
+        preferred_model_definition_id=preferred,
+        runtime_model_binding_id=model_binding.id,
+        selection_source=source.value,
+        runtime_configuration_revision_id=configuration.id,
+        runtime_capability_report_id=capability.id,
+        adapter_version=capability.adapter_version,
+        model_catalog_fingerprint=catalog_fingerprint,
+        effective_spec_digest=effective_digest,
+    )
+
+
+def attach_execution_bindings(
+    session: Session,
+    revision: ConversationConfigurationRevision,
+    bindings: list[ConversationExecutionBinding],
+) -> None:
+    fingerprints = {binding.model_catalog_fingerprint for binding in bindings}
+    if len(fingerprints) != 1:
+        raise HTTPException(409, "Conversation bindings do not share one Runtime catalog")
+    revision.runtime_model_catalog_fingerprint = next(iter(fingerprints))
+    session.add(revision)
+    for binding in bindings:
+        binding.configuration_revision_id = revision.id
+        session.add(binding)
+
+
 def add_conversation_agent(
     session: Session,
     conversation: Conversation,
@@ -185,6 +300,7 @@ def add_conversation_agent(
     agent_session = AgentSession(
         namespace_id=conversation.namespace_id,
         runtime_profile_id=conversation.runtime_id,
+        runtime_instance_id=conversation.runtime_instance_id,
         created_by=creator_id,
         agent_release_id=release.id,
         runtime_agent_release_id=binding.id,
@@ -286,8 +402,9 @@ def ensure_current_configuration(
 
 def configuration_public(
     revision: ConversationConfigurationRevision,
+    session: Session | None = None,
 ) -> dict[str, Any]:
-    return {
+    result = {
         "id": str(revision.id),
         "conversation_id": str(revision.conversation_id),
         "revision": revision.revision,
@@ -303,6 +420,19 @@ def configuration_public(
         "created_by": str(revision.created_by) if revision.created_by else None,
         "created_at": revision.created_at.isoformat(),
     }
+    if session is not None:
+        bindings = session.exec(
+            select(ConversationExecutionBinding).where(
+                ConversationExecutionBinding.configuration_revision_id == revision.id
+            )
+        ).all()
+        result["execution_bindings"] = [
+            item.model_dump(mode="json") for item in bindings
+        ]
+        result["runtime_model_catalog_fingerprint"] = (
+            revision.runtime_model_catalog_fingerprint
+        )
+    return result
 
 
 def create_context_snapshot(
@@ -319,12 +449,15 @@ def create_context_snapshot(
     ).all()
     if not repositories:
         raise HTTPException(409, "Project has no repository context")
-    runtime_key = str(conversation.runtime_id)
+    runtime_target_id = conversation.runtime_instance_id or conversation.runtime_id
+    if runtime_target_id is None:
+        raise HTTPException(409, "Conversation Runtime is unavailable")
+    runtime_key = str(runtime_target_id)
     unavailable = []
     runtime_proofs: dict[uuid.UUID, dict[str, Any]] = {}
     for repository in repositories:
         proof = verified_repository_runtime_proof(
-            session, repository, conversation.runtime_id
+            session, repository, runtime_target_id
         )
         if (
             repository.status != RepositoryStatus.AVAILABLE
@@ -566,20 +699,47 @@ def create_agent_task(
         raise HTTPException(
             409, {"code": "agent_turn_in_progress", "task_id": str(active.id)}
         )
-    runtime = session.get(RuntimeProfile, conversation.runtime_id)
+    runtime_instance = (
+        session.get(RuntimeInstance, conversation.runtime_instance_id)
+        if conversation.runtime_instance_id
+        else None
+    )
+    runtime = (
+        session.get(RuntimeProfile, conversation.runtime_id)
+        if conversation.runtime_id
+        else None
+    )
     binding = session.get(RuntimeAgentRelease, participant.runtime_agent_release_id)
     release = session.get(AgentRelease, participant.agent_release_id)
-    if (
-        runtime is None
-        or binding is None
-        or release is None
-        or binding.current_release_id != release.id
-        or binding.applied_digest != participant.resolved_spec_digest
-        or release.resolved_spec_digest != participant.resolved_spec_digest
-    ):
+    if runtime_instance is not None:
+        valid_target = (
+            binding is not None
+            and binding.runtime_instance_id == runtime_instance.id
+            and release is not None
+            and release.resolved_spec_schema_version == "2.0"
+            and binding.current_release_id == release.id
+            and binding.applied_digest == participant.resolved_spec_digest
+            and release.resolved_spec_digest == participant.resolved_spec_digest
+        )
+    else:
+        valid_target = (
+            runtime is not None
+            and binding is not None
+            and release is not None
+            and binding.current_release_id == release.id
+            and binding.applied_digest == participant.resolved_spec_digest
+            and release.resolved_spec_digest == participant.resolved_spec_digest
+        )
+    if not valid_target:
         raise HTTPException(409, "Fixed Agent Release is no longer active")
+    assert binding is not None and release is not None
     node_id = None
-    if runtime.runtime_type == RuntimeType.NODE:
+    if runtime_instance is not None and runtime_instance.runtime_node_id is not None:
+        node = session.get(RuntimeNode, runtime_instance.runtime_node_id)
+        if node is None or node.revoked_at is not None or not node_is_online(node):
+            raise HTTPException(409, "Target Runtime Node is unavailable")
+        node_id = node.id
+    elif runtime is not None and runtime.runtime_type == RuntimeType.NODE:
         node = session.exec(
             select(RuntimeNode).where(
                 RuntimeNode.runtime_profile_id == runtime.id,
@@ -708,13 +868,117 @@ def create_agent_task(
                         f"{json.dumps(roundtable_updates, ensure_ascii=False)}\n\n"
                         f"当前用户消息：\n{effective_prompt}"
                     )
-    task = AgentTask(
-        namespace_id=conversation.namespace_id,
-        session_id=participant.agent_session_id,
-        runtime_profile_id=runtime.id,
-        target_node_id=node_id,
-        prompt=effective_prompt,
-        snapshot={
+    if runtime_instance is not None:
+        if configuration is None:
+            raise HTTPException(409, "Conversation configuration is unavailable")
+        execution_binding = session.exec(
+            select(ConversationExecutionBinding).where(
+                ConversationExecutionBinding.configuration_revision_id
+                == configuration.id,
+                ConversationExecutionBinding.role_key == str(participant.id),
+            )
+        ).first()
+        if execution_binding is None:
+            raise HTTPException(409, "Participant execution binding is missing")
+        try:
+            current_configuration, current_capability, current_catalog = (
+                current_runtime_evidence(session, runtime_instance)
+            )
+            model_binding = session.get(
+                RuntimeModelBinding, execution_binding.runtime_model_binding_id
+            )
+            if model_binding is None:
+                raise RuntimeCatalogError(
+                    "model_binding_missing", "Frozen model binding is missing"
+                )
+            resolved_binding, _ = resolve_model_binding(
+                session,
+                runtime=runtime_instance,
+                mode=ModelSelectionMode.EXACT,
+                exact_binding_id=model_binding.id,
+                preferred_model_definition_id=None,
+            )
+            validate_model_binding_route(session, resolved_binding)
+        except RuntimeCatalogError as exc:
+            raise HTTPException(409, {"code": exc.code, "message": exc.message}) from exc
+        if (
+            current_configuration.id
+            != execution_binding.runtime_configuration_revision_id
+            or current_capability.id != execution_binding.runtime_capability_report_id
+            or current_catalog != execution_binding.model_catalog_fingerprint
+        ):
+            raise HTTPException(409, "frozen_execution_evidence_changed")
+        tools = list(resolved_spec.get("tools", []))
+        policies = dict(resolved_spec.get("policies", {}))
+        snapshot = {
+            "schema_version": "0.9",
+            "conversation_id": str(conversation.id),
+            "conversation_message_id": str(user_message.id),
+            "conversation_configuration_revision_id": str(configuration.id),
+            "conversation_execution_binding_id": str(execution_binding.id),
+            "runtime_instance_id": str(runtime_instance.id),
+            "runtime_node_id": str(node_id) if node_id else None,
+            "engine_type": runtime_instance.engine_type.value,
+            "engine_version": current_capability.engine_version,
+            "adapter_version": execution_binding.adapter_version,
+            "runtime_configuration_revision_id": str(current_configuration.id),
+            "runtime_configuration_digest": current_configuration.configuration_digest,
+            "runtime_capability_report_id": str(current_capability.id),
+            "capability_fingerprint": current_capability.capability_fingerprint,
+            "runtime_model_catalog_fingerprint": current_catalog,
+            "runtime_model_binding_id": str(model_binding.id),
+            "model_definition_id": str(model_binding.model_definition_id),
+            "engine_model_id": model_binding.engine_model_id,
+            "route_type": model_binding.route_type.value,
+            "route_key": model_binding.route_key,
+            "provider_config_id": str(model_binding.provider_config_id)
+            if model_binding.provider_config_id
+            else None,
+            "provider_model_id": str(model_binding.provider_model_id)
+            if model_binding.provider_model_id
+            else None,
+            "model_selection_mode": execution_binding.model_selection_mode,
+            "selection_source": execution_binding.selection_source,
+            "preferred_model_definition_id": str(
+                execution_binding.preferred_model_definition_id
+            )
+            if execution_binding.preferred_model_definition_id
+            else None,
+            "effective_spec_digest": execution_binding.effective_spec_digest,
+            "agent_id": str(release.agent_id),
+            "agent_release_id": str(release.id),
+            "agent_release_version": release.version,
+            "resolved_spec_digest": release.resolved_spec_digest,
+            "resolved_spec_schema_version": release.resolved_spec_schema_version,
+            "system_prompt": system_prompt,
+            "permission_mode": policies.get("permission_mode", "default"),
+            "tools": [item["key"] for item in tools],
+            "allowed_tools": [
+                item["key"]
+                for item in tools
+                if item.get("policy") in {"allow", "require_approval"}
+            ],
+            "disallowed_tools": [
+                item["key"]
+                for item in tools
+                if item.get("policy") in {"deny", "disabled", "forbidden"}
+            ],
+            "require_approval_tools": [
+                item["key"]
+                for item in tools
+                if item.get("policy") == "require_approval"
+            ],
+            "skills": resolved_spec.get("skills", []),
+            "plugins": resolved_spec.get("plugins", []),
+            "mcp_servers": resolved_spec.get("mcp_servers", []),
+            "working_directory": None,
+            "timeout_seconds": int(policies.get("timeout_seconds", 3600)),
+            "roundtable_role": roundtable_role.value,
+            "roundtable_participants": roundtable_participants,
+        }
+    else:
+        assert runtime is not None
+        snapshot = {
             "conversation_id": str(conversation.id),
             "conversation_message_id": str(user_message.id),
             "route_mode": runtime.route_mode.value,
@@ -744,7 +1008,15 @@ def create_agent_task(
             ),
             "roundtable_role": roundtable_role.value,
             "roundtable_participants": roundtable_participants,
-        },
+        }
+    task = AgentTask(
+        namespace_id=conversation.namespace_id,
+        session_id=participant.agent_session_id,
+        runtime_profile_id=runtime.id if runtime else None,
+        runtime_instance_id=runtime_instance.id if runtime_instance else None,
+        target_node_id=node_id,
+        prompt=effective_prompt,
+        snapshot=snapshot,
         agent_release_id=release.id,
         runtime_agent_release_id=binding.id,
         resolved_spec_digest=release.resolved_spec_digest,
@@ -757,6 +1029,155 @@ def create_agent_task(
     )
     session.add(task)
     session.flush()
+    if runtime_instance is not None:
+        session.add(
+            AgentTaskModelUsage(
+                task_id=task.id,
+                runtime_instance_id=runtime_instance.id,
+                runtime_node_id=node_id,
+                agent_release_id=release.id,
+                model_definition_id=model_binding.model_definition_id,
+                runtime_model_binding_id=model_binding.id,
+                engine_type=runtime_instance.engine_type.value,
+                engine_version=current_capability.engine_version,
+                adapter_version=execution_binding.adapter_version,
+                route_type=model_binding.route_type.value,
+                route_reference=model_binding.route_key,
+                model_selection_mode=execution_binding.model_selection_mode,
+                selection_source=execution_binding.selection_source,
+                runtime_configuration_digest=current_configuration.configuration_digest,
+                capability_fingerprint=current_capability.capability_fingerprint,
+                model_catalog_fingerprint=current_catalog,
+                effective_spec_digest=execution_binding.effective_spec_digest,
+            )
+        )
+    return task
+
+
+def create_chat_task(
+    session: Session,
+    conversation: Conversation,
+    message: ConversationMessage,
+    prompt: str,
+    system_prompt: str | None,
+) -> AgentTask:
+    if conversation.runtime_instance_id is None or message.configuration_revision_id is None:
+        raise HTTPException(409, "v0.9 Chat execution binding is incomplete")
+    runtime = session.get(RuntimeInstance, conversation.runtime_instance_id)
+    execution = session.exec(
+        select(ConversationExecutionBinding).where(
+            ConversationExecutionBinding.configuration_revision_id
+            == message.configuration_revision_id,
+            ConversationExecutionBinding.role_key == "chat",
+        )
+    ).first()
+    if runtime is None or execution is None:
+        raise HTTPException(409, "v0.9 Chat execution binding is unavailable")
+    try:
+        configuration, capability, catalog = current_runtime_evidence(session, runtime)
+        model_binding = session.get(
+            RuntimeModelBinding, execution.runtime_model_binding_id
+        )
+        if model_binding is None:
+            raise RuntimeCatalogError("model_binding_missing", "Model binding is missing")
+        resolved, _ = resolve_model_binding(
+            session,
+            runtime=runtime,
+            mode=ModelSelectionMode.EXACT,
+            exact_binding_id=model_binding.id,
+            preferred_model_definition_id=None,
+        )
+        validate_model_binding_route(session, resolved)
+    except RuntimeCatalogError as exc:
+        raise HTTPException(409, {"code": exc.code, "message": exc.message}) from exc
+    if (
+        configuration.id != execution.runtime_configuration_revision_id
+        or capability.id != execution.runtime_capability_report_id
+        or catalog != execution.model_catalog_fingerprint
+    ):
+        raise HTTPException(409, "frozen_execution_evidence_changed")
+    node_id = runtime.runtime_node_id
+    if node_id is not None:
+        node = session.get(RuntimeNode, node_id)
+        if node is None or node.revoked_at is not None or not node_is_online(node):
+            raise HTTPException(409, "Target Runtime Node is unavailable")
+    snapshot = {
+        "schema_version": "0.9",
+        "conversation_id": str(conversation.id),
+        "conversation_message_id": str(message.id),
+        "conversation_configuration_revision_id": str(message.configuration_revision_id),
+        "conversation_execution_binding_id": str(execution.id),
+        "runtime_instance_id": str(runtime.id),
+        "runtime_node_id": str(node_id) if node_id else None,
+        "engine_type": runtime.engine_type.value,
+        "engine_version": capability.engine_version,
+        "adapter_version": execution.adapter_version,
+        "runtime_configuration_revision_id": str(configuration.id),
+        "runtime_configuration_digest": configuration.configuration_digest,
+        "runtime_capability_report_id": str(capability.id),
+        "capability_fingerprint": capability.capability_fingerprint,
+        "runtime_model_catalog_fingerprint": catalog,
+        "runtime_model_binding_id": str(model_binding.id),
+        "model_definition_id": str(model_binding.model_definition_id),
+        "engine_model_id": model_binding.engine_model_id,
+        "route_type": model_binding.route_type.value,
+        "route_key": model_binding.route_key,
+        "provider_config_id": str(model_binding.provider_config_id)
+        if model_binding.provider_config_id
+        else None,
+        "provider_model_id": str(model_binding.provider_model_id)
+        if model_binding.provider_model_id
+        else None,
+        "model_selection_mode": execution.model_selection_mode,
+        "selection_source": execution.selection_source,
+        "preferred_model_definition_id": None,
+        "effective_spec_digest": execution.effective_spec_digest,
+        "system_prompt": system_prompt,
+        "permission_mode": "plan",
+        "tools": [],
+        "allowed_tools": [],
+        "disallowed_tools": [],
+        "require_approval_tools": [],
+        "skills": [],
+        "plugins": [],
+        "mcp_servers": [],
+        "working_directory": None,
+        "timeout_seconds": 3600,
+    }
+    task = AgentTask(
+        namespace_id=conversation.namespace_id,
+        runtime_instance_id=runtime.id,
+        target_node_id=node_id,
+        prompt=prompt,
+        snapshot=snapshot,
+        idempotency_key=f"conversation-chat:{conversation.id}:{message.id}",
+        created_by=message.author_id,
+    )
+    session.add(task)
+    session.flush()
+    session.add(
+        AgentTaskModelUsage(
+            task_id=task.id,
+            runtime_instance_id=runtime.id,
+            runtime_node_id=node_id,
+            model_definition_id=model_binding.model_definition_id,
+            runtime_model_binding_id=model_binding.id,
+            engine_type=runtime.engine_type.value,
+            engine_version=capability.engine_version,
+            adapter_version=execution.adapter_version,
+            route_type=model_binding.route_type.value,
+            route_reference=model_binding.route_key,
+            model_selection_mode=execution.model_selection_mode,
+            selection_source=execution.selection_source,
+            runtime_configuration_digest=configuration.configuration_digest,
+            capability_fingerprint=capability.capability_fingerprint,
+            model_catalog_fingerprint=catalog,
+            effective_spec_digest=execution.effective_spec_digest,
+        )
+    )
+    message.task_id = task.id
+    message.payload = {"task_ids": [str(task.id)]}
+    session.add(message)
     return task
 
 
@@ -911,6 +1332,16 @@ def reconcile_agent_messages(session: Session, conversation: Conversation) -> bo
         for task in tasks:
             assert task is not None
             if task.status == TaskStatus.SUCCEEDED:
+                if message.author_type == MessageAuthorType.MODEL:
+                    message.payload = {
+                        **(task.final_result or {}),
+                        "runtime_task_id": str(task.id),
+                        "runtime_model_binding_id": task.snapshot.get(
+                            "runtime_model_binding_id"
+                        ),
+                        "selection_source": task.snapshot.get("selection_source"),
+                    }
+                    continue
                 existing_reply = session.exec(
                     select(ConversationMessage).where(
                         ConversationMessage.conversation_id == conversation.id,
@@ -1119,12 +1550,13 @@ def conversation_public(session: Session, conversation: Conversation) -> dict[st
         "visibility": conversation.visibility,
         "status": conversation.status,
         "runtime_id": conversation.runtime_id,
+        "runtime_instance_id": conversation.runtime_instance_id,
         "provider_config_id": conversation.provider_config_id,
         "model_id": conversation.model_id,
         "idempotency_key": conversation.idempotency_key,
         "current_context_snapshot_id": conversation.current_context_snapshot_id,
         "current_configuration_revision_id": conversation.current_configuration_revision_id,
-        "configuration": configuration_public(current) if current else None,
+        "configuration": configuration_public(current, session) if current else None,
         "agents": public_agents,
         "created_at": conversation.created_at,
         "updated_at": conversation.updated_at,

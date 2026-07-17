@@ -62,6 +62,26 @@ class ModelRouteStore:
     def revision(self) -> int:
         return int(self._read().get("__config_revision", {}).get("value", 0))
 
+    def set_discovery_generation(self, generation: int) -> None:
+        values = self._read()
+        values["__discovery_generation"] = {"value": generation}
+        self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        temporary = self.path.with_name(f".{self.path.name}.{secrets.token_hex(8)}.tmp")
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                json.dump(values, handle)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, self.path)
+            os.chmod(self.path, 0o600)
+        finally:
+            if temporary.exists():
+                temporary.unlink()
+
+    def discovery_generation(self) -> int:
+        return int(self._read().get("__discovery_generation", {}).get("value", 0))
+
     def get(self, runtime_id: str) -> DirectRoute | None:
         value = self._read().get(runtime_id)
         return DirectRoute.model_validate(value) if value else None
@@ -70,6 +90,8 @@ class ModelRouteStore:
 def build_route_env(
     route: dict, snapshot: dict, store: ModelRouteStore
 ) -> dict[str, str]:
+    if route.get("mode") == "runtime_native":
+        return {}
     if route.get("mode") == "platform_gateway":
         if not all(route.get(key) for key in ("base_url", "api_key", "runtime_id")):
             raise ValueError("gateway route is incomplete")

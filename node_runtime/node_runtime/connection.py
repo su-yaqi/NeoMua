@@ -9,19 +9,20 @@ from typing import Any
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from pydantic import ValidationError
+from runtime_worker.agent_shell import RunCommand
+from runtime_worker.runtime_configuration import RuntimeConfigurationStore
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed, InvalidStatus, WebSocketException
 
-from node_runtime.identity import DeviceIdentity
-from node_runtime.identity import IdentityStore
+from node_runtime.agent_releases import AgentReleaseController
+from node_runtime.artifacts.controller import ArtifactController
+from node_runtime.identity import DeviceIdentity, IdentityStore
+from node_runtime.mcp_validation import NodeMcpValidationController
 from node_runtime.protocol import Envelope, envelope
 from node_runtime.reconcile import ReconcileState
-from node_runtime.tasks import NodeTaskController
 from node_runtime.runtime_config import RuntimeConfigManager
-from node_runtime.artifacts.controller import ArtifactController
-from node_runtime.agent_releases import AgentReleaseController
-from node_runtime.mcp_validation import NodeMcpValidationController
 from node_runtime.skill_sync import NodeSkillSyncController
+from node_runtime.tasks import NodeTaskController
 
 
 class PermanentConnectionError(RuntimeError):
@@ -75,6 +76,9 @@ class NodeConnection:
         agent_release_controller: AgentReleaseController | None = None,
         mcp_validation_controller: NodeMcpValidationController | None = None,
         skill_sync_controller: NodeSkillSyncController | None = None,
+        runtime_installations: list[dict[str, Any]] | None = None,
+        runtime_configuration_store: RuntimeConfigurationStore | None = None,
+        on_discovery_generation: Callable[[int], None] | None = None,
     ) -> None:
         self.url = websocket_url(platform_url)
         self.identity = identity
@@ -89,6 +93,9 @@ class NodeConnection:
         self.agent_release_controller = agent_release_controller
         self.mcp_validation_controller = mcp_validation_controller
         self.skill_sync_controller = skill_sync_controller
+        self.runtime_installations = runtime_installations
+        self.runtime_configuration_store = runtime_configuration_store
+        self.on_discovery_generation = on_discovery_generation
 
     async def connect_once(self) -> None:
         try:
@@ -121,6 +128,18 @@ class NodeConnection:
                         self.reconcile_state.model_dump(mode="json"),
                     ).model_dump_json()
                 )
+                if self.runtime_installations is not None:
+                    await websocket.send(
+                        envelope(
+                            "runtime_discovery_report",
+                            self.identity.node_id,
+                            {
+                                "generation": self.reconcile_state.discovery_generation
+                                + 1,
+                                "installations": self.runtime_installations,
+                            },
+                        ).model_dump_json()
+                    )
                 if self.task_controller:
                     await self.task_controller.replay_pending()
                 heartbeat = asyncio.create_task(self._heartbeat_loop(websocket))
@@ -152,6 +171,10 @@ class NodeConnection:
                 payload["harness_capabilities"] = self.harness_capabilities
             if self.secret_fingerprints is not None:
                 payload["mcp_secret_fingerprints"] = self.secret_fingerprints()
+            if self.runtime_configuration_store is not None:
+                payload["runtime_capability_evidence"] = (
+                    self.runtime_configuration_store.capability_evidence()
+                )
             await websocket.send(
                 envelope(
                     "heartbeat",
@@ -171,6 +194,12 @@ class NodeConnection:
                         "rotate_credential", self.identity.node_id, {}
                     ).model_dump_json()
                 )
+                continue
+            if message.type == "runtime_discovery_ack":
+                generation = int(message.payload["generation"])
+                self.reconcile_state.discovery_generation = generation
+                if self.on_discovery_generation is not None:
+                    self.on_discovery_generation(generation)
                 continue
             if message.type == "credential_rotated":
                 if self.identity_store is None:
@@ -208,6 +237,145 @@ class NodeConnection:
                         response_type, self.identity.node_id, result
                     ).model_dump_json()
                 )
+            if message.type == "runtime_instance_configuration":
+                payload = message.payload
+                installation = next(
+                    (
+                        item
+                        for item in (self.runtime_installations or [])
+                        if item.get("installation_key") == payload.get("installation_key")
+                        and item.get("engine_type") == payload.get("engine_type")
+                    ),
+                    None,
+                )
+                try:
+                    if installation is None:
+                        raise ValueError("Runtime installation is unavailable")
+                    if self.runtime_configuration_store is None:
+                        raise ValueError("Runtime configuration store is unavailable")
+                    applied = self.runtime_configuration_store.apply(
+                        payload,
+                        engine_version=installation.get("engine_version"),
+                        adapter_version=str(installation.get("adapter_version")),
+                        capabilities=dict(installation.get("capabilities", {})),
+                        discovered_models=list(
+                            installation.get("discovered_models", [])
+                        ),
+                    )
+                    result = {
+                        "status": "applied",
+                        "engine_version": applied.engine_version,
+                        "adapter_version": applied.adapter_version,
+                        "capabilities": applied.capabilities,
+                        "discovered_models": applied.discovered_models,
+                    }
+                except (KeyError, TypeError, ValueError) as exc:
+                    result = {
+                        "status": "failed",
+                        "engine_version": installation.get("engine_version")
+                        if installation
+                        else None,
+                        "adapter_version": installation.get("adapter_version", "unknown")
+                        if installation
+                        else "unknown",
+                        "error": {
+                            "code": "runtime_configuration_apply_failed",
+                            "message": str(exc),
+                        },
+                    }
+                await websocket.send(
+                    envelope(
+                        "runtime_instance_configuration_result",
+                        self.identity.node_id,
+                        {
+                            "runtime_instance_id": payload.get("runtime_instance_id"),
+                            "configuration_revision_id": payload.get(
+                                "configuration_revision_id"
+                            ),
+                            "configuration_digest": payload.get(
+                                "configuration_digest"
+                            ),
+                            **result,
+                        },
+                    ).model_dump_json()
+                )
+                continue
+            if message.type == "runtime_model_validation":
+                payload = message.payload
+                result: dict[str, Any]
+                try:
+                    if self.task_controller is None:
+                        raise ValueError("Runtime engine controller is unavailable")
+                    if self.runtime_configuration_store is None:
+                        raise ValueError("Runtime configuration store is unavailable")
+                    configuration = self.runtime_configuration_store.get(
+                        str(payload["runtime_instance_id"])
+                    )
+                    if configuration is None:
+                        raise ValueError("Runtime configuration is not applied locally")
+                    terminal = False
+                    event_count = 0
+                    failure: str | None = None
+                    command = RunCommand(
+                        engine_type=str(payload["engine_type"]),
+                        executable=configuration.execution_path(),
+                        prompt="Reply with OK.",
+                        model=str(payload["engine_model_id"]),
+                        permission_mode="plan",
+                        timeout_seconds=60,
+                    )
+                    async for event in self.task_controller.executor.shell.run_session(
+                        command
+                    ):
+                        event_count += 1
+                        if event.get("event_type") == "result":
+                            terminal = True
+                        elif event.get("event_type") == "error":
+                            failure = str(
+                                event.get("payload", {}).get("message", "failed")
+                            )
+                    if failure or not terminal:
+                        raise ValueError(
+                            failure or "Runtime engine returned no terminal result"
+                        )
+                    if self.runtime_configuration_store is None:
+                        raise ValueError("Runtime configuration store is unavailable")
+                    self.runtime_configuration_store.record_validated_model(
+                        str(payload["runtime_instance_id"]),
+                        str(payload["engine_model_id"]),
+                        str(payload["route_key"]),
+                    )
+                    result = {
+                        "status": "succeeded",
+                        "evidence": {
+                            "event_count": event_count,
+                            "terminal_result": True,
+                        },
+                    }
+                except Exception as exc:
+                    result = {
+                        "status": "failed",
+                        "error": {
+                            "code": "runtime_native_model_validation_failed",
+                            "message": str(exc),
+                        },
+                    }
+                await websocket.send(
+                    envelope(
+                        "runtime_model_validation_result",
+                        self.identity.node_id,
+                        {
+                            "runtime_model_binding_id": payload.get(
+                                "runtime_model_binding_id"
+                            ),
+                            "attempt_no": payload.get("attempt_no"),
+                            "engine_model_id": payload.get("engine_model_id"),
+                            "route_key": payload.get("route_key"),
+                            **result,
+                        },
+                    ).model_dump_json()
+                )
+                continue
                 continue
             if self.artifact_controller:
                 artifact_responses = await self.artifact_controller.handle(message)

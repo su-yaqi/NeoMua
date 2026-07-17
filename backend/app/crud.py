@@ -8,12 +8,14 @@ from app.core.security import get_password_hash, verify_password
 from app.models import (
     Item,
     ItemCreate,
+    LlmModelDefinition,
     LlmProviderConfig,
     LlmProviderModel,
     Namespace,
     NamespaceRole,
     NamespaceUserCreate,
     NamespaceUserUpdate,
+    ProviderModelSyncStatus,
     ProviderValidationStatus,
     User,
     UserCreate,
@@ -284,29 +286,57 @@ def replace_llm_provider_models(
     existing = session.exec(
         select(LlmProviderModel).where(LlmProviderModel.provider_config_id == config.id)
     ).all()
-    for item in existing:
-        session.delete(item)
-    session.flush()
-
-    created: list[LlmProviderModel] = []
+    existing_by_id = {item.model_id: item for item in existing}
+    retained: list[LlmProviderModel] = []
+    seen: set[str] = set()
     for payload in models_payload:
-        model = LlmProviderModel(
-            provider_config_id=config.id,
-            model_id=payload["model_id"],
-            display_name=payload.get("display_name"),
-            source_type=payload["source_type"],
-            is_enabled=payload["is_enabled"],
-            sync_status=payload["sync_status"],
-            raw_metadata=payload.get("raw_metadata", {}),
-            last_synced_at=payload.get("last_synced_at"),
-            created_at=payload.get("created_at"),
-            updated_at=payload.get("updated_at"),
-        )
+        model_id = payload["model_id"]
+        seen.add(model_id)
+        definition = session.exec(
+            select(LlmModelDefinition).where(
+                LlmModelDefinition.namespace_id == config.namespace_id,
+                LlmModelDefinition.provider_family == config.provider_slug.lower(),
+                LlmModelDefinition.model_key == model_id,
+            )
+        ).first()
+        if definition is None:
+            definition = LlmModelDefinition(
+                namespace_id=config.namespace_id,
+                provider_family=config.provider_slug.lower(),
+                model_key=model_id,
+                display_name=payload.get("display_name") or model_id,
+            )
+            session.add(definition)
+            session.flush()
+        model = existing_by_id.get(model_id)
+        if model is None:
+            model = LlmProviderModel(
+                provider_config_id=config.id,
+                model_id=model_id,
+                source_type=payload["source_type"],
+                created_at=payload.get("created_at"),
+            )
+        model.model_definition_id = definition.id
+        model.display_name = payload.get("display_name")
+        model.source_type = payload["source_type"]
+        model.is_enabled = payload["is_enabled"]
+        model.sync_status = payload["sync_status"]
+        model.raw_metadata = payload.get("raw_metadata", {})
+        model.last_synced_at = payload.get("last_synced_at")
+        model.updated_at = payload.get("updated_at")
         session.add(model)
-        created.append(model)
+        retained.append(model)
+    for model in existing:
+        if model.model_id in seen:
+            continue
+        model.is_enabled = False
+        model.sync_status = ProviderModelSyncStatus.STALE
+        model.updated_at = datetime.now(timezone.utc)
+        session.add(model)
+        retained.append(model)
     session.commit()
     session.refresh(config)
-    return created
+    return retained
 
 
 def set_llm_provider_validation(

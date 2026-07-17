@@ -1,8 +1,8 @@
+import fcntl
 import os
 import shutil
 import uuid
 import zipfile
-import fcntl
 from contextlib import contextmanager
 from pathlib import Path
 

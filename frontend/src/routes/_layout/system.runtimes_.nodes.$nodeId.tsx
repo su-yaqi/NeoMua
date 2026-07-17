@@ -1,19 +1,10 @@
 import { useQuery } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
 
-import { mcpServersApi, tenantApi } from "@/api/tenantApi"
+import { runtimeInstancesApi, tenantApi } from "@/api/tenantApi"
+import RuntimeSkillMatrix from "@/components/Runtimes/RuntimeSkillMatrix"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import RuntimeSkillMatrix from "@/components/Runtimes/RuntimeSkillMatrix"
-
-type NodeMcpTarget = {
-  id: string
-  server_slug: string
-  revision: number
-  transport: string
-  status: string
-  secret_ref: string | null
-}
 
 export const Route = createFileRoute("/_layout/system/runtimes_/nodes/$nodeId")(
   {
@@ -28,45 +19,15 @@ function RuntimeNodePage() {
     queryFn: () => tenantApi.readRuntimeNode(nodeId),
     refetchInterval: 20_000,
   })
-  const mcpTargets = useQuery({
-    queryKey: ["node-mcp-targets", node.data?.runtime_profile_id],
-    enabled: Boolean(node.data?.runtime_profile_id),
-    queryFn: async (): Promise<NodeMcpTarget[]> => {
-      const servers = await mcpServersApi.list()
-      const details = await Promise.all(
-        servers.data.map(async (server) => {
-          const revisions = await mcpServersApi.revisions(server.id)
-          return Promise.all(
-            revisions.data.map(async (revision) => ({
-              server,
-              revision: await mcpServersApi.getRevision(
-                server.id,
-                Number(revision.revision),
-              ),
-            })),
-          )
-        }),
-      )
-      return details.flat(2).flatMap(({ server, revision }) =>
-        ((revision.targets as Array<Record<string, unknown>> | undefined) ?? [])
-          .filter(
-            (target) =>
-              target.runtime_profile_id === node.data?.runtime_profile_id,
-          )
-          .map((target) => ({
-            id: String(target.id),
-            server_slug: server.slug,
-            revision: Number(revision.revision),
-            transport: String(revision.transport),
-            status: String(target.status),
-            secret_ref: target.secret_ref ? String(target.secret_ref) : null,
-          })),
-      )
-    },
+  const runtimes = useQuery({
+    queryKey: ["node-runtime-instances", nodeId],
+    queryFn: () => runtimeInstancesApi.listNode(nodeId),
+    refetchInterval: 5000,
   })
+
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">节点运行时详情</h1>
+      <h1 className="text-2xl font-bold">Runtime Node 详情</h1>
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -81,66 +42,42 @@ function RuntimeNodePage() {
           <div>
             系统：{node.data?.os_name}/{node.data?.architecture}
           </div>
-          <div>节点版本：{node.data?.agent_version}</div>
-          <div>
-            Claude CLI：
-            {node.data?.harness_capabilities.claude_code?.cli_version ??
-              "unknown"}
-          </div>
-          <div>
-            Claude SDK：
-            {node.data?.harness_capabilities.claude_code?.sdk_version ??
-              "unknown"}
-          </div>
-          <div>
-            Harness：
-            {node.data?.harness_capabilities.claude_code?.harness_version ??
-              "unknown"}
-          </div>
+          <div>节点守护进程版本：{node.data?.agent_version}</div>
           <div>最后心跳：{node.data?.last_seen_at ?? "从未"}</div>
-          <div>运行时配置：{node.data?.runtime_profile_id ?? "未配置"}</div>
-          <div className="sm:col-span-2">
-            MCP executable inventory：
-            {node.data?.harness_capabilities.mcp_executables?.join(", ") ||
-              "无"}
-          </div>
+          <p className="text-sm text-muted-foreground sm:col-span-2">
+            Node 只代表机器与安全边界；Claude Code、Codex
+            等安装由发现协议分别注册为 Runtime Instance。
+          </p>
         </CardContent>
       </Card>
-      {node.data?.runtime_profile_id ? (
-        <Card>
-          <CardHeader><CardTitle>Skill 同步状态</CardTitle></CardHeader>
-          <CardContent>
-            <RuntimeSkillMatrix runtimeId={node.data.runtime_profile_id} />
-          </CardContent>
-        </Card>
-      ) : null}
-      <Card>
-        <CardHeader>
-          <CardTitle>MCP 本地凭证与目标就绪状态</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {mcpTargets.data?.length ? (
-            mcpTargets.data.map((target) => (
-              <div className="rounded border p-3" key={String(target.id)}>
-                <p className="font-medium">
-                  MCP 标识：{String(target.server_slug)} · Revision{" "}
-                  {String(target.revision)}
-                </p>
-                <p className="text-sm">
-                  {String(target.transport)} · {String(target.status)}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  secret_ref：{target.secret_ref ? "已配置" : "缺失"}
-                </p>
+
+      <div className="space-y-3">
+        <h2 className="text-lg font-semibold">已发现 Runtime Instance</h2>
+        {runtimes.data?.data.map((runtime) => (
+          <Card key={runtime.id}>
+            <CardHeader>
+              <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+                {runtime.name}
+                <Badge variant="outline">{runtime.engine_type}</Badge>
+                <Badge>{runtime.status}</Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-2 text-sm sm:grid-cols-3">
+                <span>Engine {runtime.engine_version || "待发现"}</span>
+                <span>Adapter {runtime.adapter_version}</span>
+                <span>可用模型 {runtime.available_model_count}</span>
               </div>
-            ))
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              此节点尚无 MCP 目标绑定。
-            </p>
-          )}
-        </CardContent>
-      </Card>
+              <RuntimeSkillMatrix runtimeId={runtime.id} />
+            </CardContent>
+          </Card>
+        ))}
+        {!runtimes.data?.data.length && (
+          <p className="text-sm text-muted-foreground">
+            节点尚未上报受信任的 Runtime 安装。
+          </p>
+        )}
+      </div>
     </div>
   )
 }

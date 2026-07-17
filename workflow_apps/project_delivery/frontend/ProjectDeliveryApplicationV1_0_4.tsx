@@ -1,24 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link, useNavigate } from "@tanstack/react-router"
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { toast } from "sonner"
 import { workspaceApi } from "@/api/tenantApi"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 
 export const componentKeyV1_0_4 = "workflow.project_delivery.v1_0_4"
 
 type ProjectMode = "required" | "optional" | "none"
-type ContextMode = "project" | "standalone"
 
 function projectModeFromManifest(manifest: Record<string, unknown>): ProjectMode {
   const mode = manifest.project_mode
@@ -33,9 +25,6 @@ export function ProjectDeliveryApplicationV1_0_4({
 }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [contextMode, setContextMode] = useState<ContextMode>("project")
-  const [projectId, setProjectId] = useState("")
-  const [runtimeId, setRuntimeId] = useState("")
   const [title, setTitle] = useState("")
   const [request, setRequest] = useState("")
   const templates = useQuery({
@@ -45,10 +34,6 @@ export function ProjectDeliveryApplicationV1_0_4({
   const projects = useQuery({
     queryKey: ["projects"],
     queryFn: () => workspaceApi.listProjects(),
-  })
-  const runtimes = useQuery({
-    queryKey: ["conversation-runtimes"],
-    queryFn: workspaceApi.listConversationRuntimes,
   })
   const workflow = useMemo(
     () =>
@@ -64,23 +49,6 @@ export function ProjectDeliveryApplicationV1_0_4({
   const projectMode = enabledVersion
     ? projectModeFromManifest(enabledVersion.version.manifest)
     : "required"
-  const manifestNodes = Array.isArray(enabledVersion?.version.manifest.nodes)
-    ? enabledVersion.version.manifest.nodes
-    : []
-  const standaloneNeedsRuntime = manifestNodes.some((node) => {
-    if (!node || typeof node !== "object") return true
-    const policy = (node as { runtime_policy?: unknown }).runtime_policy
-    return !policy || typeof policy !== "object" || !("runtime_id" in policy)
-  })
-
-  useEffect(() => {
-    if (projectMode === "none") {
-      setContextMode("standalone")
-      setProjectId("")
-    } else if (projectMode === "required") {
-      setContextMode("project")
-    }
-  }, [projectMode])
 
   const tasks = useQuery({
     queryKey: ["workflow-app-tasks", workflowSlug, enabledVersion?.version.id],
@@ -93,8 +61,6 @@ export function ProjectDeliveryApplicationV1_0_4({
       workspaceApi.createVisibleWorkflowInstance({
         title,
         template_version_id: enabledVersion?.version.id,
-        project_id: contextMode === "project" ? projectId : null,
-        runtime_id: runtimeId && runtimeId !== "project-default" ? runtimeId : null,
         input: { request },
       }),
     onSuccess: (task) => {
@@ -116,13 +82,7 @@ export function ProjectDeliveryApplicationV1_0_4({
       </Card>
     )
 
-  const projectRequired = contextMode === "project" && !projectId
-  const runtimeRequired =
-    contextMode === "standalone" && standaloneNeedsRuntime && !runtimeId
-  const canCreate =
-    Boolean(title && request && enabledVersion) &&
-    !projectRequired &&
-    !runtimeRequired
+  const canCreate = Boolean(title && request && enabledVersion)
 
   return (
     <div className="space-y-6">
@@ -144,61 +104,6 @@ export function ProjectDeliveryApplicationV1_0_4({
           <CardTitle>创建流程任务</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-2">
-          {projectMode === "optional" && (
-            <Select
-              value={contextMode}
-              onValueChange={(value: ContextMode) => {
-                setContextMode(value)
-                if (value === "standalone") setProjectId("")
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="选择执行方式" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="project">关联项目</SelectItem>
-                <SelectItem value="standalone">独立执行</SelectItem>
-              </SelectContent>
-            </Select>
-          )}
-          {contextMode === "project" && (
-            <Select value={projectId} onValueChange={setProjectId}>
-              <SelectTrigger>
-                <SelectValue placeholder="选择项目" />
-              </SelectTrigger>
-              <SelectContent>
-                {projects.data?.data.map((project) => (
-                  <SelectItem key={project.id} value={project.id}>
-                    {project.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-          <Select value={runtimeId} onValueChange={setRuntimeId}>
-            <SelectTrigger>
-              <SelectValue
-                placeholder={
-                  contextMode === "project"
-                    ? "使用项目默认 Runtime"
-                    : "选择任务 Runtime"
-                }
-              />
-            </SelectTrigger>
-            <SelectContent>
-              {contextMode === "project" && (
-                <SelectItem value="project-default">使用项目默认 Runtime</SelectItem>
-              )}
-              {runtimes.data?.data
-                .filter((runtime) => runtime.compatible)
-                .map((runtime) => (
-                  <SelectItem key={runtime.id} value={runtime.id}>
-                    {runtime.runtime_type === "platform" ? "平台" : "节点"} ·{" "}
-                    {runtime.model_id}
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
           <Input
             placeholder="任务标题"
             value={title}
@@ -213,7 +118,7 @@ export function ProjectDeliveryApplicationV1_0_4({
           <div className="flex items-center justify-between md:col-span-2">
             <p className="text-sm text-muted-foreground">
               固定版本：{enabledVersion?.version.version || "无已启用版本"} ·{" "}
-              {contextMode === "project" ? "冻结项目配置" : "无项目上下文"}
+              执行配置会冻结项目、Runtime、Agent 与模型
             </p>
             <Button
               disabled={!canCreate || createTask.isPending}

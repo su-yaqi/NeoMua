@@ -44,7 +44,7 @@ from app.agent_management.catalog import (
 )
 from app.agent_management.models import AgentDefinition, AgentDraft, HarnessProfile
 from app.core.config import settings
-from app.models import LlmProviderConfig, LlmProviderModel
+from app.models import LlmModelDefinition, LlmProviderConfig, LlmProviderModel
 from app.runtime.artifacts.local_storage import LocalArtifactStorage
 from app.runtime.artifacts.storage import ArtifactStorage
 from app.runtime.models import RuntimeProfile
@@ -558,9 +558,9 @@ class ResolvedAgentSpec(BaseModel):
     schema_version: str = "1.1"
     agent_id: uuid.UUID
     agent_release_id: uuid.UUID | None = None
-    harness_type: str
-    harness_adapter_version: str = "claude-code-1.1"
-    adapter_config: dict[str, Any]
+    harness_type: str | None = None
+    harness_adapter_version: str | None = None
+    adapter_config: dict[str, Any] = Field(default_factory=dict)
     model: dict[str, Any]
     system_prompt: str
     policies: dict[str, Any]
@@ -601,6 +601,12 @@ def resolve_agent_spec(
             ]
         )
     diagnostics: list[Diagnostic] = []
+    is_v09 = draft.preferred_model_definition_id is not None
+    model_definition = (
+        session.get(LlmModelDefinition, draft.preferred_model_definition_id)
+        if draft.preferred_model_definition_id
+        else None
+    )
     profile = (
         session.get(HarnessProfile, draft.harness_profile_id)
         if draft.harness_profile_id
@@ -611,7 +617,19 @@ def resolve_agent_spec(
         if draft.provider_config_id
         else None
     )
-    if (
+    if is_v09 and (
+        model_definition is None
+        or model_definition.namespace_id != agent.namespace_id
+        or not model_definition.enabled
+    ):
+        diagnostics.append(
+            Diagnostic(
+                code="preferred_model_invalid",
+                field="preferred_model_definition_id",
+                message="Preferred model identity is missing, disabled, or cross-namespace",
+            )
+        )
+    if not is_v09 and (
         profile is None
         or profile.namespace_id != agent.namespace_id
         or profile.archived
@@ -623,7 +641,7 @@ def resolve_agent_spec(
                 message="Harness profile is missing, archived, or cross-namespace",
             )
         )
-    elif profile.harness_type != "claude_code":
+    elif not is_v09 and profile and profile.harness_type != "claude_code":
         diagnostics.append(
             Diagnostic(
                 code="unsupported_harness",
@@ -631,7 +649,7 @@ def resolve_agent_spec(
                 message="v0.5 only supports claude_code",
             )
         )
-    if (
+    if not is_v09 and (
         provider is None
         or provider.namespace_id != agent.namespace_id
         or not provider.enabled
@@ -654,7 +672,7 @@ def resolve_agent_spec(
         if provider and draft.model_id
         else None
     )
-    if model is None:
+    if not is_v09 and model is None:
         diagnostics.append(
             Diagnostic(
                 code="model_not_found",
@@ -752,7 +770,7 @@ def resolve_agent_spec(
                 )
             )
             continue
-        if profile and plugin_version.harness_type != profile.harness_type:
+        if not is_v09 and profile and plugin_version.harness_type != profile.harness_type:
             diagnostics.append(
                 Diagnostic(
                     code="plugin_harness_mismatch",
@@ -810,12 +828,21 @@ def resolve_agent_spec(
                     )
                 )
             elif component.get("type") == "harness_config_fragment":
-                plugin_config_fragments.append(
-                    {
-                        "source": f"plugin:{plugin_identity.slug}@{plugin_version.version}",
-                        "config": component.get("config", {}),
-                    }
-                )
+                if is_v09:
+                    diagnostics.append(
+                        Diagnostic(
+                            code="legacy_harness_plugin_component",
+                            field="plugins",
+                            message=f"Plugin {plugin_identity.slug} contributes deprecated Harness configuration",
+                        )
+                    )
+                else:
+                    plugin_config_fragments.append(
+                        {
+                            "source": f"plugin:{plugin_identity.slug}@{plugin_version.version}",
+                            "config": component.get("config", {}),
+                        }
+                    )
         plugins.append(
             {
                 "id": str(plugin_identity.id),
@@ -826,7 +853,9 @@ def resolve_agent_spec(
                 "provides": plugin_version.manifest.get("provides", []),
             }
         )
-    adapter_config = {**(profile.config if profile else {}), **draft.config}
+    adapter_config = (
+        {} if is_v09 else {**(profile.config if profile else {}), **draft.config}
+    )
     for contribution in plugin_config_fragments:
         source = contribution["source"]
         fragment = contribution["config"]
@@ -1100,39 +1129,66 @@ def resolve_agent_spec(
             )
     if diagnostics:
         raise ResolutionError(diagnostics)
-    assert profile is not None and provider is not None
-    profile_diags = validate_config(profile.config, is_profile=True)
-    draft_diags = validate_config(draft.config, is_profile=False)
+    if not is_v09:
+        assert profile is not None and provider is not None
+    profile_diags = (
+        validate_config(profile.config, is_profile=True) if profile else []
+    )
+    draft_diags = [] if is_v09 else validate_config(draft.config, is_profile=False)
     if profile_diags or draft_diags:
         raise ResolutionError(profile_diags + draft_diags)
     timeout = adapter_config.get("timeout_seconds", MAX_TIMEOUT_SECONDS)
     spec = ResolvedAgentSpec(
+        schema_version="2.0" if is_v09 else "1.1",
         agent_id=agent.id,
         agent_release_id=release_id,
-        harness_type=profile.harness_type,
+        harness_type=None if is_v09 else profile.harness_type,
+        harness_adapter_version=None if is_v09 else "claude-code-1.1",
         adapter_config=adapter_config,
-        model={"provider_config_id": str(provider.id), "model_id": draft.model_id},
+        model=(
+            {
+                "preferred_model_definition_id": str(model_definition.id),
+                "provider_family": model_definition.provider_family,
+                "model_key": model_definition.model_key,
+            }
+            if is_v09 and model_definition
+            else {"provider_config_id": str(provider.id), "model_id": draft.model_id}
+        ),
         system_prompt=draft.system_prompt,
-        policies={
-            "permission_mode": adapter_config.get("permission_mode", "default"),
-            "timeout_seconds": timeout,
-            "working_directory_strategy": adapter_config.get(
-                "working_directory_strategy", "inherit"
-            ),
-        },
+        policies=(
+            draft.execution_policy
+            if is_v09
+            else {
+                "permission_mode": adapter_config.get("permission_mode", "default"),
+                "timeout_seconds": timeout,
+                "working_directory_strategy": adapter_config.get(
+                    "working_directory_strategy", "inherit"
+                ),
+            }
+        ),
         skills=sorted(skills, key=lambda item: item["slug"]),
         plugins=sorted(plugins, key=lambda item: item["slug"]),
         tools=sorted(tools, key=lambda item: item["key"]),
         mcp_servers=sorted(mcp_servers, key=lambda item: item["slug"]),
-        version_constraints={
-            "cli": profile.cli_version_constraint,
-            "sdk": profile.sdk_version_constraint,
-        },
+        version_constraints=(
+            {}
+            if is_v09
+            else {
+                "cli": profile.cli_version_constraint,
+                "sdk": profile.sdk_version_constraint,
+            }
+        ),
         required_capabilities={
-            "harness": "claude_code",
             "tools": sorted(required_tools),
             "mcp_tools": sorted(required_mcp_tools),
-            "plugin_config_fragments": plugin_config_fragments,
+            **(
+                {}
+                if is_v09
+                else {
+                    "harness": "claude_code",
+                    "plugin_config_fragments": plugin_config_fragments,
+                }
+            ),
         },
     )
     dependency_lock = {

@@ -60,12 +60,13 @@ from app.project_management.service import (
     require_version_visible,
     utcnow,
     validate_member_ids,
-    validate_runtime,
+    validate_runtime_instance,
     validate_spec_standard_manifest,
     verified_repository_runtime_proof,
 )
+from app.runtime.catalog import current_runtime_evidence
 from app.runtime.jobs import enqueue_runtime_job
-from app.runtime.models import RuntimeJob, RuntimeJobKind, RuntimeProfile
+from app.runtime.models import RuntimeJob, RuntimeJobKind
 
 router = APIRouter(tags=["projects"])
 
@@ -100,14 +101,21 @@ def list_projects(
     return {"data": [project_public(session, row) for row in rows], "count": len(rows)}
 
 
-@router.post("/projects", status_code=201)
+@router.post(
+    "/projects",
+    status_code=201,
+    operation_id="projects-create_project_alias",
+)
+@router.post("/projects/complete", status_code=201)
 def create_project(
     body: ProjectCreate,
     session: SessionDep,
     current_user: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_manager),
 ) -> dict[str, Any]:
-    validate_runtime(session, namespace_id, body.default_runtime_id)
+    validate_runtime_instance(
+        session, namespace_id, body.default_runtime_instance_id
+    )
     requested_member_ids = list(body.member_ids)
     if not current_user.is_superuser:
         requested_member_ids.insert(0, current_user.id)
@@ -117,7 +125,7 @@ def create_project(
         slug=body.slug,
         name=body.name,
         description=body.description,
-        default_runtime_id=body.default_runtime_id,
+        default_runtime_instance_id=body.default_runtime_instance_id,
         created_by=current_user.id,
     )
     session.add(project)
@@ -165,8 +173,10 @@ def update_project(
     project = _manager_project(session, project_id, namespace_id)
     update = body.model_dump(exclude_unset=True)
     archive = update.pop("archive", None)
-    if "default_runtime_id" in update:
-        validate_runtime(session, namespace_id, update["default_runtime_id"])
+    if "default_runtime_instance_id" in update:
+        validate_runtime_instance(
+            session, namespace_id, update["default_runtime_instance_id"]
+        )
     for key, value in update.items():
         setattr(project, key, value)
     if archive:
@@ -306,9 +316,12 @@ def validate_repository_access(
     repository = get_repository(session, repository_id, project_id)
     if reconcile_repository_validation(session, repository):
         session.commit()
-    runtime = validate_runtime(session, namespace_id, body.runtime_id)
-    assert isinstance(runtime, RuntimeProfile)
-    workspaces = runtime.config.get("repository_workspaces", {})
+    runtime = validate_runtime_instance(
+        session, namespace_id, body.runtime_instance_id
+    )
+    assert runtime is not None
+    configuration, _capability, _catalog = current_runtime_evidence(session, runtime)
+    workspaces = configuration.resource_limits.get("repository_workspaces", {})
     proof = workspaces.get(repository.remote_url)
     if (
         not isinstance(proof, dict)
@@ -336,7 +349,9 @@ def validate_repository_access(
         "default_branch": repository.default_branch,
         "workspace_ref": str(proof["workspace_ref"]),
         "workspace_path": str(proof.get("workspace_path") or proof.get("path")),
-        "allowed_roots": runtime.config.get("allowed_working_roots", []),
+        "allowed_roots": configuration.resource_limits.get(
+            "allowed_working_roots", []
+        ),
         "spec_locations": [
             {
                 "id": str(location.id),
@@ -354,7 +369,7 @@ def validate_repository_access(
     job = enqueue_runtime_job(
         session,
         namespace_id=namespace_id,
-        runtime_id=runtime.id,
+        runtime_instance_id=runtime.id,
         kind=RuntimeJobKind.REPOSITORY_PROBE,
         payload=payload,
         idempotency_key=f"repository:{repository.id}:validation:{fingerprint}",
@@ -716,7 +731,9 @@ def preview_spec_diff(
     if validation_job is None:
         raise HTTPException(409, "Repository Runtime validation job is unavailable")
     proof = verified_repository_runtime_proof(
-        session, repository, validation_job.runtime_profile_id
+        session,
+        repository,
+        validation_job.runtime_instance_id or validation_job.runtime_profile_id,
     )
     if proof is None:
         raise HTTPException(409, "Repository Runtime validation proof is unavailable")
@@ -724,7 +741,8 @@ def preview_spec_diff(
         location=location,
         repository=repository,
         version=version,
-        runtime_id=validation_job.runtime_profile_id,
+        runtime_id=validation_job.runtime_instance_id
+        or validation_job.runtime_profile_id,
         proof=proof,
     )
     binding.diff_preview = preview

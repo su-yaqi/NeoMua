@@ -77,9 +77,12 @@ class AgentReleaseStore:
             raise ValueError("Resolved Agent Spec digest mismatch")
         if materialization["resolved_spec_digest"] != release["resolved_spec_digest"]:
             raise ValueError("Materialization refers to a different Spec")
-        options = execution_options(spec)
-        if digest(options) != materialization["options_digest"]:
+        engine_neutral = spec.get("schema_version") == "2.0"
+        options = None if engine_neutral else execution_options(spec)
+        if not engine_neutral and digest(options) != materialization["options_digest"]:
             raise ValueError("Claude options digest mismatch")
+        if engine_neutral and materialization.get("engine_neutral") is not True:
+            raise ValueError("Engine-neutral materialization marker is missing")
         agent_root = self.root / "agents" / str(release["agent_id"])
         versions = agent_root / "versions"
         versions.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -90,12 +93,14 @@ class AgentReleaseStore:
             )
             staging.mkdir(parents=True, mode=0o700)
             try:
-                for name, value in (
+                documents = [
                     ("resolved-spec.json", spec),
                     ("materialization.json", materialization),
-                    ("options.json", options),
                     ("release.json", release),
-                ):
+                ]
+                if options is not None:
+                    documents.append(("options.json", options))
+                for name, value in documents:
                     path = staging / name
                     with path.open("x", encoding="utf-8") as target:
                         target.write(canonical_bytes(value).decode())

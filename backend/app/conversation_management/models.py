@@ -137,8 +137,11 @@ class Conversation(SQLModel, table=True):
             values_callable=lambda values: [value.value for value in values],
         ),
     )
-    runtime_id: uuid.UUID = Field(
-        foreign_key="runtime_profile.id", nullable=False, ondelete="RESTRICT"
+    runtime_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_profile.id", ondelete="RESTRICT"
+    )
+    runtime_instance_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_instance.id", ondelete="RESTRICT", index=True
     )
     provider_config_id: uuid.UUID | None = Field(
         default=None, foreign_key="llm_provider_config.id", ondelete="RESTRICT"
@@ -184,7 +187,6 @@ class Conversation(SQLModel, table=True):
 class ConversationAgent(SQLModel, table=True):
     __tablename__ = "conversation_agent"
     __table_args__ = (
-        UniqueConstraint("conversation_id", "agent_id", name="uq_conversation_agent"),
         Index(
             "uq_conversation_main_agent",
             "conversation_id",
@@ -256,12 +258,61 @@ class ConversationConfigurationRevision(SQLModel, table=True):
     participant_ids: list[str] = Field(
         default_factory=list, sa_column=Column(POSTGRES_JSON, nullable=False)
     )
+    runtime_model_catalog_fingerprint: str | None = Field(default=None, max_length=64)
     created_by: uuid.UUID | None = Field(
         default=None, foreign_key="user.id", ondelete="SET NULL"
     )
     created_at: datetime = Field(
         default_factory=utcnow, sa_type=DateTime(timezone=True)
     )
+
+
+class ConversationExecutionBinding(SQLModel, table=True):
+    __tablename__ = "conversation_execution_binding"
+    __table_args__ = (
+        UniqueConstraint(
+            "configuration_revision_id",
+            "role_key",
+            name="uq_conversation_execution_binding_role",
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    configuration_revision_id: uuid.UUID = Field(
+        foreign_key="conversation_configuration_revision.id",
+        nullable=False,
+        ondelete="CASCADE",
+        index=True,
+    )
+    role_key: str = Field(max_length=128)
+    runtime_instance_id: uuid.UUID = Field(
+        foreign_key="runtime_instance.id", nullable=False, ondelete="RESTRICT"
+    )
+    runtime_agent_release_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_agent_release.id", ondelete="RESTRICT"
+    )
+    agent_release_id: uuid.UUID | None = Field(
+        default=None, foreign_key="agent_release.id", ondelete="RESTRICT"
+    )
+    model_selection_mode: str = Field(max_length=32)
+    preferred_model_definition_id: uuid.UUID | None = Field(
+        default=None, foreign_key="llm_model_definition.id", ondelete="RESTRICT"
+    )
+    runtime_model_binding_id: uuid.UUID = Field(
+        foreign_key="runtime_model_binding.id", nullable=False, ondelete="RESTRICT"
+    )
+    selection_source: str = Field(max_length=32)
+    runtime_configuration_revision_id: uuid.UUID = Field(
+        foreign_key="runtime_configuration_revision.id",
+        nullable=False,
+        ondelete="RESTRICT",
+    )
+    runtime_capability_report_id: uuid.UUID = Field(
+        foreign_key="runtime_capability_report.id", nullable=False, ondelete="RESTRICT"
+    )
+    adapter_version: str = Field(max_length=64)
+    model_catalog_fingerprint: str = Field(max_length=64)
+    effective_spec_digest: str = Field(max_length=64)
 
 
 class ConversationContextSnapshot(SQLModel, table=True):

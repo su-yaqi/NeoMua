@@ -19,6 +19,10 @@ import {
 } from "@/components/ui/select"
 
 type WorkspaceMode = "chat" | "agent"
+type AgentModelSelection = {
+  mode: "agent_preference" | "exact"
+  runtimeModelBindingId?: string
+}
 
 export default function AIWorkspace({
   conversationId,
@@ -34,6 +38,9 @@ export default function AIWorkspace({
   const [projectId, setProjectId] = useState("none")
   const [modelKey, setModelKey] = useState("")
   const [agentBindingIds, setAgentBindingIds] = useState<string[]>([])
+  const [agentModelSelections, setAgentModelSelections] = useState<
+    Record<string, AgentModelSelection>
+  >({})
   const [organizerBindingId, setOrganizerBindingId] = useState("")
   const [target, setTarget] = useState("main")
   const [configurationDirty, setConfigurationDirty] = useState(false)
@@ -70,12 +77,12 @@ export default function AIWorkspace({
     queryKey: ["projects"],
     queryFn: () => workspaceApi.listProjects(),
   })
-  const effectiveRuntimeId = conversation.data?.runtime_id || runtimeId
+  const effectiveRuntimeId = conversation.data?.runtime_instance_id || runtimeId
   const effectiveMode = conversation.data?.mode || mode
   const models = useQuery({
     queryKey: ["conversation-models", effectiveRuntimeId],
     queryFn: () => workspaceApi.listConversationModels(effectiveRuntimeId),
-    enabled: Boolean(effectiveRuntimeId && effectiveMode === "chat"),
+    enabled: Boolean(effectiveRuntimeId),
   })
   const agents = useQuery({
     queryKey: ["conversation-agents", effectiveRuntimeId],
@@ -87,12 +94,12 @@ export default function AIWorkspace({
     const value = conversation.data
     if (!value) return
     setMode(value.mode)
-    setRuntimeId(value.runtime_id)
+    setRuntimeId(value.runtime_instance_id || "")
     setProjectId(value.project_id || "none")
+    const executionBindings = value.configuration?.execution_bindings || []
     setModelKey(
-      value.provider_config_id && value.model_id
-        ? `${value.provider_config_id}:${value.model_id}`
-        : "",
+      executionBindings.find((item) => item.role_key === "chat")
+        ?.runtime_model_binding_id || "",
     )
     const activeAgents = value.agents.filter((item) => item.active)
     setAgentBindingIds(
@@ -100,6 +107,29 @@ export default function AIWorkspace({
     )
     const organizer = activeAgents.find((item) => item.role === "main")
     setOrganizerBindingId(organizer?.runtime_agent_release_id || "")
+    setAgentModelSelections(
+      Object.fromEntries(
+        activeAgents.flatMap((agent) => {
+          const binding = executionBindings.find(
+            (item) => item.role_key === agent.id,
+          )
+          return binding
+            ? [
+                [
+                  agent.runtime_agent_release_id,
+                  {
+                    mode: binding.model_selection_mode,
+                    runtimeModelBindingId:
+                      binding.model_selection_mode === "exact"
+                        ? binding.runtime_model_binding_id
+                        : undefined,
+                  },
+                ],
+              ]
+            : []
+        }),
+      ),
+    )
     setConfigurationDirty(false)
   }, [conversation.data])
 
@@ -153,7 +183,7 @@ export default function AIWorkspace({
   const selectedModel = useMemo(
     () =>
       models.data?.data.find(
-        (item) => `${item.provider_config_id}:${item.model_id}` === modelKey,
+        (item) => item.runtime_model_binding_id === modelKey,
       ),
     [modelKey, models.data],
   )
@@ -164,21 +194,29 @@ export default function AIWorkspace({
       const created = await workspaceApi.createConversation({
         title,
         mode,
-        runtime_id: runtimeId,
+        runtime_instance_id: runtimeId,
         project_id: projectId === "none" ? null : projectId,
         visibility: "private",
-        provider_config_id:
-          mode === "chat" ? selectedModel?.provider_config_id : null,
-        model_id: mode === "chat" ? selectedModel?.model_id : null,
+        chat_model_selection:
+          mode === "chat"
+            ? {
+                mode: "exact",
+                runtime_model_binding_id:
+                  selectedModel?.runtime_model_binding_id,
+              }
+            : null,
         main_agent:
           mode === "agent"
-            ? { runtime_agent_release_id: organizerBindingId }
+            ? agentInput(
+                organizerBindingId,
+                agentModelSelections[organizerBindingId],
+              )
             : null,
         collaborators:
           mode === "agent"
             ? agentBindingIds
                 .filter((id) => id !== organizerBindingId)
-                .map((id) => ({ runtime_agent_release_id: id }))
+                .map((id) => agentInput(id, agentModelSelections[id]))
             : [],
       })
       const uploaded = attachment
@@ -248,13 +286,17 @@ export default function AIWorkspace({
         if (!selectedModel) throw new Error("model_required")
         return workspaceApi.updateConversationConfiguration(conversationId, {
           expected_revision,
-          provider_config_id: selectedModel.provider_config_id,
-          model_id: selectedModel.model_id,
+          chat_model_selection: {
+            mode: "exact",
+            runtime_model_binding_id: selectedModel.runtime_model_binding_id,
+          },
         })
       }
       return workspaceApi.updateConversationConfiguration(conversationId, {
         expected_revision,
-        participant_runtime_agent_release_ids: agentBindingIds,
+        participant_selections: agentBindingIds.map((id) =>
+          agentInput(id, agentModelSelections[id]),
+        ),
         organizer_runtime_agent_release_id: organizerBindingId,
       })
     },
@@ -276,7 +318,15 @@ export default function AIWorkspace({
         ? selectedModel
         : agentBindingIds.length > 0 &&
           organizerBindingId &&
-          agentBindingIds.includes(organizerBindingId)),
+          agentBindingIds.includes(organizerBindingId) &&
+          agentBindingIds.every((id) =>
+            validAgentSelection(
+              agentModelSelections[id],
+              agents.data?.data.find(
+                (item) => item.runtime_agent_release_id === id,
+              ),
+            ),
+          )),
   )
   const canSend = Boolean(
     content.trim() &&
@@ -319,7 +369,7 @@ export default function AIWorkspace({
             </h1>
             <p className="truncate text-xs text-muted-foreground">
               {conversation.data
-                ? `${conversation.data.mode === "chat" ? "Chat" : "Agent"} · Runtime ${conversation.data.runtime_id.slice(0, 8)}`
+                ? `${conversation.data.mode === "chat" ? "Chat" : "Agent"} · Runtime ${conversation.data.runtime_instance_id?.slice(0, 8) || "历史记录"}`
                 : "选择项目、Runtime 与模型或 Agent 后开始对话"}
             </p>
           </div>
@@ -506,6 +556,7 @@ export default function AIWorkspace({
                     setModelKey("")
                     setAgentBindingIds([])
                     setOrganizerBindingId("")
+                    setAgentModelSelections({})
                   }}
                 />
                 {effectiveMode === "chat" ? (
@@ -520,10 +571,29 @@ export default function AIWorkspace({
                 ) : (
                   <AgentPicker
                     agents={agents.data?.data || []}
+                    models={models.data?.data || []}
                     selected={agentBindingIds}
                     organizer={organizerBindingId}
+                    selections={agentModelSelections}
                     onSelectedChange={(value) => {
                       setAgentBindingIds(value)
+                      setAgentModelSelections((current) => {
+                        const next = { ...current }
+                        for (const id of value) {
+                          if (!next[id]) {
+                            const agent = agents.data?.data.find(
+                              (item) => item.runtime_agent_release_id === id,
+                            )
+                            next[id] = agent?.preference_binding_ids.length
+                              ? { mode: "agent_preference" }
+                              : { mode: "exact" }
+                          }
+                        }
+                        for (const id of Object.keys(next)) {
+                          if (!value.includes(id)) delete next[id]
+                        }
+                        return next
+                      })
                       if (!value.includes(organizerBindingId)) {
                         setOrganizerBindingId(value[0] || "")
                       }
@@ -531,6 +601,13 @@ export default function AIWorkspace({
                     }}
                     onOrganizerChange={(value) => {
                       setOrganizerBindingId(value)
+                      if (conversationId) setConfigurationDirty(true)
+                    }}
+                    onSelectionChange={(id, value) => {
+                      setAgentModelSelections((current) => ({
+                        ...current,
+                        [id]: value,
+                      }))
                       if (conversationId) setConfigurationDirty(true)
                     }}
                   />
@@ -595,6 +672,29 @@ export default function AIWorkspace({
       </main>
     </div>
   )
+}
+
+function agentInput(id: string, selection: AgentModelSelection | undefined) {
+  return {
+    runtime_agent_release_id: id,
+    model_selection:
+      selection?.mode === "exact"
+        ? {
+            mode: "exact",
+            runtime_model_binding_id: selection.runtimeModelBindingId,
+          }
+        : { mode: "agent_preference" },
+  }
+}
+
+function validAgentSelection(
+  selection: AgentModelSelection | undefined,
+  agent: ConversationAgentCatalogItem | undefined,
+) {
+  if (!selection || !agent) return false
+  if (selection.mode === "exact")
+    return Boolean(selection.runtimeModelBindingId)
+  return agent.preference_binding_ids.length === 1
 }
 
 function ConversationListItem({
@@ -665,7 +765,13 @@ function RuntimeSelect({
 }: {
   value: string
   disabled: boolean
-  runtimes: Array<{ id: string; runtime_type: string; compatible: boolean }>
+  runtimes: Array<{
+    id: string
+    name: string
+    engine_type: string
+    runtime_type: string
+    compatible: boolean
+  }>
   onChange: (value: string) => void
 }) {
   return (
@@ -680,7 +786,7 @@ function RuntimeSelect({
             value={runtime.id}
             disabled={!runtime.compatible}
           >
-            {runtime.runtime_type} / {runtime.id.slice(0, 8)}
+            {runtime.name} / {runtime.engine_type} / {runtime.runtime_type}
           </SelectItem>
         ))}
       </SelectContent>
@@ -695,10 +801,11 @@ function ModelSelect({
 }: {
   value: string
   models: Array<{
-    provider_config_id: string
-    provider_name: string
-    model_id: string
-    display_name: string | null
+    runtime_model_binding_id: string
+    model_definition_id: string
+    engine_model_id: string
+    route_type: string
+    route_key: string | null
   }>
   onChange: (value: string) => void
 }) {
@@ -710,10 +817,11 @@ function ModelSelect({
       <SelectContent>
         {models.map((model) => (
           <SelectItem
-            key={`${model.provider_config_id}:${model.model_id}`}
-            value={`${model.provider_config_id}:${model.model_id}`}
+            key={model.runtime_model_binding_id}
+            value={model.runtime_model_binding_id}
           >
-            {model.provider_name} / {model.display_name || model.model_id}
+            {model.engine_model_id} / {model.route_type}
+            {model.route_key ? `:${model.route_key}` : ""}
           </SelectItem>
         ))}
       </SelectContent>
@@ -723,16 +831,27 @@ function ModelSelect({
 
 function AgentPicker({
   agents,
+  models,
   selected,
   organizer,
+  selections,
   onSelectedChange,
   onOrganizerChange,
+  onSelectionChange,
 }: {
   agents: ConversationAgentCatalogItem[]
+  models: Array<{
+    runtime_model_binding_id: string
+    engine_model_id: string
+    route_type: string
+    route_key: string | null
+  }>
   selected: string[]
   organizer: string
+  selections: Record<string, AgentModelSelection>
   onSelectedChange: (value: string[]) => void
   onOrganizerChange: (value: string) => void
+  onSelectionChange: (id: string, value: AgentModelSelection) => void
 }) {
   const activeAgents = agents.filter((agent) => agent.active)
   return (
@@ -741,29 +860,87 @@ function AgentPicker({
         {selected.length ? `${selected.length} 个 Agent` : "选择 Agent"}
       </summary>
       <div className="absolute bottom-10 left-0 z-40 w-80 space-y-3 rounded-lg border bg-popover p-3 text-popover-foreground shadow-lg">
-        <div className="max-h-48 space-y-2 overflow-y-auto">
+        <div className="max-h-80 space-y-3 overflow-y-auto">
           {activeAgents.map((agent) => (
-            <label
+            <div
               key={agent.runtime_agent_release_id}
-              className="flex cursor-pointer items-center gap-2 text-sm"
+              className="space-y-2 rounded border p-2 text-sm"
             >
-              <input
-                type="checkbox"
-                checked={selected.includes(agent.runtime_agent_release_id)}
-                onChange={(event) =>
-                  onSelectedChange(
-                    event.target.checked
-                      ? [...selected, agent.runtime_agent_release_id]
-                      : selected.filter(
-                          (value) => value !== agent.runtime_agent_release_id,
-                        ),
-                  )
-                }
-              />
-              <span className="truncate">
-                {agent.agent_name} / {agent.release_version}
-              </span>
-            </label>
+              <label className="flex cursor-pointer items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={selected.includes(agent.runtime_agent_release_id)}
+                  onChange={(event) =>
+                    onSelectedChange(
+                      event.target.checked
+                        ? [...selected, agent.runtime_agent_release_id]
+                        : selected.filter(
+                            (value) => value !== agent.runtime_agent_release_id,
+                          ),
+                    )
+                  }
+                />
+                <span className="truncate">
+                  {agent.agent_name} / {agent.release_version}
+                </span>
+              </label>
+              {selected.includes(agent.runtime_agent_release_id) && (
+                <div className="grid grid-cols-2 gap-2">
+                  <Select
+                    value={
+                      selections[agent.runtime_agent_release_id]?.mode || ""
+                    }
+                    onValueChange={(value) =>
+                      onSelectionChange(agent.runtime_agent_release_id, {
+                        mode: value as AgentModelSelection["mode"],
+                      })
+                    }
+                  >
+                    <SelectTrigger size="sm">
+                      <SelectValue placeholder="模型策略" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem
+                        value="agent_preference"
+                        disabled={agent.preference_binding_ids.length !== 1}
+                      >
+                        Agent 偏好
+                      </SelectItem>
+                      <SelectItem value="exact">精确指定</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {selections[agent.runtime_agent_release_id]?.mode ===
+                    "exact" && (
+                    <Select
+                      value={
+                        selections[agent.runtime_agent_release_id]
+                          ?.runtimeModelBindingId || ""
+                      }
+                      onValueChange={(runtimeModelBindingId) =>
+                        onSelectionChange(agent.runtime_agent_release_id, {
+                          mode: "exact",
+                          runtimeModelBindingId,
+                        })
+                      }
+                    >
+                      <SelectTrigger size="sm">
+                        <SelectValue placeholder="选择模型" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {models.map((model) => (
+                          <SelectItem
+                            key={model.runtime_model_binding_id}
+                            value={model.runtime_model_binding_id}
+                          >
+                            {model.engine_model_id} / {model.route_type}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+              )}
+            </div>
           ))}
         </div>
         <Select

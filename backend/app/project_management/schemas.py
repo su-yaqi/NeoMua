@@ -24,7 +24,7 @@ class ProjectCreate(StrictBody):
     slug: str = Field(min_length=1, max_length=128, pattern=r"^[a-z0-9][a-z0-9-]*$")
     name: str = Field(min_length=1, max_length=255)
     description: str | None = None
-    default_runtime_id: uuid.UUID | None = None
+    default_runtime_instance_id: uuid.UUID | None = None
     member_ids: list[uuid.UUID] = Field(default_factory=list)
     initial_repositories: list[ProjectInitialRepositoryCreate] = Field(
         default_factory=list, max_length=10
@@ -34,7 +34,7 @@ class ProjectCreate(StrictBody):
 class ProjectUpdate(StrictBody):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None
-    default_runtime_id: uuid.UUID | None = None
+    default_runtime_instance_id: uuid.UUID | None = None
     archive: bool | None = None
 
 
@@ -57,7 +57,7 @@ class RepositoryUpdate(StrictBody):
 
 
 class RepositoryValidationRequest(StrictBody):
-    runtime_id: uuid.UUID
+    runtime_instance_id: uuid.UUID
 
 
 class SpecLocationCreate(StrictBody):

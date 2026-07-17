@@ -124,6 +124,7 @@ def upsert_platform_runtime(
     _: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_admin),
 ) -> PlatformRuntimePublic:
+    raise HTTPException(410, "RuntimeProfile writes are read-only history in v0.9")
     runtime = session.exec(
         select(RuntimeProfile).where(
             RuntimeProfile.namespace_id == namespace_id,
@@ -220,6 +221,7 @@ async def validate_platform_runtime(
     _: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
 ) -> PlatformRuntimePublic:
+    raise HTTPException(410, "RuntimeProfile validation is read-only history in v0.9")
     runtime = session.exec(
         select(RuntimeProfile).where(
             RuntimeProfile.namespace_id == namespace_id,
@@ -282,6 +284,7 @@ def create_platform_session(
     current_user: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
 ) -> SessionPublic:
+    raise HTTPException(410, "Legacy Runtime sessions are read-only in v0.9")
     runtime = session.exec(
         select(RuntimeProfile).where(
             RuntimeProfile.namespace_id == namespace_id,
@@ -334,6 +337,7 @@ def create_session_message(
     current_user: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
 ) -> TaskPublic:
+    raise HTTPException(410, "Legacy Runtime sessions are read-only in v0.9")
     agent_session = session.exec(
         select(AgentSession).where(AgentSession.id == session_id).with_for_update()
     ).first()
@@ -448,6 +452,7 @@ def invoke_session_skill(
     current_user: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
 ) -> TaskPublic:
+    raise HTTPException(410, "Legacy Runtime sessions are read-only in v0.9")
     agent_session = session.get(AgentSession, session_id)
     if agent_session is None or agent_session.namespace_id != namespace_id:
         raise HTTPException(404, "Session not found")

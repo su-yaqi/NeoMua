@@ -1,133 +1,53 @@
 import { useQuery } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
-import { useState } from "react"
-import { type HarnessProfilePublic, harnessProfilesApi } from "@/api/tenantApi"
-import HarnessProfileSheet from "@/components/Agents/HarnessProfileSheet"
+import { harnessProfilesApi } from "@/api/tenantApi"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import useAuth from "@/hooks/useAuth"
 
 export const Route = createFileRoute("/_layout/system/harnesses")({
-  component: HarnessesPage,
+  component: HarnessHistoryPage,
 })
 
-function HarnessesPage() {
-  const { user } = useAuth()
-  const [editing, setEditing] = useState<HarnessProfilePublic | null>(null)
-  const [creating, setCreating] = useState(false)
-  const namespaceId = localStorage.getItem("selected_namespace_id")
-  const { data, isLoading } = useQuery({
-    queryKey: ["harness-profiles"],
+function HarnessHistoryPage() {
+  const profiles = useQuery({
+    queryKey: ["harness-profiles-history"],
     queryFn: harnessProfilesApi.list,
-    enabled: !!namespaceId,
   })
-  if (!namespaceId)
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>未选择空间</CardTitle>
-        </CardHeader>
-        <CardContent>请先选择空间。</CardContent>
-      </Card>
-    )
-  const role = user?.namespace_roles?.find(
-    (item) => item.namespace_id === namespaceId,
-  )?.role
-  const visible = Boolean(
-    user?.is_superuser || role === "admin" || role === "developer",
-  )
-  if (user && !visible) return null
-  const canManage = Boolean(user?.is_superuser || role === "admin")
-
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Harness 配置</h1>
-          <p className="text-muted-foreground">
-            管理可复用的 Claude Harness Profile 与结构化 CLI 配置。
-          </p>
-        </div>
-        {canManage && (
-          <Button onClick={() => setCreating(true)}>创建 Profile</Button>
-        )}
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Harness 历史配置</h1>
+        <p className="text-muted-foreground">
+          v0.9 起 Harness 已归入 Runtime
+          引擎适配层；以下记录仅用于历史审计，不再允许创建或修改。
+        </p>
       </div>
       <Card>
-        <CardContent>
-          {isLoading ? (
-            <p className="text-muted-foreground">加载中…</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>名称</TableHead>
-                  <TableHead>Harness</TableHead>
-                  <TableHead>CLI 约束</TableHead>
-                  <TableHead>SDK 约束</TableHead>
-                  <TableHead>引用</TableHead>
-                  <TableHead>状态</TableHead>
-                  <TableHead>目标兼容性</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {data?.data.map((p) => (
-                  <TableRow
-                    key={p.id}
-                    onClick={() => setEditing(p)}
-                    className="cursor-pointer"
-                  >
-                    <TableCell className="font-medium">{p.name}</TableCell>
-                    <TableCell>{p.harness_type}</TableCell>
-                    <TableCell className="font-mono text-sm">
-                      {p.cli_version_constraint}
-                    </TableCell>
-                    <TableCell className="font-mono text-sm">
-                      {p.sdk_version_constraint}
-                    </TableCell>
-                    <TableCell>
-                      {p.referenced_by_agents ? "被引用" : "—"}
-                    </TableCell>
-                    <TableCell>
-                      {p.target_compatibility.length === 0
-                        ? "无目标"
-                        : `${p.target_compatibility.filter((target) => target.compatible === true).length} 可用 / ${p.target_compatibility.filter((target) => target.compatible === null).length} unknown`}
-                    </TableCell>
-                    <TableCell>
-                      {p.archived ? (
-                        <Badge variant="secondary">已归档</Badge>
-                      ) : (
-                        <Badge>启用</Badge>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+        <CardHeader>
+          <CardTitle>只读记录</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {profiles.data?.data.map((profile) => (
+            <div
+              key={profile.id}
+              className="flex items-center justify-between rounded-md border p-3"
+            >
+              <div>
+                <p className="font-medium">{profile.name}</p>
+                <p className="font-mono text-xs text-muted-foreground">
+                  {profile.id}
+                </p>
+              </div>
+              <Badge variant="outline">{profile.harness_type}</Badge>
+            </div>
+          ))}
+          {profiles.data?.data.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              没有历史 Harness 配置。
+            </p>
           )}
         </CardContent>
       </Card>
-      {(creating || editing) && (
-        <HarnessProfileSheet
-          profile={editing}
-          open={creating || editing !== null}
-          onOpenChange={(o) => {
-            if (!o) {
-              setCreating(false)
-              setEditing(null)
-            }
-          }}
-          canManage={canManage}
-        />
-      )}
     </div>
   )
 }

@@ -7,7 +7,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import or_
 from sqlmodel import col, select
 
@@ -31,6 +31,8 @@ from app.runtime.models import (
     AgentEventType,
     AgentTask,
     AgentTaskSkillUsage,
+    RuntimeInstance,
+    RuntimeLocationType,
     RuntimeNode,
     RuntimeProfile,
     RuntimeSkillState,
@@ -76,15 +78,29 @@ class SkillUsageItem(StrictBody):
 
 
 class TaskSkillUsageReport(StrictBody):
-    runtime_profile_id: uuid.UUID
+    runtime_profile_id: uuid.UUID | None = None
+    runtime_instance_id: uuid.UUID | None = None
     skills: list[SkillUsageItem]
+
+    @model_validator(mode="after")
+    def validate_target(self) -> "TaskSkillUsageReport":
+        if (self.runtime_profile_id is None) == (self.runtime_instance_id is None):
+            raise ValueError("Exactly one Runtime target is required")
+        return self
 
 
 class TaskPreparationFailure(StrictBody):
-    runtime_profile_id: uuid.UUID
+    runtime_profile_id: uuid.UUID | None = None
+    runtime_instance_id: uuid.UUID | None = None
     revision: int
     code: str
     message: str
+
+    @model_validator(mode="after")
+    def validate_target(self) -> "TaskPreparationFailure":
+        if (self.runtime_profile_id is None) == (self.runtime_instance_id is None):
+            raise ValueError("Exactly one Runtime target is required")
+        return self
 
 
 def _state_public(session: SessionDep, state: RuntimeSkillState) -> dict[str, Any]:
@@ -102,6 +118,7 @@ def _state_public(session: SessionDep, state: RuntimeSkillState) -> dict[str, An
     return {
         "id": state.id,
         "runtime_profile_id": state.runtime_profile_id,
+        "runtime_instance_id": state.runtime_instance_id,
         "skill_id": state.skill_id,
         "skill_slug": skill.slug if skill else None,
         "desired_version_id": state.desired_version_id,
@@ -141,7 +158,9 @@ def create_sync_attempt(
     releases: dict[uuid.UUID, AgentRelease] = {}
     for binding in session.exec(
         select(RuntimeAgentRelease).where(
-            RuntimeAgentRelease.runtime_profile_id == state.runtime_profile_id
+            RuntimeAgentRelease.runtime_instance_id == state.runtime_instance_id
+            if state.runtime_instance_id
+            else RuntimeAgentRelease.runtime_profile_id == state.runtime_profile_id
         )
     ).all():
         release = session.get(AgentRelease, binding.current_release_id)
@@ -149,7 +168,9 @@ def create_sync_attempt(
             releases[release.id] = release
     deployments = session.exec(
         select(AgentDeployment).where(
-            AgentDeployment.runtime_profile_id == state.runtime_profile_id,
+            AgentDeployment.runtime_instance_id == state.runtime_instance_id
+            if state.runtime_instance_id
+            else AgentDeployment.runtime_profile_id == state.runtime_profile_id,
             AgentDeployment.status.in_(
                 [AgentDeploymentStatus.PENDING, AgentDeploymentStatus.DISPATCHED]
             ),
@@ -279,12 +300,24 @@ def runtime_skill_status(
     _: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
 ) -> dict[str, Any]:
-    runtime = session.get(RuntimeProfile, runtime_id)
-    if runtime is None or runtime.namespace_id != namespace_id:
+    runtime_instance = session.get(RuntimeInstance, runtime_id)
+    runtime = session.get(RuntimeProfile, runtime_id) if runtime_instance is None else None
+    if (
+        runtime_instance is None
+        and runtime is None
+        or runtime_instance is not None
+        and runtime_instance.namespace_id != namespace_id
+        or runtime is not None
+        and runtime.namespace_id != namespace_id
+    ):
         raise HTTPException(404, "Runtime not found")
     states = session.exec(
         select(RuntimeSkillState)
-        .where(RuntimeSkillState.runtime_profile_id == runtime.id)
+        .where(
+            RuntimeSkillState.runtime_instance_id == runtime_instance.id
+            if runtime_instance
+            else RuntimeSkillState.runtime_profile_id == runtime.id
+        )
         .order_by(col(RuntimeSkillState.updated_at).desc())
     ).all()
     return {
@@ -357,7 +390,44 @@ def retry_skill_runtime_target(
 def claim_platform_skill_sync(
     session: SessionDep, response: Response
 ) -> dict[str, Any] | None:
+    common = (
+        RuntimeSkillState.subscription_count > 0,
+        or_(
+            RuntimeSkillState.status == "pending",
+            (
+                (RuntimeSkillState.status == "failed")
+                & (RuntimeSkillState.retry_count < 5)
+                & (RuntimeSkillState.next_retry_at <= datetime.now(timezone.utc))
+            ),
+            (
+                (RuntimeSkillState.status == "syncing")
+                & (
+                    RuntimeSkillState.updated_at
+                    <= datetime.now(timezone.utc) - timedelta(minutes=10)
+                )
+            ),
+            (
+                (RuntimeSkillState.status == "committing")
+                & (
+                    RuntimeSkillState.updated_at
+                    <= datetime.now(timezone.utc) - timedelta(minutes=1)
+                )
+            ),
+        ),
+        col(RuntimeSkillState.desired_version_id).is_not(None),
+    )
     state = session.exec(
+        select(RuntimeSkillState)
+        .join(
+            RuntimeInstance,
+            col(RuntimeSkillState.runtime_instance_id) == RuntimeInstance.id,
+        )
+        .where(RuntimeInstance.location_type == RuntimeLocationType.PLATFORM, *common)
+        .order_by(col(RuntimeSkillState.updated_at))
+        .with_for_update(skip_locked=True)
+    ).first()
+    if state is None:
+        state = session.exec(
         select(RuntimeSkillState)
         .join(
             RuntimeProfile,
@@ -365,34 +435,11 @@ def claim_platform_skill_sync(
         )
         .where(
             RuntimeProfile.runtime_type == RuntimeType.PLATFORM,
-            RuntimeSkillState.subscription_count > 0,
-            or_(
-                RuntimeSkillState.status == "pending",
-                (
-                    (RuntimeSkillState.status == "failed")
-                    & (RuntimeSkillState.retry_count < 5)
-                    & (RuntimeSkillState.next_retry_at <= datetime.now(timezone.utc))
-                ),
-                (
-                    (RuntimeSkillState.status == "syncing")
-                    & (
-                        RuntimeSkillState.updated_at
-                        <= datetime.now(timezone.utc) - timedelta(minutes=10)
-                    )
-                ),
-                (
-                    (RuntimeSkillState.status == "committing")
-                    & (
-                        RuntimeSkillState.updated_at
-                        <= datetime.now(timezone.utc) - timedelta(minutes=1)
-                    )
-                ),
-            ),
-            col(RuntimeSkillState.desired_version_id).is_not(None),
+            *common,
         )
         .order_by(col(RuntimeSkillState.updated_at))
         .with_for_update(skip_locked=True)
-    ).first()
+        ).first()
     if state is None:
         response.status_code = 204
         return None
@@ -407,7 +454,10 @@ def claim_platform_skill_sync(
         response.status_code = 204
         return None
     payload = sync_payload(attempt, skill, version)
-    payload["runtime_profile_id"] = str(state.runtime_profile_id)
+    if state.runtime_instance_id:
+        payload["runtime_instance_id"] = str(state.runtime_instance_id)
+    else:
+        payload["runtime_profile_id"] = str(state.runtime_profile_id)
     payload["download_path"] = (
         f"/api/v1/internal/runtime/skill-sync/{attempt.id}/download"
     )
@@ -462,16 +512,27 @@ def download_node_skill_bundle(
     except SkillDownloadTokenError as exc:
         raise HTTPException(403, str(exc)) from exc
     attempt, state, version = _attempt_bundle(session, attempt_id)
-    node = session.exec(
-        select(RuntimeNode).where(
-            RuntimeNode.runtime_profile_id == state.runtime_profile_id,
-            col(RuntimeNode.revoked_at).is_(None),
-        )
-    ).first()
+    runtime_instance = (
+        session.get(RuntimeInstance, state.runtime_instance_id)
+        if state.runtime_instance_id
+        else None
+    )
+    node = (
+        session.get(RuntimeNode, runtime_instance.runtime_node_id)
+        if runtime_instance and runtime_instance.runtime_node_id
+        else session.exec(
+            select(RuntimeNode).where(
+                RuntimeNode.runtime_profile_id == state.runtime_profile_id,
+                col(RuntimeNode.revoked_at).is_(None),
+            )
+        ).first()
+    )
     if (
         node is None
+        or node.revoked_at is not None
         or claims.get("node_id") != str(node.id)
-        or claims.get("runtime_profile_id") != str(state.runtime_profile_id)
+        or claims.get("runtime_target_id")
+        != str(state.runtime_instance_id or state.runtime_profile_id)
         or claims.get("skill_id") != str(state.skill_id)
         or claims.get("version_id") != str(version.id)
         or claims.get("content_sha256") != version.content_sha256
@@ -545,10 +606,15 @@ def apply_skill_sync_result(
 def record_task_skill_usage(
     session: SessionDep,
     task: AgentTask,
-    runtime_profile_id: uuid.UUID,
+    runtime_profile_id: uuid.UUID | None,
     evidence: list[SkillUsageItem],
+    *,
+    runtime_instance_id: uuid.UUID | None = None,
 ) -> list[AgentTaskSkillUsage]:
-    if task.runtime_profile_id != runtime_profile_id:
+    if (
+        task.runtime_profile_id != runtime_profile_id
+        or task.runtime_instance_id != runtime_instance_id
+    ):
         raise HTTPException(409, "Task runtime does not match Skill evidence")
     if task.status not in {TaskStatus.DISPATCHED, TaskStatus.RUNNING}:
         raise HTTPException(409, "Task is not starting")
@@ -570,7 +636,9 @@ def record_task_skill_usage(
         version = session.get(SkillVersion, item.version_id)
         state = session.exec(
             select(RuntimeSkillState).where(
-                RuntimeSkillState.runtime_profile_id == runtime_profile_id,
+                RuntimeSkillState.runtime_instance_id == runtime_instance_id
+                if runtime_instance_id
+                else RuntimeSkillState.runtime_profile_id == runtime_profile_id,
                 RuntimeSkillState.skill_id == item.skill_id,
             )
         ).first()
@@ -622,7 +690,13 @@ def report_task_skill_usage(
     ).first()
     if task is None:
         raise HTTPException(404, "Task not found")
-    rows = record_task_skill_usage(session, task, body.runtime_profile_id, body.skills)
+    rows = record_task_skill_usage(
+        session,
+        task,
+        body.runtime_profile_id,
+        body.skills,
+        runtime_instance_id=body.runtime_instance_id,
+    )
     session.commit()
     return {"task_id": task.id, "count": len(rows)}
 
@@ -637,6 +711,7 @@ def report_task_preparation_failure(
     if (
         task is None
         or task.runtime_profile_id != body.runtime_profile_id
+        or task.runtime_instance_id != body.runtime_instance_id
         or task.revision != body.revision
     ):
         raise HTTPException(409, "Task preparation failure scope mismatch")

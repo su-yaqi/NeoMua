@@ -22,6 +22,7 @@ from app.agent_management.capabilities import (
 from app.agent_management.capability_models import (
     ActivationStatus,
     AgentActivation,
+    AgentActivationPrecheck,
     AgentDeployment,
     AgentDeploymentStatus,
     AgentRelease,
@@ -31,6 +32,8 @@ from app.agent_management.capability_models import (
     McpTargetBinding,
     McpTargetStatus,
     RuntimeAgentRelease,
+    SkillDefinition,
+    SkillVersion,
     ToolApprovalRequest,
 )
 from app.agent_management.catalog import Diagnostic
@@ -43,10 +46,21 @@ from app.api.deps import (
 )
 from app.models import NamespaceRole
 from app.runtime.artifacts.signing import configured_artifact_signer, verify_signature
+from app.runtime.catalog import (
+    RuntimeCatalogError,
+    available_model_bindings,
+    current_runtime_evidence,
+)
+from app.runtime.catalog import (
+    canonical_digest as runtime_digest,
+)
 from app.runtime.models import (
     AgentEvent,
     AgentEventType,
     AgentTask,
+    RuntimeCapabilityReport,
+    RuntimeInstance,
+    RuntimeLocationType,
     RuntimeNode,
     RuntimeProfile,
     RuntimeType,
@@ -78,7 +92,10 @@ class ReleaseCreate(StrictBody):
 
 
 class ActivationCreate(StrictBody):
-    runtime_profile_ids: list[uuid.UUID] = Field(min_length=1)
+    runtime_profile_ids: list[uuid.UUID] = []
+    runtime_instance_id: uuid.UUID | None = None
+    precheck_id: uuid.UUID | None = None
+    precheck_digest: str | None = Field(default=None, min_length=64, max_length=64)
     valid_for_seconds: int = Field(default=3600, ge=60, le=86400)
 
 
@@ -130,6 +147,8 @@ def _release_public(release: AgentRelease) -> dict[str, Any]:
         "agent_id": release.agent_id,
         "version": release.version,
         "draft_revision": release.draft_revision,
+        "preferred_model_definition_id": release.preferred_model_definition_id,
+        "required_capabilities": release.required_capabilities,
         "resolved_spec_schema_version": release.resolved_spec_schema_version,
         "resolved_spec_digest": release.resolved_spec_digest,
         "manifest": release.manifest,
@@ -204,15 +223,25 @@ def create_agent_release(
         raise HTTPException(
             422, {"errors": [diag.model_dump() for diag in exc.diagnostics]}
         ) from exc
-    adapter = ClaudeCodeHarnessAdapter()
-    diagnostics = adapter.validate_spec(spec)
-    if diagnostics:
-        raise HTTPException(
-            422, {"errors": [diag.model_dump() for diag in diagnostics]}
-        )
+    adapter = ClaudeCodeHarnessAdapter() if spec.schema_version != "2.0" else None
+    if adapter is not None:
+        diagnostics = adapter.validate_spec(spec)
+        if diagnostics:
+            raise HTTPException(
+                422, {"errors": [diag.model_dump() for diag in diagnostics]}
+            )
     resolved_spec = spec.canonical()
     resolved_digest = spec.digest()
-    materialization = adapter.materialization_manifest(spec)
+    materialization = (
+        adapter.materialization_manifest(spec)
+        if adapter is not None
+        else {
+            "schema_version": "2.0",
+            "engine_neutral": True,
+            "resolved_spec_digest": resolved_digest,
+            "required_capabilities": spec.required_capabilities,
+        }
+    )
     manifest = {
         "schema_version": "1.0",
         "release_id": str(release_id),
@@ -245,6 +274,8 @@ def create_agent_release(
         agent_id=agent.id,
         version=body.version,
         draft_revision=draft.revision,
+        preferred_model_definition_id=draft.preferred_model_definition_id,
+        required_capabilities=spec.required_capabilities,
         resolved_spec_schema_version=spec.schema_version,
         resolved_spec=resolved_spec,
         resolved_spec_digest=resolved_digest,
@@ -333,6 +364,7 @@ def _deployment_public(row: AgentDeployment) -> dict[str, Any]:
         "id": row.id,
         "activation_id": row.activation_id,
         "runtime_profile_id": row.runtime_profile_id,
+        "runtime_instance_id": row.runtime_instance_id,
         "attempt": row.attempt,
         "status": row.status.value,
         "capability_fingerprint": row.capability_fingerprint,
@@ -356,6 +388,8 @@ def _activation_public(
         "id": activation.id,
         "namespace_id": activation.namespace_id,
         "release_id": activation.release_id,
+        "runtime_instance_id": activation.runtime_instance_id,
+        "precheck_id": activation.precheck_id,
         "status": activation.status.value,
         "rollback_of_activation_id": activation.rollback_of_activation_id,
         "created_at": activation.created_at,
@@ -369,11 +403,14 @@ def _recompute_activation(session: SessionDep, activation: AgentActivation) -> N
     ).all()
     latest: dict[uuid.UUID, AgentDeployment] = {}
     for row in rows:
+        target_id = row.runtime_instance_id or row.runtime_profile_id
+        if target_id is None:
+            continue
         if (
-            row.runtime_profile_id not in latest
-            or row.attempt > latest[row.runtime_profile_id].attempt
+            target_id not in latest
+            or row.attempt > latest[target_id].attempt
         ):
-            latest[row.runtime_profile_id] = row
+            latest[target_id] = row
     statuses = {row.status for row in latest.values()}
     if statuses and statuses <= {AgentDeploymentStatus.APPLIED}:
         activation.status = ActivationStatus.ACTIVE
@@ -545,6 +582,324 @@ def _activation_targets(
     return runtimes
 
 
+def _v09_precheck(
+    session: SessionDep,
+    release: AgentRelease,
+    runtime_id: uuid.UUID,
+    *,
+    valid_for_seconds: int,
+) -> AgentActivationPrecheck:
+    runtime = session.get(RuntimeInstance, runtime_id)
+    if runtime is None or runtime.namespace_id != release.namespace_id:
+        raise HTTPException(404, "Runtime target not found")
+    checks: list[dict[str, Any]] = []
+    deployable = True
+    try:
+        configuration, capability, catalog_fingerprint = current_runtime_evidence(
+            session, runtime
+        )
+        checks.extend(
+            [
+                {"key": "runtime", "status": "passed", "actual": runtime.status.value},
+                {
+                    "key": "configuration",
+                    "status": "passed",
+                    "actual": configuration.configuration_digest,
+                },
+                {
+                    "key": "capability",
+                    "status": "passed",
+                    "actual": capability.capability_fingerprint,
+                },
+            ]
+        )
+    except RuntimeCatalogError as exc:
+        raise HTTPException(422, {"code": exc.code, "message": exc.message}) from exc
+    bindings = available_model_bindings(session, runtime.id)
+    if not bindings:
+        deployable = False
+        checks.append(
+            {
+                "key": "model_catalog",
+                "status": "blocked",
+                "code": "runtime_model_unavailable",
+                "message": "Runtime has no available model binding",
+            }
+        )
+    else:
+        checks.append(
+            {"key": "model_catalog", "status": "passed", "count": len(bindings)}
+        )
+    preferred = release.preferred_model_definition_id
+    preference_bindings = [
+        row for row in bindings if row.model_definition_id == preferred
+    ]
+    preference_status = (
+        "available"
+        if len(preference_bindings) == 1
+        else "ambiguous"
+        if len(preference_bindings) > 1
+        else "unavailable"
+    )
+    checks.append(
+        {
+            "key": "agent_preference",
+            "status": preference_status,
+            "matching_bindings": [str(row.id) for row in preference_bindings],
+        }
+    )
+    available_tools = set(capability.capabilities.get("tools", []))
+    required_tools = set(release.required_capabilities.get("tools", []))
+    missing_tools = sorted(required_tools - available_tools)
+    if missing_tools:
+        deployable = False
+        checks.append(
+            {
+                "key": "tools",
+                "status": "blocked",
+                "code": "required_tools_missing",
+                "missing": missing_tools,
+            }
+        )
+    else:
+        checks.append({"key": "tools", "status": "passed"})
+    policies = dict(release.resolved_spec.get("policies", {}))
+    permission_mode = str(policies.get("permission_mode", "default"))
+    runtime_permission_modes = set(
+        configuration.security_policy.get("permission_modes", [])
+    )
+    if not runtime_permission_modes and configuration.security_policy.get(
+        "permission_mode"
+    ):
+        runtime_permission_modes.add(
+            str(configuration.security_policy["permission_mode"])
+        )
+    policy_errors: list[dict[str, Any]] = []
+    if runtime_permission_modes and permission_mode not in runtime_permission_modes:
+        policy_errors.append(
+            {"code": "agent_permission_exceeds_runtime_policy"}
+        )
+    capability_permission_modes = set(
+        capability.capabilities.get("permission_modes", [])
+    )
+    if capability_permission_modes and permission_mode not in capability_permission_modes:
+        policy_errors.append({"code": "runtime_permission_mode_unsupported"})
+    approval_required = any(
+        item.get("policy") == "require_approval"
+        for item in release.resolved_spec.get("tools", [])
+    ) or policies.get("tool_approval") is True
+    if approval_required and not capability.capabilities.get(
+        "supports_per_tool_approval", False
+    ):
+        policy_errors.append({"code": "runtime_tool_approval_unsupported"})
+    if release.resolved_spec.get("mcp_servers") and not capability.capabilities.get(
+        "supports_mcp_injection", False
+    ):
+        policy_errors.append({"code": "runtime_mcp_injection_unsupported"})
+    max_timeout = configuration.resource_limits.get("max_timeout_seconds")
+    requested_timeout = int(policies.get("timeout_seconds", 3600))
+    if max_timeout is not None and requested_timeout > int(max_timeout):
+        policy_errors.append(
+            {
+                "code": "agent_timeout_exceeds_runtime_limit",
+                "requested": requested_timeout,
+                "maximum": int(max_timeout),
+            }
+        )
+    required_capabilities = policies.get("required_capabilities", {})
+    for key, required in (
+        required_capabilities.items()
+        if isinstance(required_capabilities, dict)
+        else []
+    ):
+        if required is True and not capability.capabilities.get(key, False):
+            policy_errors.append(
+                {"code": "required_runtime_capability_missing", "capability": key}
+            )
+    if policy_errors:
+        deployable = False
+        checks.append(
+            {"key": "execution_policy", "status": "blocked", "errors": policy_errors}
+        )
+    else:
+        checks.append({"key": "execution_policy", "status": "passed"})
+    skill_errors: list[dict[str, Any]] = []
+    for item in release.resolved_spec.get("skills", []):
+        try:
+            skill = session.get(SkillDefinition, uuid.UUID(str(item["id"])))
+        except (KeyError, TypeError, ValueError):
+            skill = None
+        version = (
+            session.get(SkillVersion, skill.current_version_id)
+            if skill and skill.current_version_id
+            else None
+        )
+        if (
+            skill is None
+            or skill.namespace_id != release.namespace_id
+            or version is None
+            or version.skill_id != skill.id
+            or version.deprecated
+        ):
+            skill_errors.append(
+                {"skill": item.get("slug"), "code": "skill_current_version_invalid"}
+            )
+    if skill_errors:
+        deployable = False
+        checks.append(
+            {"key": "skills", "status": "blocked", "errors": skill_errors}
+        )
+    else:
+        checks.append(
+            {
+                "key": "skills",
+                "status": "passed",
+                "count": len(release.resolved_spec.get("skills", [])),
+            }
+        )
+    mcp_errors: list[dict[str, Any]] = []
+    for item in release.resolved_spec.get("mcp_servers", []):
+        try:
+            revision_id = uuid.UUID(str(item["revision_id"]))
+        except (KeyError, TypeError, ValueError):
+            mcp_errors.append(
+                {"server": item.get("slug"), "code": "mcp_revision_invalid"}
+            )
+            continue
+        target = session.exec(
+            select(McpTargetBinding).where(
+                McpTargetBinding.revision_id == revision_id,
+                McpTargetBinding.runtime_instance_id == runtime.id,
+            )
+        ).first()
+        code: str | None = None
+        if target is None or target.status != McpTargetStatus.VERIFIED:
+            code = "mcp_target_not_ready"
+        elif target.tool_digest not in item.get("tool_digests", []):
+            code = "mcp_tool_digest_stale"
+        elif target.capability_fingerprint != capability.capability_fingerprint:
+            code = "mcp_capability_stale"
+        elif runtime.location_type == RuntimeLocationType.NODE and not target.secret_ref:
+            code = "mcp_node_secret_missing"
+        elif (
+            runtime.location_type == RuntimeLocationType.PLATFORM
+            and session.exec(
+                select(McpPlatformSecret).where(
+                    McpPlatformSecret.target_binding_id == target.id
+                )
+            ).first()
+            is None
+        ):
+            code = "mcp_platform_secret_missing"
+        if code:
+            mcp_errors.append({"server": item.get("slug"), "code": code})
+    if mcp_errors:
+        deployable = False
+        checks.append({"key": "mcp", "status": "blocked", "errors": mcp_errors})
+    else:
+        checks.append(
+            {
+                "key": "mcp",
+                "status": "passed",
+                "count": len(release.resolved_spec.get("mcp_servers", [])),
+            }
+        )
+    payload = {
+        "release_id": str(release.id),
+        "runtime_instance_id": str(runtime.id),
+        "configuration_revision_id": str(configuration.id),
+        "capability_report_id": str(capability.id),
+        "model_catalog_fingerprint": catalog_fingerprint,
+        "preference_status": preference_status,
+        "deployable": deployable,
+        "checks": checks,
+    }
+    return AgentActivationPrecheck(
+        namespace_id=release.namespace_id,
+        release_id=release.id,
+        runtime_instance_id=runtime.id,
+        runtime_configuration_revision_id=configuration.id,
+        runtime_capability_report_id=capability.id,
+        model_catalog_fingerprint=catalog_fingerprint,
+        preference_status=preference_status,
+        deployable=deployable,
+        checks=checks,
+        precheck_digest=runtime_digest(payload),
+        expires_at=datetime.now(timezone.utc)
+        + timedelta(seconds=valid_for_seconds),
+    )
+
+
+def _v09_precheck_public(row: AgentActivationPrecheck) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "release_id": row.release_id,
+        "runtime_instance_id": row.runtime_instance_id,
+        "runtime_configuration_revision_id": row.runtime_configuration_revision_id,
+        "runtime_capability_report_id": row.runtime_capability_report_id,
+        "model_catalog_fingerprint": row.model_catalog_fingerprint,
+        "preference_status": row.preference_status,
+        "deployable": row.deployable,
+        "checks": row.checks,
+        "precheck_digest": row.precheck_digest,
+        "expires_at": row.expires_at,
+    }
+
+
+@router.get("/agent-releases/{release_id}/compatibility")
+def release_runtime_compatibility(
+    release_id: uuid.UUID,
+    session: SessionDep,
+    _: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
+) -> dict[str, Any]:
+    release = _get_release(session, release_id, namespace_id)
+    if release.resolved_spec_schema_version != "2.0":
+        raise HTTPException(422, "Compatibility matrix requires a v0.9 Release")
+    runtimes = session.exec(
+        select(RuntimeInstance)
+        .where(RuntimeInstance.namespace_id == namespace_id)
+        .order_by(col(RuntimeInstance.name))
+    ).all()
+    targets: list[dict[str, Any]] = []
+    for runtime in runtimes:
+        try:
+            precheck = _v09_precheck(
+                session, release, runtime.id, valid_for_seconds=60
+            )
+            targets.append(
+                {
+                    "runtime_instance_id": runtime.id,
+                    "runtime_name": runtime.name,
+                    "engine_type": runtime.engine_type.value,
+                    "compatible": precheck.deployable,
+                    "preference_status": precheck.preference_status,
+                    "configuration_revision_id": precheck.runtime_configuration_revision_id,
+                    "capability_report_id": precheck.runtime_capability_report_id,
+                    "model_catalog_fingerprint": precheck.model_catalog_fingerprint,
+                    "checks": precheck.checks,
+                }
+            )
+        except HTTPException as exc:
+            detail = exc.detail if isinstance(exc.detail, dict) else {
+                "code": "runtime_incompatible",
+                "message": str(exc.detail),
+            }
+            targets.append(
+                {
+                    "runtime_instance_id": runtime.id,
+                    "runtime_name": runtime.name,
+                    "engine_type": runtime.engine_type.value,
+                    "compatible": False,
+                    "preference_status": "unavailable",
+                    "checks": [
+                        {"key": "runtime", "status": "blocked", **detail}
+                    ],
+                }
+            )
+    return {"release_id": release.id, "targets": targets}
+
+
 @router.post("/agent-releases/{release_id}/activations/precheck")
 def precheck_activation(
     release_id: uuid.UUID,
@@ -554,6 +909,23 @@ def precheck_activation(
     namespace_id: uuid.UUID = Depends(require_namespace_admin),
 ) -> dict[str, Any]:
     release = _get_release(session, release_id, namespace_id)
+    if release.resolved_spec_schema_version == "2.0":
+        if body.runtime_instance_id is None or body.runtime_profile_ids:
+            raise HTTPException(
+                422, "v0.9 Activation requires one runtime_instance_id"
+            )
+        precheck = _v09_precheck(
+            session,
+            release,
+            body.runtime_instance_id,
+            valid_for_seconds=body.valid_for_seconds,
+        )
+        session.add(precheck)
+        session.commit()
+        session.refresh(precheck)
+        return _v09_precheck_public(precheck)
+    if not body.runtime_profile_ids or body.runtime_instance_id is not None:
+        raise HTTPException(422, "Legacy Activation requires runtime_profile_ids")
     runtimes = _activation_targets(session, body, namespace_id)
     preview = AgentActivation(
         namespace_id=namespace_id,
@@ -606,6 +978,83 @@ def activate_release(
                 409, "Idempotency-Key was used for a different activation"
             )
         return _activation_public(session, existing)
+    if release.resolved_spec_schema_version == "2.0":
+        if (
+            body.runtime_instance_id is None
+            or body.precheck_id is None
+            or body.precheck_digest is None
+            or body.runtime_profile_ids
+        ):
+            raise HTTPException(
+                422,
+                "v0.9 Activation requires runtime_instance_id, precheck_id, and precheck_digest",
+            )
+        precheck = session.get(AgentActivationPrecheck, body.precheck_id)
+        if (
+            precheck is None
+            or precheck.namespace_id != namespace_id
+            or precheck.release_id != release.id
+            or precheck.runtime_instance_id != body.runtime_instance_id
+        ):
+            raise HTTPException(422, "Activation precheck does not match the request")
+        if precheck.precheck_digest != body.precheck_digest:
+            raise HTTPException(409, "Activation precheck digest changed")
+        now = datetime.now(timezone.utc)
+        expires_at = precheck.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at <= now or not precheck.deployable:
+            raise HTTPException(409, "Activation precheck is expired or blocked")
+        fresh = _v09_precheck(
+            session,
+            release,
+            body.runtime_instance_id,
+            valid_for_seconds=body.valid_for_seconds,
+        )
+        if fresh.precheck_digest != precheck.precheck_digest:
+            raise HTTPException(409, "Runtime state changed; run Activation precheck again")
+        runtime = session.get(RuntimeInstance, body.runtime_instance_id)
+        assert runtime is not None
+        capability = session.get(
+            RuntimeCapabilityReport, precheck.runtime_capability_report_id
+        )
+        assert capability is not None
+        activation = AgentActivation(
+            namespace_id=namespace_id,
+            release_id=release.id,
+            runtime_instance_id=runtime.id,
+            precheck_id=precheck.id,
+            idempotency_key=idempotency_key,
+            status=ActivationStatus.DEPLOYING,
+            created_by=current_user.id,
+        )
+        session.add(activation)
+        session.flush()
+        try:
+            ensure_release_skill_subscriptions(
+                session,
+                release,
+                runtime_instance_id=runtime.id,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                409,
+                {"code": "skill_subscription_failed", "message": str(exc)},
+            ) from exc
+        session.add(
+            AgentDeployment(
+                activation_id=activation.id,
+                runtime_instance_id=runtime.id,
+                attempt=1,
+                status=AgentDeploymentStatus.PENDING,
+                capability_fingerprint=capability.capability_fingerprint,
+                expires_at=precheck.expires_at,
+            )
+        )
+        session.commit()
+        return _activation_public(session, activation)
+    if not body.runtime_profile_ids or body.runtime_instance_id is not None:
+        raise HTTPException(422, "Legacy Activation requires runtime_profile_ids")
     runtimes = _activation_targets(session, body, namespace_id)
     activation = AgentActivation(
         namespace_id=namespace_id,
@@ -642,17 +1091,24 @@ def get_activation(
 
 def _get_deployment(
     session: SessionDep, deployment_id: uuid.UUID, namespace_id: uuid.UUID
-) -> tuple[AgentDeployment, AgentActivation, AgentRelease, RuntimeProfile]:
+) -> tuple[
+    AgentDeployment,
+    AgentActivation,
+    AgentRelease,
+    RuntimeProfile | RuntimeInstance,
+]:
     deployment = session.get(AgentDeployment, deployment_id)
     activation = (
         session.get(AgentActivation, deployment.activation_id) if deployment else None
     )
     release = session.get(AgentRelease, activation.release_id) if activation else None
-    runtime = (
-        session.get(RuntimeProfile, deployment.runtime_profile_id)
-        if deployment
-        else None
-    )
+    runtime = None
+    if deployment is not None:
+        runtime = (
+            session.get(RuntimeInstance, deployment.runtime_instance_id)
+            if deployment.runtime_instance_id
+            else session.get(RuntimeProfile, deployment.runtime_profile_id)
+        )
     if (
         deployment is None
         or activation is None
@@ -685,17 +1141,50 @@ def retry_deployment(
     attempts = session.exec(
         select(AgentDeployment.attempt).where(
             AgentDeployment.activation_id == activation.id,
-            AgentDeployment.runtime_profile_id == runtime.id,
+            (
+                AgentDeployment.runtime_instance_id == runtime.id
+                if isinstance(runtime, RuntimeInstance)
+                else AgentDeployment.runtime_profile_id == runtime.id
+            ),
         )
     ).all()
-    retried = _create_deployment(
-        session,
-        release,
-        activation,
-        runtime,
-        attempt=max(attempts) + 1,
-        expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
-    )
+    if isinstance(runtime, RuntimeInstance):
+        precheck = _v09_precheck(
+            session, release, runtime, valid_for_seconds=3600
+        )
+        session.add(precheck)
+        session.flush()
+        if not precheck.deployable:
+            raise HTTPException(409, {"code": "activation_precheck_blocked", "checks": precheck.checks})
+        try:
+            ensure_release_skill_subscriptions(
+                session,
+                release,
+                runtime_instance_id=runtime.id,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                409, {"code": "skill_subscription_failed", "message": str(exc)}
+            ) from exc
+        retried = AgentDeployment(
+            activation_id=activation.id,
+            runtime_instance_id=runtime.id,
+            attempt=max(attempts) + 1,
+            status=AgentDeploymentStatus.PENDING,
+            capability_fingerprint=session.get(
+                RuntimeCapabilityReport, precheck.runtime_capability_report_id
+            ).capability_fingerprint,
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+        )
+    else:
+        retried = _create_deployment(
+            session,
+            release,
+            activation,
+            runtime,
+            attempt=max(attempts) + 1,
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+        )
     session.add(retried)
     _recompute_activation(session, activation)
     session.commit()
@@ -718,7 +1207,11 @@ def rollback_deployment(
     binding = session.exec(
         select(RuntimeAgentRelease)
         .where(
-            RuntimeAgentRelease.runtime_profile_id == runtime.id,
+            (
+                RuntimeAgentRelease.runtime_instance_id == runtime.id
+                if isinstance(runtime, RuntimeInstance)
+                else RuntimeAgentRelease.runtime_profile_id == runtime.id
+            ),
             RuntimeAgentRelease.agent_id == release.agent_id,
         )
         .with_for_update()
@@ -734,24 +1227,65 @@ def rollback_deployment(
         previous.signature,
     ):
         raise HTTPException(409, "Previous Release cannot be verified")
-    rollback = AgentActivation(
-        namespace_id=namespace_id,
-        release_id=previous.id,
-        idempotency_key=idempotency_key,
-        rollback_of_activation_id=activation.id,
-        created_by=current_user.id,
-    )
-    session.add(rollback)
-    session.add(
-        _create_deployment(
-            session,
-            previous,
-            rollback,
-            runtime,
-            attempt=1,
-            expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+    if isinstance(runtime, RuntimeInstance):
+        precheck = _v09_precheck(
+            session, previous, runtime, valid_for_seconds=3600
         )
-    )
+        session.add(precheck)
+        session.flush()
+        if not precheck.deployable:
+            raise HTTPException(409, {"code": "activation_precheck_blocked", "checks": precheck.checks})
+        try:
+            ensure_release_skill_subscriptions(
+                session,
+                previous,
+                runtime_instance_id=runtime.id,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                409, {"code": "skill_subscription_failed", "message": str(exc)}
+            ) from exc
+        rollback = AgentActivation(
+            namespace_id=namespace_id,
+            release_id=previous.id,
+            runtime_instance_id=runtime.id,
+            precheck_id=precheck.id,
+            idempotency_key=idempotency_key,
+            rollback_of_activation_id=activation.id,
+            created_by=current_user.id,
+        )
+        session.add(rollback)
+        session.add(
+            AgentDeployment(
+                activation_id=rollback.id,
+                runtime_instance_id=runtime.id,
+                attempt=1,
+                status=AgentDeploymentStatus.PENDING,
+                capability_fingerprint=session.get(
+                    RuntimeCapabilityReport, precheck.runtime_capability_report_id
+                ).capability_fingerprint,
+                expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+            )
+        )
+    else:
+        rollback = AgentActivation(
+            namespace_id=namespace_id,
+            release_id=previous.id,
+            idempotency_key=idempotency_key,
+            rollback_of_activation_id=activation.id,
+            created_by=current_user.id,
+        )
+        session.add(rollback)
+        session.add(
+            _create_deployment(
+                session,
+                previous,
+                rollback,
+                runtime,
+                attempt=1,
+                expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+            )
+        )
     session.flush()
     _recompute_activation(session, rollback)
     session.commit()
@@ -768,6 +1302,7 @@ def runtime_agents(
         select(RuntimeAgentRelease)
         .where(RuntimeAgentRelease.namespace_id == namespace_id)
         .order_by(
+            col(RuntimeAgentRelease.runtime_instance_id),
             col(RuntimeAgentRelease.runtime_profile_id),
             col(RuntimeAgentRelease.agent_id),
         )
@@ -776,7 +1311,16 @@ def runtime_agents(
     for row in rows:
         agent = session.get(AgentDefinition, row.agent_id)
         release = session.get(AgentRelease, row.current_release_id)
-        runtime = session.get(RuntimeProfile, row.runtime_profile_id)
+        runtime_instance = (
+            session.get(RuntimeInstance, row.runtime_instance_id)
+            if row.runtime_instance_id
+            else None
+        )
+        runtime = (
+            session.get(RuntimeProfile, row.runtime_profile_id)
+            if row.runtime_profile_id
+            else None
+        )
         node = (
             session.exec(
                 select(RuntimeNode).where(
@@ -790,8 +1334,22 @@ def runtime_agents(
             {
                 "id": row.id,
                 "runtime_profile_id": row.runtime_profile_id,
-                "runtime_type": runtime.runtime_type.value if runtime else None,
-                "runtime_name": node.name if node else "platform",
+                "runtime_instance_id": row.runtime_instance_id,
+                "runtime_type": (
+                    runtime_instance.location_type.value
+                    if runtime_instance
+                    else runtime.runtime_type.value
+                    if runtime
+                    else None
+                ),
+                "engine_type": runtime_instance.engine_type.value
+                if runtime_instance
+                else "claude_code",
+                "runtime_name": runtime_instance.name
+                if runtime_instance
+                else node.name
+                if node
+                else "platform",
                 "agent_id": row.agent_id,
                 "agent_slug": agent.slug if agent else None,
                 "agent_name": agent.name if agent else None,
@@ -800,6 +1358,11 @@ def runtime_agents(
                 "previous_release_id": row.previous_release_id,
                 "applied_digest": row.applied_digest,
                 "materialization_digest": row.materialization_digest,
+                "runtime_configuration_revision_id": row.runtime_configuration_revision_id,
+                "runtime_capability_report_id": row.runtime_capability_report_id,
+                "adapter_version": row.adapter_version,
+                "runtime_model_catalog_fingerprint": row.runtime_model_catalog_fingerprint,
+                "effective_spec_digest": row.effective_spec_digest,
                 "updated_at": row.updated_at,
             }
         )
@@ -820,11 +1383,17 @@ def runtime_agent(
     return {
         "id": row.id,
         "runtime_profile_id": row.runtime_profile_id,
+        "runtime_instance_id": row.runtime_instance_id,
         "agent_id": row.agent_id,
         "current_release_id": row.current_release_id,
         "previous_release_id": row.previous_release_id,
         "applied_digest": row.applied_digest,
         "materialization_digest": row.materialization_digest,
+        "runtime_configuration_revision_id": row.runtime_configuration_revision_id,
+        "runtime_capability_report_id": row.runtime_capability_report_id,
+        "adapter_version": row.adapter_version,
+        "runtime_model_catalog_fingerprint": row.runtime_model_catalog_fingerprint,
+        "effective_spec_digest": row.effective_spec_digest,
         "release_version": release.version if release else None,
         "updated_at": row.updated_at,
     }
@@ -847,6 +1416,72 @@ def claim_agent_deployment(
             row.error = {"code": "deployment_expired_before_dispatch"}
             session.add(row)
             continue
+        if row.runtime_instance_id is not None:
+            runtime_instance = session.get(RuntimeInstance, row.runtime_instance_id)
+            activation = session.get(AgentActivation, row.activation_id)
+            release = (
+                session.get(AgentRelease, activation.release_id) if activation else None
+            )
+            if runtime_instance is None or release is None:
+                row.status = AgentDeploymentStatus.FAILED
+                row.error = {"code": "v09_deployment_target_missing"}
+                session.add(row)
+                continue
+            if runtime_instance.location_type.value != "platform":
+                continue
+            try:
+                configuration, capability, catalog_fingerprint = current_runtime_evidence(
+                    session, runtime_instance
+                )
+            except RuntimeCatalogError as exc:
+                row.status = AgentDeploymentStatus.INCOMPATIBLE
+                row.error = {"code": exc.code, "message": exc.message}
+                session.add(row)
+                _recompute_activation(session, activation)
+                continue
+            if capability.capability_fingerprint != row.capability_fingerprint:
+                row.status = AgentDeploymentStatus.INCOMPATIBLE
+                row.error = {"code": "stale_capability_fingerprint"}
+                session.add(row)
+                _recompute_activation(session, activation)
+                continue
+            blockers = release_skill_blockers(
+                session,
+                release,
+                runtime_instance_id=runtime_instance.id,
+            )
+            if blockers:
+                row.status = AgentDeploymentStatus.FAILED
+                row.error = {"code": "skill_sync_blocked", "skills": blockers}
+                session.add(row)
+                _recompute_activation(session, activation)
+                continue
+            if not release_skills_ready(
+                session,
+                release,
+                runtime_instance_id=runtime_instance.id,
+            ):
+                continue
+            row.status = AgentDeploymentStatus.DISPATCHED
+            row.updated_at = now
+            session.add(row)
+            session.commit()
+            return {
+                "deployment_id": row.id,
+                "runtime_instance_id": runtime_instance.id,
+                "engine_type": runtime_instance.engine_type.value,
+                "adapter_version": runtime_instance.adapter_version,
+                "configuration": {
+                    "id": configuration.id,
+                    "revision": configuration.revision,
+                    "digest": configuration.configuration_digest,
+                },
+                "capability_fingerprint": capability.capability_fingerprint,
+                "model_catalog_fingerprint": catalog_fingerprint,
+                "release": _release_public(release),
+                "resolved_spec": release.resolved_spec,
+                "materialization": release.manifest["materialization"],
+            }
         runtime = session.get(RuntimeProfile, row.runtime_profile_id)
         if runtime and runtime.runtime_type == RuntimeType.PLATFORM:
             activation = session.get(AgentActivation, row.activation_id)
@@ -918,10 +1553,20 @@ def report_agent_deployment(
     release = session.get(AgentRelease, activation.release_id) if activation else None
     runtime = (
         session.get(RuntimeProfile, deployment.runtime_profile_id)
-        if deployment
+        if deployment and deployment.runtime_profile_id
         else None
     )
-    if deployment is None or activation is None or release is None or runtime is None:
+    runtime_instance = (
+        session.get(RuntimeInstance, deployment.runtime_instance_id)
+        if deployment and deployment.runtime_instance_id
+        else None
+    )
+    if (
+        deployment is None
+        or activation is None
+        or release is None
+        or (runtime is None and runtime_instance is None)
+    ):
         raise HTTPException(404, "Agent deployment not found")
     if deployment.status not in {
         AgentDeploymentStatus.DISPATCHED,
@@ -944,18 +1589,24 @@ def report_agent_deployment(
     else:
         deployment.status = AgentDeploymentStatus.APPLIED
         deployment.applied_digest = body.resolved_spec_digest
-        binding = session.exec(
-            select(RuntimeAgentRelease)
-            .where(
-                RuntimeAgentRelease.runtime_profile_id == runtime.id,
-                RuntimeAgentRelease.agent_id == release.agent_id,
+        binding_statement = select(RuntimeAgentRelease).where(
+            RuntimeAgentRelease.agent_id == release.agent_id
+        )
+        if runtime_instance is not None:
+            binding_statement = binding_statement.where(
+                RuntimeAgentRelease.runtime_instance_id == runtime_instance.id
             )
-            .with_for_update()
-        ).first()
+        else:
+            assert runtime is not None
+            binding_statement = binding_statement.where(
+                RuntimeAgentRelease.runtime_profile_id == runtime.id
+            )
+        binding = session.exec(binding_statement.with_for_update()).first()
         if binding is None:
             binding = RuntimeAgentRelease(
                 namespace_id=release.namespace_id,
-                runtime_profile_id=runtime.id,
+                runtime_profile_id=runtime.id if runtime else None,
+                runtime_instance_id=(runtime_instance.id if runtime_instance else None),
                 agent_id=release.agent_id,
                 current_release_id=release.id,
                 applied_digest=release.resolved_spec_digest,
@@ -968,8 +1619,30 @@ def report_agent_deployment(
             binding.applied_digest = release.resolved_spec_digest
             binding.materialization_digest = body.materialization_digest
             binding.updated_at = datetime.now(timezone.utc)
+        if runtime_instance is not None:
+            configuration, capability, catalog_fingerprint = current_runtime_evidence(
+                session, runtime_instance
+            )
+            binding.runtime_configuration_revision_id = configuration.id
+            binding.runtime_capability_report_id = capability.id
+            binding.adapter_version = runtime_instance.adapter_version
+            binding.runtime_model_catalog_fingerprint = catalog_fingerprint
+            binding.effective_spec_digest = runtime_digest(
+                {
+                    "resolved_spec_digest": release.resolved_spec_digest,
+                    "configuration_digest": configuration.configuration_digest,
+                    "capability_fingerprint": capability.capability_fingerprint,
+                    "model_catalog_fingerprint": catalog_fingerprint,
+                }
+            )
         session.add(binding)
-        reconcile_runtime_skill_subscriptions(session, runtime.id)
+        if runtime is not None:
+            reconcile_runtime_skill_subscriptions(session, runtime.id)
+        elif runtime_instance is not None:
+            reconcile_runtime_skill_subscriptions(
+                session,
+                runtime_instance_id=runtime_instance.id,
+            )
     deployment.updated_at = datetime.now(timezone.utc)
     session.add(deployment)
     _recompute_activation(session, activation)

@@ -187,11 +187,22 @@ def _execution_configuration_public(
             {
                 "node_key": binding.node_key,
                 "runtime_id": binding.runtime_profile_id,
+                "runtime_instance_id": binding.runtime_instance_id,
+                "runtime_agent_release_id": binding.runtime_agent_release_id,
                 "agent_release_id": binding.agent_release_id,
                 "agent_id": release.agent_id if release else None,
                 "agent_name": agent.name if agent else None,
                 "release_version": release.version if release else None,
                 "resolved_spec_digest": binding.resolved_spec_digest,
+                "model_selection_mode": binding.model_selection_mode,
+                "preferred_model_definition_id": binding.preferred_model_definition_id,
+                "runtime_model_binding_id": binding.runtime_model_binding_id,
+                "selection_source": binding.selection_source,
+                "runtime_configuration_revision_id": binding.runtime_configuration_revision_id,
+                "runtime_capability_report_id": binding.runtime_capability_report_id,
+                "runtime_model_catalog_fingerprint": binding.runtime_model_catalog_fingerprint,
+                "adapter_version": binding.adapter_version,
+                "effective_spec_digest": binding.effective_spec_digest,
             }
         )
     return {
@@ -214,7 +225,19 @@ def _configuration_node_bindings(
     return {
         binding.node_key: {
             "runtime_id": binding.runtime_profile_id,
+            "runtime_instance_id": binding.runtime_instance_id,
+            "runtime_agent_release_id": binding.runtime_agent_release_id,
             "agent_release_id": binding.agent_release_id,
+            "model_selection_mode": binding.model_selection_mode,
+            "preferred_model_definition_id": binding.preferred_model_definition_id,
+            "runtime_model_binding_id": binding.runtime_model_binding_id,
+            "selection_source": binding.selection_source,
+            "runtime_configuration_revision_id": binding.runtime_configuration_revision_id,
+            "runtime_capability_report_id": binding.runtime_capability_report_id,
+            "runtime_model_catalog_fingerprint": binding.runtime_model_catalog_fingerprint,
+            "adapter_version": binding.adapter_version,
+            "effective_spec_digest": binding.effective_spec_digest,
+            "frozen": binding.runtime_instance_id is not None,
         }
         for binding in bindings
     }
@@ -278,6 +301,7 @@ def _instance_agent_bindings_public(
                 "id": row.id,
                 "role_key": row.role_key,
                 "runtime_id": row.runtime_profile_id,
+                "runtime_instance_id": row.runtime_instance_id,
                 "agent_release_id": row.agent_release_id,
                 "agent_id": release.agent_id if release else None,
                 "agent_name": agent.name if agent else None,
@@ -415,7 +439,16 @@ def _create_workflow_instance(
                 WorkflowInstanceAgentBinding(
                     workflow_instance_id=instance.id,
                     role_key=role_key,
-                    runtime_profile_id=uuid.UUID(binding["runtime_id"]),
+                    runtime_profile_id=(
+                        uuid.UUID(binding["runtime_id"])
+                        if binding.get("runtime_id")
+                        else None
+                    ),
+                    runtime_instance_id=(
+                        uuid.UUID(binding["runtime_instance_id"])
+                        if binding.get("runtime_instance_id")
+                        else None
+                    ),
                     agent_release_id=uuid.UUID(binding["agent_release_id"]),
                     resolved_spec_digest=binding["resolved_spec_digest"],
                 )
@@ -750,7 +783,13 @@ def update_workflow_execution_configuration(
     submitted_bindings = {
         node_key: {
             "runtime_id": binding.runtime_id,
+            "runtime_instance_id": binding.runtime_instance_id,
             "agent_release_id": binding.agent_release_id,
+            "runtime_agent_release_id": binding.runtime_agent_release_id,
+            "model_selection_mode": binding.model_selection_mode.value
+            if binding.model_selection_mode
+            else None,
+            "runtime_model_binding_id": binding.runtime_model_binding_id,
         }
         for node_key, binding in body.node_bindings.items()
     }
@@ -785,7 +824,7 @@ def update_workflow_execution_configuration(
     normalized_bindings = {
         node_key: resolution
         for node_key, resolution in result["runtime_resolution"].items()
-        if resolution.get("runtime_id")
+        if resolution.get("runtime_id") or resolution.get("runtime_instance_id")
     }
     content_digest = canonical_digest(
         {
@@ -824,13 +863,54 @@ def update_workflow_execution_configuration(
             WorkflowExecutionNodeBinding(
                 configuration_revision_id=revision.id,
                 node_key=node_key,
-                runtime_profile_id=uuid.UUID(str(resolution["runtime_id"])),
+                runtime_profile_id=(
+                    uuid.UUID(str(resolution["runtime_id"]))
+                    if resolution.get("runtime_id")
+                    else None
+                ),
+                runtime_instance_id=(
+                    uuid.UUID(str(resolution["runtime_instance_id"]))
+                    if resolution.get("runtime_instance_id")
+                    else None
+                ),
+                runtime_agent_release_id=(
+                    uuid.UUID(str(resolution["runtime_agent_release_id"]))
+                    if resolution.get("runtime_agent_release_id")
+                    else None
+                ),
                 agent_release_id=(
                     uuid.UUID(str(resolution["agent_release_id"]))
                     if resolution.get("agent_release_id")
                     else None
                 ),
                 resolved_spec_digest=resolution.get("resolved_spec_digest"),
+                model_selection_mode=resolution.get("model_selection_mode"),
+                preferred_model_definition_id=(
+                    uuid.UUID(str(resolution["preferred_model_definition_id"]))
+                    if resolution.get("preferred_model_definition_id")
+                    else None
+                ),
+                runtime_model_binding_id=(
+                    uuid.UUID(str(resolution["runtime_model_binding_id"]))
+                    if resolution.get("runtime_model_binding_id")
+                    else None
+                ),
+                selection_source=resolution.get("selection_source"),
+                runtime_configuration_revision_id=(
+                    uuid.UUID(str(resolution["runtime_configuration_revision_id"]))
+                    if resolution.get("runtime_configuration_revision_id")
+                    else None
+                ),
+                runtime_capability_report_id=(
+                    uuid.UUID(str(resolution["runtime_capability_report_id"]))
+                    if resolution.get("runtime_capability_report_id")
+                    else None
+                ),
+                runtime_model_catalog_fingerprint=resolution.get(
+                    "runtime_model_catalog_fingerprint"
+                ),
+                adapter_version=resolution.get("adapter_version"),
+                effective_spec_digest=resolution.get("effective_spec_digest"),
             )
         )
     configuration.current_revision_id = revision.id
@@ -855,6 +935,54 @@ def update_workflow_execution_configuration(
         "execution_configuration": _execution_configuration_public(
             session, configuration, revision, bindings
         )
+    }
+
+
+@router.post(
+    "/workflow-templates/{template_id}/versions/{version_id}/execution-configuration/precheck"
+)
+def precheck_workflow_execution_configuration(
+    template_id: uuid.UUID,
+    version_id: uuid.UUID,
+    body: WorkflowExecutionConfigurationUpdate,
+    session: SessionDep,
+    current_user: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_manager),
+) -> dict[str, Any]:
+    template = _template_visible(session, template_id, namespace_id)
+    version = session.get(WorkflowTemplateVersion, version_id)
+    if version is None or version.template_id != template.id:
+        raise HTTPException(404, "Workflow Template Version not found")
+    project = (
+        require_project_member(session, body.project_id, namespace_id, current_user)
+        if body.project_id is not None
+        else None
+    )
+    submitted = {
+        node_key: {
+            "runtime_id": binding.runtime_id,
+            "runtime_instance_id": binding.runtime_instance_id,
+            "agent_release_id": binding.agent_release_id,
+            "runtime_agent_release_id": binding.runtime_agent_release_id,
+            "model_selection_mode": binding.model_selection_mode.value
+            if binding.model_selection_mode
+            else None,
+            "runtime_model_binding_id": binding.runtime_model_binding_id,
+        }
+        for node_key, binding in body.node_bindings.items()
+    }
+    result = preflight(
+        session,
+        namespace_id,
+        project,
+        version,
+        submitted,
+        require_enabled=False,
+    )
+    return {
+        "passed": result["passed"],
+        "errors": result["errors"],
+        "resolved_bindings": result["runtime_resolution"],
     }
 
 

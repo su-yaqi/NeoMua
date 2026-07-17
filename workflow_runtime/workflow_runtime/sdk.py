@@ -42,8 +42,10 @@ FRONTEND_COMPONENTS: set[str] = {
     "workflow.project_delivery.v1_0_4",
     "workflow.project_delivery.v1_0_5",
     "workflow.project_delivery.v1_0_6",
+    "workflow.project_delivery.v1_0_7",
     "workflow.web_platform_development.v1_0_0",
     "workflow.web_platform_development.v1_0_1",
+    "workflow.web_platform_development.v1_0_2",
 }
 
 

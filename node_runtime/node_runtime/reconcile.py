@@ -7,4 +7,5 @@ class ReconcileState(BaseModel):
     spool_first_sequence: int | None = None
     spool_last_sequence: int | None = None
     config_revision: int = 0
+    discovery_generation: int = 0
     artifact_versions: dict[str, str] = Field(default_factory=dict)

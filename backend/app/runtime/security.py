@@ -62,10 +62,12 @@ def issue_gateway_token(
     runtime_id: uuid.UUID,
     task_id: uuid.UUID,
     model_id: str,
+    *,
+    provider_config_id: uuid.UUID | None = None,
+    runtime_model_binding_id: uuid.UUID | None = None,
 ) -> str:
     now = datetime.now(timezone.utc)
-    return jwt.encode(
-        {
+    claims: dict[str, Any] = {
             "aud": "neomua-model-gateway",
             "namespace_id": str(namespace_id),
             "runtime_id": str(runtime_id),
@@ -73,7 +75,13 @@ def issue_gateway_token(
             "model_id": model_id,
             "iat": now,
             "exp": now + timedelta(minutes=10),
-        },
+        }
+    if provider_config_id is not None:
+        claims["provider_config_id"] = str(provider_config_id)
+    if runtime_model_binding_id is not None:
+        claims["runtime_model_binding_id"] = str(runtime_model_binding_id)
+    return jwt.encode(
+        claims,
         settings.SECRET_KEY,
         algorithm="HS256",
     )
@@ -85,6 +93,8 @@ def verify_gateway_token(
     runtime_id: uuid.UUID,
     task_id: uuid.UUID,
     model_id: str,
+    provider_config_id: uuid.UUID | None = None,
+    runtime_model_binding_id: uuid.UUID | None = None,
 ) -> dict[str, Any]:
     try:
         claims: dict[str, Any] = jwt.decode(
@@ -113,4 +123,12 @@ def verify_gateway_token(
         or claims.get("model_id") != model_id
     ):
         raise GatewayScopeError("gateway token scope mismatch")
+    if provider_config_id is not None and claims.get("provider_config_id") != str(
+        provider_config_id
+    ):
+        raise GatewayScopeError("gateway provider scope mismatch")
+    if runtime_model_binding_id is not None and claims.get(
+        "runtime_model_binding_id"
+    ) != str(runtime_model_binding_id):
+        raise GatewayScopeError("gateway model binding scope mismatch")
     return claims

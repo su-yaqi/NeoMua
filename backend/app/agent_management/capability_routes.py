@@ -23,7 +23,7 @@ from fastapi import (
     Response,
     UploadFile,
 )
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, select
@@ -90,7 +90,14 @@ from app.runtime.artifacts.local_storage import LocalArtifactStorage
 from app.runtime.artifacts.s3_storage import S3ArtifactStorage
 from app.runtime.artifacts.signing import configured_artifact_signer
 from app.runtime.artifacts.storage import ArtifactStorage
-from app.runtime.models import RuntimeProfile, RuntimeSkillState, RuntimeType
+from app.runtime.catalog import RuntimeCatalogError, current_runtime_evidence
+from app.runtime.models import (
+    RuntimeInstance,
+    RuntimeLocationType,
+    RuntimeProfile,
+    RuntimeSkillState,
+    RuntimeType,
+)
 from app.runtime.security import require_internal_runtime
 from app.runtime.skill_sync import (
     ensure_skill_version_signature,
@@ -195,10 +202,19 @@ class McpRevisionCreate(StrictBody):
 
 
 class McpTargetCreate(StrictBody):
-    runtime_profile_id: uuid.UUID
+    runtime_profile_id: uuid.UUID | None = None
+    runtime_instance_id: uuid.UUID | None = None
     secret_ref: str | None = Field(
         default=None, min_length=1, max_length=255, pattern=r"^[a-zA-Z0-9._/-]+$"
     )
+
+    @model_validator(mode="after")
+    def validate_target(self) -> "McpTargetCreate":
+        if self.runtime_profile_id is not None:
+            raise ValueError("Runtime Profile targets are read-only in v0.9")
+        if self.runtime_instance_id is None:
+            raise ValueError("runtime_instance_id is required")
+        return self
 
 
 class McpSecretWrite(StrictBody):
@@ -2010,6 +2026,47 @@ def _validated_platform_secret(
     return ciphertext, fingerprint
 
 
+def _mcp_runtime_target(
+    session: SessionDep,
+    namespace_id: uuid.UUID,
+    *,
+    runtime_profile_id: uuid.UUID | None,
+    runtime_instance_id: uuid.UUID | None,
+) -> tuple[
+    RuntimeProfile | RuntimeInstance,
+    RuntimeLocationType,
+    dict[str, Any],
+    str,
+]:
+    if runtime_instance_id is not None:
+        runtime = session.get(RuntimeInstance, runtime_instance_id)
+        if runtime is None or runtime.namespace_id != namespace_id:
+            raise HTTPException(404, "Runtime target not found")
+        try:
+            _configuration, capability, _catalog = current_runtime_evidence(
+                session, runtime
+            )
+        except RuntimeCatalogError as exc:
+            raise HTTPException(
+                409, {"code": exc.code, "message": exc.message}
+            ) from exc
+        return (
+            runtime,
+            runtime.location_type,
+            capability.capabilities,
+            capability.capability_fingerprint,
+        )
+    runtime = session.get(RuntimeProfile, runtime_profile_id)
+    if runtime is None or runtime.namespace_id != namespace_id:
+        raise HTTPException(404, "Runtime target not found")
+    return (
+        runtime,
+        RuntimeLocationType(runtime.runtime_type.value),
+        runtime.harness_capabilities,
+        runtime_capability_fingerprint(runtime),
+    )
+
+
 @router.post("/mcp-servers/complete", status_code=201)
 def create_mcp_server_complete(
     body: McpCompleteCreate,
@@ -2026,23 +2083,28 @@ def create_mcp_server_complete(
         raise HTTPException(
             422, {"errors": [item.model_dump() for item in diagnostics]}
         )
-    runtime = session.get(RuntimeProfile, body.target.runtime_profile_id)
-    if runtime is None or runtime.namespace_id != namespace_id:
-        raise HTTPException(404, "Runtime target not found")
-    if runtime.runtime_type == RuntimeType.NODE and not body.target.secret_ref:
+    runtime, location, capability_inventory, capability_fingerprint = (
+        _mcp_runtime_target(
+            session,
+            namespace_id,
+            runtime_profile_id=body.target.runtime_profile_id,
+            runtime_instance_id=body.target.runtime_instance_id,
+        )
+    )
+    if location == RuntimeLocationType.NODE and not body.target.secret_ref:
         raise HTTPException(422, "Node MCP target requires a node-local secret_ref")
-    if runtime.runtime_type == RuntimeType.PLATFORM and body.target.secret_ref:
+    if location == RuntimeLocationType.PLATFORM and body.target.secret_ref:
         raise HTTPException(422, "Platform target cannot use secret_ref")
-    if runtime.runtime_type == RuntimeType.NODE and body.secret_inputs:
+    if location == RuntimeLocationType.NODE and body.secret_inputs:
         raise HTTPException(422, "Node secrets must be managed locally")
     if body.revision.transport == McpTransport.STDIO:
         executable = body.revision.config.get("executable_key")
-        inventory = runtime.harness_capabilities.get("mcp_executables") or []
+        inventory = capability_inventory.get("mcp_executables") or []
         if executable not in inventory:
             raise HTTPException(422, "stdio executable is not in target inventory")
     platform_secret = (
         _validated_platform_secret(body.revision.transport, body.secret_inputs)
-        if runtime.runtime_type == RuntimeType.PLATFORM
+        if location == RuntimeLocationType.PLATFORM
         else None
     )
     server = McpServer(
@@ -2070,9 +2132,10 @@ def create_mcp_server_complete(
     )
     target = McpTargetBinding(
         revision_id=revision.id,
-        runtime_profile_id=runtime.id,
+        runtime_profile_id=body.target.runtime_profile_id,
+        runtime_instance_id=body.target.runtime_instance_id,
         secret_ref=body.target.secret_ref,
-        capability_fingerprint=runtime_capability_fingerprint(runtime),
+        capability_fingerprint=capability_fingerprint,
     )
     session.add(server)
     session.add(revision)
@@ -2100,6 +2163,7 @@ def create_mcp_server_complete(
         "target": {
             "id": target.id,
             "runtime_profile_id": target.runtime_profile_id,
+            "runtime_instance_id": target.runtime_instance_id,
             "status": target.status.value,
         },
     }
@@ -2310,6 +2374,7 @@ def get_mcp_revision(
             {
                 "id": target.id,
                 "runtime_profile_id": target.runtime_profile_id,
+                "runtime_instance_id": target.runtime_instance_id,
                 "secret_ref": target.secret_ref,
                 "status": target.status.value,
                 "tool_digest": target.tool_digest,
@@ -2329,25 +2394,31 @@ def create_mcp_target(
     namespace_id: uuid.UUID = Depends(require_namespace_admin),
 ) -> dict[str, Any]:
     _server, revision = _get_mcp_revision(session, revision_id, namespace_id)
-    runtime = session.get(RuntimeProfile, body.runtime_profile_id)
-    if runtime is None or runtime.namespace_id != namespace_id:
-        raise HTTPException(404, "Runtime target not found")
-    if runtime.runtime_type == RuntimeType.NODE and not body.secret_ref:
+    runtime, location, capability_inventory, capability_fingerprint = (
+        _mcp_runtime_target(
+            session,
+            namespace_id,
+            runtime_profile_id=body.runtime_profile_id,
+            runtime_instance_id=body.runtime_instance_id,
+        )
+    )
+    if location == RuntimeLocationType.NODE and not body.secret_ref:
         raise HTTPException(422, "Node MCP target requires a node-local secret_ref")
-    if runtime.runtime_type == RuntimeType.PLATFORM and body.secret_ref:
+    if location == RuntimeLocationType.PLATFORM and body.secret_ref:
         raise HTTPException(
             422, "Platform MCP target uses the write-only secret endpoint"
         )
     if revision.transport == McpTransport.STDIO:
         executable = revision.config.get("executable_key")
-        inventory = runtime.harness_capabilities.get("mcp_executables") or []
+        inventory = capability_inventory.get("mcp_executables") or []
         if executable not in inventory:
             raise HTTPException(422, "stdio executable is not in the target inventory")
     row = McpTargetBinding(
         revision_id=revision.id,
-        runtime_profile_id=runtime.id,
+        runtime_profile_id=body.runtime_profile_id,
+        runtime_instance_id=body.runtime_instance_id,
         secret_ref=body.secret_ref,
-        capability_fingerprint=runtime_capability_fingerprint(runtime),
+        capability_fingerprint=capability_fingerprint,
     )
     session.add(row)
     try:
@@ -2358,6 +2429,7 @@ def create_mcp_target(
     return {
         "id": row.id,
         "runtime_profile_id": row.runtime_profile_id,
+        "runtime_instance_id": row.runtime_instance_id,
         "secret_ref": row.secret_ref,
         "status": row.status.value,
     }
@@ -2365,15 +2437,36 @@ def create_mcp_target(
 
 def _get_mcp_target(
     session: SessionDep, target_id: uuid.UUID, namespace_id: uuid.UUID
-) -> tuple[McpServer, McpServerRevision, McpTargetBinding, RuntimeProfile]:
+) -> tuple[
+    McpServer,
+    McpServerRevision,
+    McpTargetBinding,
+    RuntimeProfile | RuntimeInstance,
+    RuntimeLocationType,
+    dict[str, Any],
+    str,
+]:
     target = session.get(McpTargetBinding, target_id)
     if target is None:
         raise HTTPException(404, "MCP target not found")
     server, revision = _get_mcp_revision(session, target.revision_id, namespace_id)
-    runtime = session.get(RuntimeProfile, target.runtime_profile_id)
-    if runtime is None or runtime.namespace_id != namespace_id:
-        raise HTTPException(404, "MCP target not found")
-    return server, revision, target, runtime
+    runtime, location, capability_inventory, capability_fingerprint = (
+        _mcp_runtime_target(
+            session,
+            namespace_id,
+            runtime_profile_id=target.runtime_profile_id,
+            runtime_instance_id=target.runtime_instance_id,
+        )
+    )
+    return (
+        server,
+        revision,
+        target,
+        runtime,
+        location,
+        capability_inventory,
+        capability_fingerprint,
+    )
 
 
 @router.put("/mcp-targets/{target_id}/secret")
@@ -2384,10 +2477,10 @@ def put_mcp_secret(
     _: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_admin),
 ) -> dict[str, Any]:
-    _server, revision, target, runtime = _get_mcp_target(
+    _server, revision, target, _runtime, location, _inventory, _fingerprint = _get_mcp_target(
         session, target_id, namespace_id
     )
-    if runtime.runtime_type != RuntimeType.PLATFORM:
+    if location != RuntimeLocationType.PLATFORM:
         raise HTTPException(422, "Node secrets must be managed locally on the node")
     if not body.secret_inputs or any(
         not key or not value for key, value in body.secret_inputs.items()
@@ -2450,11 +2543,11 @@ def validate_mcp_target(
     _: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_admin),
 ) -> dict[str, Any]:
-    _server, _revision, target, runtime = _get_mcp_target(
+    _server, _revision, target, _runtime, location, _inventory, _fingerprint = _get_mcp_target(
         session, target_id, namespace_id
     )
     if (
-        runtime.runtime_type == RuntimeType.PLATFORM
+        location == RuntimeLocationType.PLATFORM
         and session.exec(
             select(McpPlatformSecret).where(
                 McpPlatformSecret.target_binding_id == target.id
@@ -2553,6 +2646,7 @@ def _apply_validation_result(
     instance_key = canonical_digest(
         {
             "runtime_profile_id": str(target.runtime_profile_id),
+            "runtime_instance_id": str(target.runtime_instance_id),
             "revision_id": str(target.revision_id),
             "secret_fingerprint": target.secret_fingerprint,
             "capability_fingerprint": target.capability_fingerprint,
@@ -2620,8 +2714,15 @@ def claim_platform_mcp_validation(
         ):
             continue
         target = session.get(McpTargetBinding, attempt.target_binding_id)
+        runtime_instance = (
+            session.get(RuntimeInstance, target.runtime_instance_id)
+            if target and target.runtime_instance_id
+            else None
+        )
         runtime = (
-            session.get(RuntimeProfile, target.runtime_profile_id) if target else None
+            session.get(RuntimeProfile, target.runtime_profile_id)
+            if target and target.runtime_profile_id
+            else None
         )
         revision = (
             session.get(McpServerRevision, target.revision_id) if target else None
@@ -2629,10 +2730,13 @@ def claim_platform_mcp_validation(
         server = session.get(McpServer, revision.server_id) if revision else None
         if (
             target is None
-            or runtime is None
+            or (runtime is None and runtime_instance is None)
             or revision is None
             or server is None
-            or runtime.runtime_type != RuntimeType.PLATFORM
+            or runtime is not None
+            and runtime.runtime_type != RuntimeType.PLATFORM
+            or runtime_instance is not None
+            and runtime_instance.location_type != RuntimeLocationType.PLATFORM
         ):
             continue
         secret = session.exec(
@@ -2647,13 +2751,30 @@ def claim_platform_mcp_validation(
             session.add(attempt)
             session.add(target)
             continue
-        capability_inventory = {
-            "runtime_type": runtime.runtime_type.value,
-            "harness_capabilities": runtime.harness_capabilities,
-            "config": {
-                "allowed_working_roots": runtime.config.get("allowed_working_roots", [])
-            },
-        }
+        if runtime_instance is not None:
+            try:
+                configuration, capability, _catalog = current_runtime_evidence(
+                    session, runtime_instance
+                )
+            except RuntimeCatalogError:
+                continue
+            capability_inventory = {
+                "runtime_type": runtime_instance.location_type.value,
+                "engine_type": runtime_instance.engine_type.value,
+                "configuration_digest": configuration.configuration_digest,
+                "capabilities": capability.capabilities,
+            }
+        else:
+            assert runtime is not None
+            capability_inventory = {
+                "runtime_type": runtime.runtime_type.value,
+                "harness_capabilities": runtime.harness_capabilities,
+                "config": {
+                    "allowed_working_roots": runtime.config.get(
+                        "allowed_working_roots", []
+                    )
+                },
+            }
         attempt.result = {"claimed_until": (now + timedelta(seconds=60)).isoformat()}
         session.add(attempt)
         session.commit()
@@ -2682,16 +2803,33 @@ def report_platform_mcp_validation(
     )
     revision = session.get(McpServerRevision, target.revision_id) if target else None
     server = session.get(McpServer, revision.server_id) if revision else None
-    runtime = session.get(RuntimeProfile, target.runtime_profile_id) if target else None
+    runtime_instance = (
+        session.get(RuntimeInstance, target.runtime_instance_id)
+        if target and target.runtime_instance_id
+        else None
+    )
+    runtime = (
+        session.get(RuntimeProfile, target.runtime_profile_id)
+        if target and target.runtime_profile_id
+        else None
+    )
     if (
         attempt is None
         or target is None
         or server is None
-        or runtime is None
-        or runtime.runtime_type != RuntimeType.PLATFORM
+        or (runtime is None and runtime_instance is None)
+        or runtime is not None
+        and runtime.runtime_type != RuntimeType.PLATFORM
+        or runtime_instance is not None
+        and runtime_instance.location_type != RuntimeLocationType.PLATFORM
     ):
         raise HTTPException(404, "MCP validation attempt not found")
-    if body.capability_fingerprint != runtime_capability_fingerprint(runtime):
+    expected_fingerprint = (
+        current_runtime_evidence(session, runtime_instance)[1].capability_fingerprint
+        if runtime_instance is not None
+        else runtime_capability_fingerprint(runtime)
+    )
+    if body.capability_fingerprint != expected_fingerprint:
         body = McpValidationResult(
             status="failed",
             capability_fingerprint=body.capability_fingerprint,
@@ -2834,11 +2972,17 @@ def restart_mcp_runtime(
     _: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_admin),
 ) -> dict[str, Any]:
-    _server, _revision, target, runtime = _get_mcp_target(
-        session, target_id, namespace_id
-    )
+    (
+        _server,
+        _revision,
+        target,
+        _runtime,
+        location,
+        _inventory,
+        _fingerprint,
+    ) = _get_mcp_target(session, target_id, namespace_id)
     if (
-        runtime.runtime_type == RuntimeType.PLATFORM
+        location == RuntimeLocationType.PLATFORM
         and session.exec(
             select(McpPlatformSecret).where(
                 McpPlatformSecret.target_binding_id == target.id

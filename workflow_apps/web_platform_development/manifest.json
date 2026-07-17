@@ -2,7 +2,7 @@
   "slug": "web-platform-development",
   "name": "Web 平台开发流",
   "description": "从需求沟通到上线记录的 Web 平台研发流程，Agent 负责研发节点，人员负责验收与上线确认。",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "sdk_version": "0.7.0",
   "scope_type": "platform",
   "project_mode": "required",
@@ -167,9 +167,9 @@
   "entry_nodes": ["requirements_communication"],
   "exit_nodes": ["go_live"],
   "application": {
-    "component_key": "workflow.web_platform_development.v1_0_1",
+    "component_key": "workflow.web_platform_development.v1_0_2",
     "route_slug": "web-platform-development",
-    "build_digest": "4db7fcbbad28574018bdc030ad48819fbf23757f84ee9fa45fd06c851c786123",
+    "build_digest": "c0847e4a4b44396d4d7abf0454885821255722caa4538c1cfef937b2bc4b5554",
     "shell_version": "0.7.0"
   },
   "input_schema": {

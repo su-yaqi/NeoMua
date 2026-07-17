@@ -11,7 +11,7 @@ NeoMua
 - 提供一个前后端分离、可容器化部署的管理后台基础盘。
 - 支持账号认证、个人设置、平台用户管理和基础业务条目管理。
 - 支持按空间组织用户，并为后续多租户业务扩展预留统一入口。
-- 支持按空间维护、验证并发布 Skill 等 Agent 能力；Agent Release 固定能力身份和策略，Runtime 异步同步 Skill 当前发布版本，任务只绑定本地已应用的不可变内容。
+- 支持按空间维护、验证并发布 Skill 等 Agent 能力；Agent Release 固定能力身份、模型偏好和引擎中立执行策略，Runtime Instance 异步同步 Skill 当前发布版本并声明经过验证的模型绑定，任务只绑定本地已应用的不可变内容。
 - 支持项目上下文、可修订模型/Agent 会话，以及由代码发布、由模板配置执行资源的可恢复 Workflow 业务任务。
 
 ## 技术栈
@@ -32,8 +32,8 @@ NeoMua
 | items | 用户个人条目的增删改查 |
 | namespaces | 空间列表、空间 CRUD、空间成员关系与空间上下文选择 |
 | llm_configs | 按空间维护多供应商大模型接入配置、连接校验与模型清单同步 |
-| runtime_management | 空间级平台/节点运行时、Agent/Runtime 持久任务、Skill 后台同步与任务使用审计、完整事件审计和签名内容分发 |
-| agent_management | Agent/Harness 草稿、可编辑 Skill 工作台、Tool/MCP/Plugin、统一解析、Release/Activation、审批与 Operator CLI |
+| runtime_management | Runtime Node 与一对多 Runtime Instance、引擎适配器、模型能力绑定、持久任务、Skill 后台同步与任务使用审计、完整事件审计和签名内容分发 |
+| agent_management | 引擎中立 Agent 草稿、模型偏好、可编辑 Skill 工作台、Tool/MCP/Plugin、统一解析、Release/Runtime 激活、审批与 Operator CLI |
 | project_management | 项目成员、多 Git 仓库、Spec 位置与不可变标准版本绑定 |
 | conversation_management | 固定模型 Chat、单/多 Agent 圆桌、可恢复事件流、项目上下文快照与委派审计 |
 | workflow_management | 不可变 Workflow Package/前端注册、有限 DAG、节点修订、附件、确认与恢复 |
@@ -57,6 +57,10 @@ NeoMua
 - v0.8 将 Skill 升级为空间级内容资产：列表进入独立工作台，左侧文件目录树、右侧 Markdown 编辑/预览；草稿经校验发布为不可变签名版本，并由 `current_version_id` 明确当前期望版本。
 - Agent、Plugin 和 Agent Release 只绑定 Skill 身份，不锁定 Skill Version。平台 Worker 与节点守护进程在任务链路之外按通知和周期轮询同步 desired/applied 状态；任务执行只绑定本地已应用版本并记录使用证据，不下载、不解包、不重复解析。
 - v0.8 集中验证已通过：Alembic 升级至 `e8a1c4b7d902`，Backend 231、Runtime Worker 与 Node Runtime 40、Playwright 74 项通过，前端生产构建、Ruff 与差异格式检查通过。
+- v0.9 将机器与执行引擎拆分为 Runtime Node 和一对多 Runtime Instance；Claude Code、Codex 等 Harness 收敛为 Runtime 内部引擎适配器，不再提供 Agent 侧 Harness 配置写入。
+- Runtime Instance 通过修订、能力报告、模型目录与已验证绑定声明可执行模型；Agent Release 只声明稳定模型偏好和引擎中立策略。Conversation、Agent 组与 Workflow 在不可变配置中选择具体模型或严格解析 Agent 偏好，任务启动前冻结 Runtime、引擎、模型、路由和能力证据，禁止隐式默认、模糊匹配或静默回退。
+- v0.9 需求一致性与安全整改复核已通过：Runtime 模型证据来自本地 applied 配置和已验证路由；安全策略在执行边界应用，无法可靠执行的策略明确阻断；离线/过期依赖、迁移歧义、冻结行为、逐次用量和并发语义均已关闭。
+- v0.9 集中验证为 Backend 213、Runtime Worker 19、Node Runtime 27、Playwright 74 项通过；前端生产构建、Ruff、变更范围 Biome、Alembic upgrade/check 与差异格式检查通过，数据库 head 为 `fc5a7b9d1e34`。按用户要求当前不合并主分支。
 
 ## 版本状态
 | 版本 | 状态 | 说明 |
@@ -69,3 +73,4 @@ NeoMua
 | v0.6 | 已完成 | 项目上下文、Chat/多 Agent 工作台、代码化 Workflow 应用与协作任务执行 |
 | v0.7 | 已完成 | Chat/Agent 工作台、完整创建体验、独立 Workflow 应用与模板执行配置 |
 | v0.8 | 已完成 | Skill 文件工作台、不可变发布版本、身份绑定、Runtime 异步同步与任务使用审计 |
+| v0.9 | 整改完成、待合并 | Runtime Instance、可信执行证据与安全边界已通过复核；按用户要求尚未合并主分支 |

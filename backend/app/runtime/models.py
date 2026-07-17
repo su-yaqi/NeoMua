@@ -3,7 +3,16 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, cast
 
-from sqlalchemy import JSON, Column, Index, Text, UniqueConstraint, text
+from sqlalchemy import (
+    JSON,
+    Column,
+    ForeignKey,
+    Index,
+    Text,
+    UniqueConstraint,
+    Uuid,
+    text,
+)
 from sqlalchemy import DateTime as _DateTime
 from sqlalchemy import Enum as _SAEnum
 from sqlalchemy.dialects.postgresql import JSONB
@@ -37,6 +46,56 @@ class RuntimeType(str, Enum):
 class RuntimeRouteMode(str, Enum):
     PLATFORM_GATEWAY = "platform_gateway"
     DIRECT_ANTHROPIC = "direct_anthropic"
+
+
+class RuntimeLocationType(str, Enum):
+    PLATFORM = "platform"
+    NODE = "node"
+
+
+class RuntimeEngineType(str, Enum):
+    CLAUDE_CODE = "claude_code"
+    CODEX = "codex"
+
+
+class RuntimeInstanceStatus(str, Enum):
+    DISCOVERED = "discovered"
+    AVAILABLE = "available"
+    UNAVAILABLE = "unavailable"
+    INCOMPATIBLE = "incompatible"
+    DISABLED = "disabled"
+
+
+class RuntimeConfigurationStatus(str, Enum):
+    DESIRED = "desired"
+    APPLYING = "applying"
+    APPLIED = "applied"
+    FAILED = "failed"
+
+
+class RuntimeModelRouteType(str, Enum):
+    PROVIDER_CONFIG = "provider_config"
+    RUNTIME_NATIVE = "runtime_native"
+    LEGACY_DIRECT = "legacy_direct"
+
+
+class RuntimeModelBindingStatus(str, Enum):
+    DECLARED = "declared"
+    AVAILABLE = "available"
+    UNMAPPED = "unmapped"
+    FAILED = "failed"
+    DISABLED = "disabled"
+
+
+class ModelSelectionMode(str, Enum):
+    EXACT = "exact"
+    AGENT_PREFERENCE = "agent_preference"
+
+
+class ModelSelectionSource(str, Enum):
+    EXACT = "exact"
+    EXPLICIT_OVERRIDE = "explicit_override"
+    AGENT_PREFERENCE = "agent_preference"
 
 
 class AgentEventType(str, Enum):
@@ -138,8 +197,11 @@ class AgentSession(SQLModel, table=True):
     namespace_id: uuid.UUID = Field(
         foreign_key="namespace.id", nullable=False, ondelete="CASCADE"
     )
-    runtime_profile_id: uuid.UUID = Field(
-        foreign_key="runtime_profile.id", nullable=False, ondelete="CASCADE"
+    runtime_profile_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_profile.id", ondelete="CASCADE"
+    )
+    runtime_instance_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_instance.id", ondelete="RESTRICT", index=True
     )
     sdk_session_id: str | None = Field(default=None, max_length=255)
     created_by: uuid.UUID | None = Field(
@@ -179,8 +241,11 @@ class AgentTask(SQLModel, table=True):
     session_id: uuid.UUID | None = Field(
         default=None, foreign_key="agent_session.id", ondelete="SET NULL"
     )
-    runtime_profile_id: uuid.UUID = Field(
-        foreign_key="runtime_profile.id", nullable=False, ondelete="CASCADE"
+    runtime_profile_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_profile.id", ondelete="CASCADE"
+    )
+    runtime_instance_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_instance.id", ondelete="RESTRICT", index=True
     )
     target_node_id: uuid.UUID | None = Field(
         default=None, foreign_key="runtime_node.id", ondelete="SET NULL", index=True
@@ -246,16 +311,30 @@ class RuntimeSkillState(SQLModel, table=True):
         UniqueConstraint(
             "runtime_profile_id", "skill_id", name="uq_runtime_skill_state"
         ),
+        Index(
+            "uq_runtime_skill_state_v09",
+            "runtime_instance_id",
+            "skill_id",
+            unique=True,
+            postgresql_where=text("runtime_instance_id IS NOT NULL"),
+            sqlite_where=text("runtime_instance_id IS NOT NULL"),
+        ),
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     namespace_id: uuid.UUID = Field(
         foreign_key="namespace.id", nullable=False, ondelete="CASCADE", index=True
     )
-    runtime_profile_id: uuid.UUID = Field(
+    runtime_profile_id: uuid.UUID | None = Field(
+        default=None,
         foreign_key="runtime_profile.id",
-        nullable=False,
         ondelete="CASCADE",
+        index=True,
+    )
+    runtime_instance_id: uuid.UUID | None = Field(
+        default=None,
+        foreign_key="runtime_instance.id",
+        ondelete="RESTRICT",
         index=True,
     )
     skill_id: uuid.UUID = Field(
@@ -298,6 +377,7 @@ class RuntimeSkillSyncAttempt(SQLModel, table=True):
         UniqueConstraint(
             "runtime_skill_state_id", "attempt_no", name="uq_runtime_skill_attempt"
         ),
+        Index("ix_runtime_skill_sync_attempt_state_id", "runtime_skill_state_id"),
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
@@ -305,7 +385,6 @@ class RuntimeSkillSyncAttempt(SQLModel, table=True):
         foreign_key="runtime_skill_state.id",
         nullable=False,
         ondelete="CASCADE",
-        index=True,
     )
     attempt_no: int
     generation: int
@@ -349,6 +428,80 @@ class AgentTaskSkillUsage(SQLModel, table=True):
     )
 
 
+class AgentTaskModelUsage(SQLModel, table=True):
+    __tablename__ = "agent_task_model_usage"
+    __table_args__ = (UniqueConstraint("task_id", name="uq_agent_task_model_usage"),)
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    task_id: uuid.UUID = Field(
+        foreign_key="agent_task.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    runtime_instance_id: uuid.UUID = Field(
+        foreign_key="runtime_instance.id", nullable=False, ondelete="RESTRICT"
+    )
+    runtime_node_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_node.id", ondelete="SET NULL"
+    )
+    agent_release_id: uuid.UUID | None = Field(
+        default=None, foreign_key="agent_release.id", ondelete="SET NULL"
+    )
+    model_definition_id: uuid.UUID = Field(
+        foreign_key="llm_model_definition.id", nullable=False, ondelete="RESTRICT"
+    )
+    runtime_model_binding_id: uuid.UUID = Field(
+        foreign_key="runtime_model_binding.id", nullable=False, ondelete="RESTRICT"
+    )
+    engine_type: str = Field(max_length=64)
+    engine_version: str | None = Field(default=None, max_length=64)
+    adapter_version: str = Field(max_length=64)
+    route_type: str = Field(max_length=32)
+    route_reference: str | None = Field(default=None, max_length=255)
+    model_selection_mode: str = Field(max_length=32)
+    selection_source: str = Field(max_length=32)
+    runtime_configuration_digest: str = Field(max_length=64)
+    capability_fingerprint: str = Field(max_length=64)
+    model_catalog_fingerprint: str = Field(max_length=64)
+    effective_spec_digest: str = Field(max_length=64)
+    runtime_evidence: dict[str, Any] | None = Field(
+        default=None, sa_column=Column(POSTGRES_JSON, nullable=True)
+    )
+    prepared_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+    evidenced_at: datetime | None = Field(
+        default=None, sa_type=DateTime(timezone=True)
+    )
+
+
+class AgentTaskModelCallUsage(SQLModel, table=True):
+    __tablename__ = "agent_task_model_call_usage"
+    __table_args__ = (
+        UniqueConstraint(
+            "task_id", "call_sequence", name="uq_agent_task_model_call_usage"
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    task_id: uuid.UUID = Field(
+        foreign_key="agent_task.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    runtime_model_binding_id: uuid.UUID = Field(
+        foreign_key="runtime_model_binding.id", nullable=False, ondelete="RESTRICT"
+    )
+    call_sequence: int
+    event_sequence: int
+    usage: dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(POSTGRES_JSON, nullable=False)
+    )
+    status: str = Field(max_length=32)
+    error: dict[str, Any] | None = Field(
+        default=None, sa_column=Column(POSTGRES_JSON, nullable=True)
+    )
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+
+
 class RuntimeJob(SQLModel, table=True):
     __tablename__ = "runtime_job"
     __table_args__ = (
@@ -367,8 +520,11 @@ class RuntimeJob(SQLModel, table=True):
     namespace_id: uuid.UUID = Field(
         foreign_key="namespace.id", nullable=False, ondelete="CASCADE", index=True
     )
-    runtime_profile_id: uuid.UUID = Field(
-        foreign_key="runtime_profile.id", nullable=False, ondelete="CASCADE"
+    runtime_profile_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_profile.id", ondelete="CASCADE"
+    )
+    runtime_instance_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_instance.id", ondelete="RESTRICT", index=True
     )
     target_node_id: uuid.UUID | None = Field(
         default=None, foreign_key="runtime_node.id", ondelete="SET NULL", index=True
@@ -469,9 +625,292 @@ class RuntimeNode(SQLModel, table=True):
     connected_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     connection_id: uuid.UUID | None = Field(default=None, index=True)
     config_revision: int = 1
+    discovery_generation: int = 0
+    discovery_digest: str | None = Field(default=None, max_length=64)
     revoked_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     created_at: datetime = Field(
         default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+
+
+class RuntimeInstance(SQLModel, table=True):
+    __tablename__ = "runtime_instance"
+    __table_args__ = (
+        UniqueConstraint(
+            "namespace_id",
+            "runtime_node_id",
+            "installation_key",
+            name="uq_runtime_instance_node_installation",
+        ),
+        Index(
+            "uq_runtime_instance_platform_installation",
+            "namespace_id",
+            "installation_key",
+            unique=True,
+            postgresql_where=text("location_type = 'platform'"),
+            sqlite_where=text("location_type = 'platform'"),
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    namespace_id: uuid.UUID = Field(
+        foreign_key="namespace.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    runtime_node_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_node.id", ondelete="CASCADE", index=True
+    )
+    legacy_runtime_profile_id: uuid.UUID | None = Field(
+        default=None,
+        foreign_key="runtime_profile.id",
+        ondelete="SET NULL",
+        unique=True,
+    )
+    location_type: RuntimeLocationType = Field(
+        sa_type=SAEnum(
+            RuntimeLocationType,
+            name="runtimelocationtype",
+            values_callable=lambda values: [value.value for value in values],
+        )
+    )
+    name: str = Field(max_length=255)
+    installation_key: str = Field(max_length=255)
+    engine_type: RuntimeEngineType = Field(
+        sa_type=SAEnum(
+            RuntimeEngineType,
+            name="runtimeenginetype",
+            values_callable=lambda values: [value.value for value in values],
+        )
+    )
+    engine_version: str | None = Field(default=None, max_length=64)
+    adapter_version: str = Field(default="1.0.0", max_length=64)
+    executable_fingerprint: str | None = Field(default=None, max_length=128)
+    status: RuntimeInstanceStatus = Field(
+        default=RuntimeInstanceStatus.DISCOVERED,
+        sa_type=SAEnum(
+            RuntimeInstanceStatus,
+            name="runtimeinstancestatus",
+            values_callable=lambda values: [value.value for value in values],
+        ),
+    )
+    enabled: bool = False
+    desired_configuration_revision_id: uuid.UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            Uuid,
+            ForeignKey(
+                "runtime_configuration_revision.id",
+                name="fk_runtime_instance_desired_configuration",
+                ondelete="SET NULL",
+                use_alter=True,
+            ),
+            nullable=True,
+        ),
+    )
+    applied_configuration_revision_id: uuid.UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            Uuid,
+            ForeignKey(
+                "runtime_configuration_revision.id",
+                name="fk_runtime_instance_applied_configuration",
+                ondelete="SET NULL",
+                use_alter=True,
+            ),
+            nullable=True,
+        ),
+    )
+    current_capability_report_id: uuid.UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            Uuid,
+            ForeignKey(
+                "runtime_capability_report.id",
+                name="fk_runtime_instance_current_capability",
+                ondelete="SET NULL",
+                use_alter=True,
+            ),
+            nullable=True,
+        ),
+    )
+    last_seen_at: datetime | None = Field(
+        default=None, sa_type=DateTime(timezone=True)
+    )
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+    updated_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+
+
+class RuntimeConfigurationRevision(SQLModel, table=True):
+    __tablename__ = "runtime_configuration_revision"
+    __table_args__ = (
+        UniqueConstraint(
+            "runtime_instance_id", "revision", name="uq_runtime_configuration_revision"
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    runtime_instance_id: uuid.UUID = Field(
+        foreign_key="runtime_instance.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    revision: int
+    executable: str = Field(max_length=1024)
+    arguments: list[str] = Field(
+        default_factory=list, sa_column=Column(POSTGRES_JSON, nullable=False)
+    )
+    working_directory_policy: str = Field(default="workspace", max_length=64)
+    environment_allowlist: list[str] = Field(
+        default_factory=list, sa_column=Column(POSTGRES_JSON, nullable=False)
+    )
+    security_policy: dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(POSTGRES_JSON, nullable=False)
+    )
+    resource_limits: dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(POSTGRES_JSON, nullable=False)
+    )
+    configuration_digest: str = Field(max_length=64)
+    status: RuntimeConfigurationStatus = Field(
+        default=RuntimeConfigurationStatus.DESIRED,
+        sa_type=SAEnum(
+            RuntimeConfigurationStatus,
+            name="runtimeconfigurationstatus",
+            values_callable=lambda values: [value.value for value in values],
+        ),
+    )
+    error: dict[str, Any] | None = Field(
+        default=None, sa_column=Column(POSTGRES_JSON, nullable=True)
+    )
+    created_by: uuid.UUID | None = Field(
+        default=None, foreign_key="user.id", ondelete="SET NULL"
+    )
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+    applied_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+
+
+class RuntimeCapabilityReport(SQLModel, table=True):
+    __tablename__ = "runtime_capability_report"
+    __table_args__ = (
+        UniqueConstraint(
+            "runtime_instance_id", "generation", name="uq_runtime_capability_generation"
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    runtime_instance_id: uuid.UUID = Field(
+        foreign_key="runtime_instance.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    generation: int
+    engine_version: str | None = Field(default=None, max_length=64)
+    adapter_version: str = Field(max_length=64)
+    configuration_digest: str = Field(max_length=64)
+    capabilities: dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(POSTGRES_JSON, nullable=False)
+    )
+    discovered_models: list[dict[str, Any]] = Field(
+        default_factory=list, sa_column=Column(POSTGRES_JSON, nullable=False)
+    )
+    capability_fingerprint: str = Field(max_length=64)
+    reported_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+
+
+class RuntimeModelBinding(SQLModel, table=True):
+    __tablename__ = "runtime_model_binding"
+    __table_args__ = (
+        UniqueConstraint(
+            "runtime_instance_id",
+            "model_definition_id",
+            "route_type",
+            "route_key",
+            name="uq_runtime_model_binding_route",
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    namespace_id: uuid.UUID = Field(
+        foreign_key="namespace.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    runtime_instance_id: uuid.UUID = Field(
+        foreign_key="runtime_instance.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    model_definition_id: uuid.UUID = Field(
+        foreign_key="llm_model_definition.id", nullable=False, ondelete="RESTRICT"
+    )
+    provider_config_id: uuid.UUID | None = Field(
+        default=None, foreign_key="llm_provider_config.id", ondelete="RESTRICT"
+    )
+    provider_model_id: uuid.UUID | None = Field(
+        default=None, foreign_key="llm_provider_model.id", ondelete="RESTRICT"
+    )
+    route_type: RuntimeModelRouteType = Field(
+        sa_type=SAEnum(
+            RuntimeModelRouteType,
+            name="runtimemodelroutetype",
+            values_callable=lambda values: [value.value for value in values],
+        )
+    )
+    route_key: str = Field(max_length=255)
+    engine_model_id: str = Field(max_length=255)
+    status: RuntimeModelBindingStatus = Field(
+        default=RuntimeModelBindingStatus.DECLARED,
+        sa_type=SAEnum(
+            RuntimeModelBindingStatus,
+            name="runtimemodelbindingstatus",
+            values_callable=lambda values: [value.value for value in values],
+        ),
+    )
+    validation_fingerprint: str | None = Field(default=None, max_length=64)
+    validated_capability_fingerprint: str | None = Field(default=None, max_length=64)
+    validation_expires_at: datetime | None = Field(
+        default=None, sa_type=DateTime(timezone=True)
+    )
+    last_validated_at: datetime | None = Field(
+        default=None, sa_type=DateTime(timezone=True)
+    )
+    last_error: dict[str, Any] | None = Field(
+        default=None, sa_column=Column(POSTGRES_JSON, nullable=True)
+    )
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+    updated_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+
+
+class RuntimeModelValidationAttempt(SQLModel, table=True):
+    __tablename__ = "runtime_model_validation_attempt"
+    __table_args__ = (
+        UniqueConstraint(
+            "runtime_model_binding_id",
+            "attempt_no",
+            name="uq_runtime_model_validation_attempt",
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    runtime_model_binding_id: uuid.UUID = Field(
+        foreign_key="runtime_model_binding.id",
+        nullable=False,
+        ondelete="CASCADE",
+        index=True,
+    )
+    attempt_no: int
+    status: str = Field(max_length=32)
+    evidence_digest: str | None = Field(default=None, max_length=64)
+    error: dict[str, Any] | None = Field(
+        default=None, sa_column=Column(POSTGRES_JSON, nullable=True)
+    )
+    started_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+    completed_at: datetime | None = Field(
+        default=None, sa_type=DateTime(timezone=True)
     )
 
 

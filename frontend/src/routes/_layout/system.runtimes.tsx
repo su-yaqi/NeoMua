@@ -1,8 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router"
 import ArtifactPanel from "@/components/Runtimes/ArtifactPanel"
 import NodeTable from "@/components/Runtimes/NodeTable"
-import PlatformRuntimeCard from "@/components/Runtimes/PlatformRuntimeCard"
 import RuntimeAgentMatrix from "@/components/Runtimes/RuntimeAgentMatrix"
+import RuntimeInstancePanel from "@/components/Runtimes/RuntimeInstancePanel"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import useAuth from "@/hooks/useAuth"
 
@@ -35,10 +35,11 @@ function RuntimeManagementPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">运行时管理</h1>
         <p className="text-muted-foreground">
-          配置平台运行时，管理节点连接并执行 Agent 任务。
+          按机器管理 Runtime Node，并配置其 Claude Code、Codex 等 Runtime
+          引擎实例与模型能力。
         </p>
       </div>
-      <PlatformRuntimeCard canManage={canManage} />
+      <RuntimeInstancePanel canManage={canManage} />
       <NodeTable canManage={canManage} />
       <RuntimeAgentMatrix />
       <ArtifactPanel canManage={canManage} />

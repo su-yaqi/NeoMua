@@ -1,8 +1,9 @@
+import hashlib
 from pathlib import Path
 
-from node_runtime.protocol import Envelope, envelope
 from runtime_worker.release_store import AgentReleaseStore, canonical_bytes
-import hashlib
+
+from node_runtime.protocol import Envelope, envelope
 
 
 class AgentReleaseController:

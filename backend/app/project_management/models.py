@@ -87,6 +87,9 @@ class Project(SQLModel, table=True):
     default_runtime_id: uuid.UUID | None = Field(
         default=None, foreign_key="runtime_profile.id", ondelete="SET NULL"
     )
+    default_runtime_instance_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_instance.id", ondelete="SET NULL"
+    )
     created_by: uuid.UUID | None = Field(
         default=None, foreign_key="user.id", ondelete="SET NULL"
     )

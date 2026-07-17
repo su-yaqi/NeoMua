@@ -6,9 +6,11 @@ from fastapi import HTTPException
 from sqlmodel import Session, col, select
 
 from app.runtime.models import (
+    RuntimeInstance,
     RuntimeJob,
     RuntimeJobKind,
     RuntimeJobStatus,
+    RuntimeLocationType,
     RuntimeNode,
     RuntimeProfile,
     RuntimeType,
@@ -37,7 +39,8 @@ def enqueue_runtime_job(
     session: Session,
     *,
     namespace_id: uuid.UUID,
-    runtime_id: uuid.UUID,
+    runtime_id: uuid.UUID | None = None,
+    runtime_instance_id: uuid.UUID | None = None,
     kind: RuntimeJobKind,
     payload: dict[str, Any],
     idempotency_key: str,
@@ -51,13 +54,31 @@ def enqueue_runtime_job(
     ).first()
     if existing is not None:
         return existing
-    runtime = session.get(RuntimeProfile, runtime_id)
-    if runtime is None or runtime.namespace_id != namespace_id:
+    if (runtime_id is None) == (runtime_instance_id is None):
+        raise HTTPException(422, "Submit exactly one Runtime target")
+    runtime = session.get(RuntimeProfile, runtime_id) if runtime_id else None
+    runtime_instance = (
+        session.get(RuntimeInstance, runtime_instance_id)
+        if runtime_instance_id
+        else None
+    )
+    if runtime_instance is not None:
+        if runtime_instance.namespace_id != namespace_id or not runtime_instance.enabled:
+            raise HTTPException(409, "Runtime is unavailable")
+        target_node_id = (
+            runtime_instance.runtime_node_id
+            if runtime_instance.location_type == RuntimeLocationType.NODE
+            else None
+        )
+    elif runtime is not None and runtime.namespace_id == namespace_id:
+        target_node_id = runtime_target_node(session, runtime)
+    else:
         raise HTTPException(409, "Runtime is unavailable")
     job = RuntimeJob(
         namespace_id=namespace_id,
-        runtime_profile_id=runtime.id,
-        target_node_id=runtime_target_node(session, runtime),
+        runtime_profile_id=runtime.id if runtime else None,
+        runtime_instance_id=runtime_instance.id if runtime_instance else None,
+        target_node_id=target_node_id,
         kind=kind,
         payload=payload,
         side_effecting=side_effecting,

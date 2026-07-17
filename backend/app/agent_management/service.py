@@ -27,7 +27,7 @@ from app.agent_management.models import (
     AgentStatus,
     HarnessProfile,
 )
-from app.models import LlmProviderConfig, LlmProviderModel
+from app.models import LlmModelDefinition, LlmProviderConfig, LlmProviderModel
 from app.runtime.models import RuntimeNode, RuntimeProfile, RuntimeType
 
 
@@ -128,11 +128,13 @@ def copy_agent(
     copied_draft = AgentDraft(
         agent_id=copied.id,
         revision=1,
-        harness_profile_id=source_draft.harness_profile_id,
-        provider_config_id=source_draft.provider_config_id,
-        model_id=source_draft.model_id,
+        harness_profile_id=None,
+        provider_config_id=None,
+        model_id=None,
+        preferred_model_definition_id=source_draft.preferred_model_definition_id,
+        execution_policy=deepcopy(source_draft.execution_policy),
         system_prompt=source_draft.system_prompt,
-        config=deepcopy(source_draft.config),
+        config={},
         validated_revision=None,
         validation_result=None,
     )
@@ -161,6 +163,8 @@ def save_draft(
     harness_profile_id: uuid.UUID | None | object = _UNSET,
     provider_config_id: uuid.UUID | None | object = _UNSET,
     model_id: str | None | object = _UNSET,
+    preferred_model_definition_id: uuid.UUID | None | object = _UNSET,
+    execution_policy: dict[str, Any] | None | object = _UNSET,
     system_prompt: str | None | object = _UNSET,
     config: dict[str, Any] | None | object = _UNSET,
 ) -> AgentDraft:
@@ -197,6 +201,17 @@ def save_draft(
         changed = True
     if model_id is not _UNSET and model_id != draft.model_id:
         draft.model_id = cast(str | None, model_id)
+        changed = True
+    if (
+        preferred_model_definition_id is not _UNSET
+        and preferred_model_definition_id != draft.preferred_model_definition_id
+    ):
+        draft.preferred_model_definition_id = cast(
+            uuid.UUID | None, preferred_model_definition_id
+        )
+        changed = True
+    if execution_policy is not _UNSET and execution_policy != draft.execution_policy:
+        draft.execution_policy = cast(dict[str, Any] | None, execution_policy) or {}
         changed = True
     if system_prompt is not _UNSET and system_prompt != draft.system_prompt:
         draft.system_prompt = cast(str | None, system_prompt) or ""
@@ -235,6 +250,23 @@ def _validate_model(
     session: Session, namespace_id: uuid.UUID, draft: AgentDraft
 ) -> list[Diagnostic]:
     diags: list[Diagnostic] = []
+    if draft.preferred_model_definition_id is not None:
+        definition = session.get(
+            LlmModelDefinition, draft.preferred_model_definition_id
+        )
+        if (
+            definition is None
+            or definition.namespace_id != namespace_id
+            or not definition.enabled
+        ):
+            diags.append(
+                Diagnostic(
+                    code="preferred_model_invalid",
+                    field="preferred_model_definition_id",
+                    message="preferred model is missing, disabled, or cross-namespace",
+                )
+            )
+        return diags
     if draft.provider_config_id is None or not draft.model_id:
         diags.append(
             Diagnostic(
@@ -401,11 +433,86 @@ def validate_draft(
     warnings: list[Diagnostic] = []
 
     errors.extend(_validate_model(session, namespace_id, draft))
-    harness_errors, profile = _validate_harness(session, namespace_id, draft)
-    errors.extend(harness_errors)
+    profile: HarnessProfile | None = None
+    if draft.preferred_model_definition_id is None:
+        harness_errors, profile = _validate_harness(session, namespace_id, draft)
+        errors.extend(harness_errors)
 
     # Config security validation (schema-layer invariants).
-    errors.extend(validate_config(draft.config, is_profile=False))
+    if draft.preferred_model_definition_id is None:
+        errors.extend(validate_config(draft.config, is_profile=False))
+    else:
+        allowed_policy_keys = {
+            "permission_mode",
+            "timeout_seconds",
+            "required_capabilities",
+            "tool_approval",
+            "network_policy",
+            "project_context_required",
+            "delegation_required",
+        }
+        for key in draft.execution_policy:
+            if key not in allowed_policy_keys:
+                errors.append(
+                    Diagnostic(
+                        code="execution_policy_field_unknown",
+                        field=f"execution_policy.{key}",
+                        message="execution policy contains an unsupported field",
+                    )
+                )
+        permission_mode = draft.execution_policy.get("permission_mode", "default")
+        if permission_mode not in {"default", "acceptEdits", "plan", "dontAsk"}:
+            errors.append(
+                Diagnostic(
+                    code="execution_permission_mode_invalid",
+                    field="execution_policy.permission_mode",
+                    message="execution permission mode is unsupported",
+                )
+            )
+        timeout = draft.execution_policy.get("timeout_seconds", 3600)
+        if isinstance(timeout, bool) or not isinstance(timeout, int) or timeout < 1:
+            errors.append(
+                Diagnostic(
+                    code="execution_timeout_invalid",
+                    field="execution_policy.timeout_seconds",
+                    message="execution timeout must be a positive integer",
+                )
+            )
+        for boolean_key in {
+            "project_context_required",
+            "delegation_required",
+            "tool_approval",
+        }:
+            value = draft.execution_policy.get(boolean_key)
+            if value is not None and not isinstance(value, bool):
+                errors.append(
+                    Diagnostic(
+                        code="execution_policy_type_invalid",
+                        field=f"execution_policy.{boolean_key}",
+                        message="execution policy field must be boolean",
+                    )
+                )
+        network_policy = draft.execution_policy.get("network_policy", "unrestricted")
+        if network_policy != "unrestricted":
+            errors.append(
+                Diagnostic(
+                    code="execution_network_policy_unsupported",
+                    field="execution_policy.network_policy",
+                    message="current Runtime adapters cannot prove restricted network execution",
+                )
+            )
+        required = draft.execution_policy.get("required_capabilities", {})
+        if not isinstance(required, dict) or any(
+            not isinstance(key, str) or not isinstance(value, bool)
+            for key, value in required.items()
+        ):
+            errors.append(
+                Diagnostic(
+                    code="required_capabilities_invalid",
+                    field="execution_policy.required_capabilities",
+                    message="required_capabilities must map capability names to booleans",
+                )
+            )
 
     if profile is not None:
         errors.extend(validate_config(profile.config, is_profile=True))
@@ -462,7 +569,8 @@ def validate_draft(
             resolved_spec, _dependency_lock, _components = resolve_agent_spec(
                 session, agent
             )
-            errors.extend(ClaudeCodeHarnessAdapter().validate_spec(resolved_spec))
+            if resolved_spec.schema_version != "2.0":
+                errors.extend(ClaudeCodeHarnessAdapter().validate_spec(resolved_spec))
         except ResolutionError as exc:
             errors.extend(exc.diagnostics)
 

@@ -1,13 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
 import { Plus } from "lucide-react"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { toast } from "sonner"
 import {
   mcpServersApi,
   pluginsApi,
+  runtimeInstancesApi,
   skillsApi,
-  tenantApi,
 } from "@/api/tenantApi"
 import { Button } from "@/components/ui/button"
 import {
@@ -135,7 +135,11 @@ Describe when and how the agent should use this Skill.
             <div className="flex items-center justify-between">
               <Label>SKILL.md</Label>
               {customized ? (
-                <Button size="sm" variant="ghost" onClick={() => setCustomized(false)}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setCustomized(false)}
+                >
                   恢复标准模板
                 </Button>
               ) : null}
@@ -164,7 +168,9 @@ Describe when and how the agent should use this Skill.
             </Button>
           </DialogClose>
           <Button
-            disabled={!name || !slug || !version || !skillMd || mutation.isPending}
+            disabled={
+              !name || !slug || !version || !skillMd || mutation.isPending
+            }
             onClick={() => mutation.mutate()}
           >
             {mutation.isPending ? "校验并创建中..." : "创建并发布"}
@@ -188,32 +194,19 @@ export function CreateMcpCompleteDialog() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { showSuccessToast, showErrorToast } = useCustomToast()
-  const platform = useQuery({
-    queryKey: ["platform-runtime"],
-    queryFn: tenantApi.readPlatformRuntime,
-    enabled: open,
-    retry: false,
-  })
-  const nodes = useQuery({
-    queryKey: ["runtime-nodes"],
-    queryFn: tenantApi.readRuntimeNodes,
+  const runtimeQuery = useQuery({
+    queryKey: ["runtime-instances"],
+    queryFn: runtimeInstancesApi.list,
     enabled: open,
   })
-  const runtimes = useMemo(
-    () => [
-      ...(platform.data
-        ? [{ id: platform.data.id, label: "平台运行时", kind: "platform" }]
-        : []),
-      ...(nodes.data?.data
-        .filter((node) => node.runtime_profile_id)
-        .map((node) => ({
-          id: node.runtime_profile_id!,
-          label: `${node.name}（节点）`,
-          kind: "node",
-        })) ?? []),
-    ],
-    [platform.data, nodes.data],
-  )
+  const runtimes =
+    runtimeQuery.data?.data
+      .filter((runtime) => runtime.enabled && runtime.status === "available")
+      .map((runtime) => ({
+        id: runtime.id,
+        label: `${runtime.name}（${runtime.engine_type}）`,
+        kind: runtime.location_type,
+      })) || []
   const selectedRuntime = runtimes.find((runtime) => runtime.id === runtimeId)
   const mutation = useMutation({
     mutationFn: async () => {
@@ -235,7 +228,7 @@ export function CreateMcpCompleteDialog() {
               : { endpoint },
         },
         target: {
-          runtime_profile_id: runtimeId,
+          runtime_instance_id: runtimeId,
           ...(selectedRuntime?.kind === "node"
             ? { secret_ref: secretRef }
             : {}),

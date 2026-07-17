@@ -1,9 +1,16 @@
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
 import { useState } from "react"
-import { releasesApi, tenantApi } from "@/api/tenantApi"
+import { releasesApi, runtimeInstancesApi } from "@/api/tenantApi"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import useAuth from "@/hooks/useAuth"
 import useCustomToast from "@/hooks/useCustomToast"
 import { handleError } from "@/utils"
@@ -20,53 +27,41 @@ function Page() {
       item.namespace_id === localStorage.getItem("selected_namespace_id"),
   )?.role
   const canManage = Boolean(user?.is_superuser || role === "admin")
-  const [targets, setTargets] = useState<string[]>([])
-  const [precheck, setPrecheck] = useState<Record<string, unknown> | null>(null)
+  const [target, setTarget] = useState("")
+  const [precheck, setPrecheck] = useState<{
+    id: string
+    runtime_instance_id: string
+    deployable: boolean
+    precheck_digest: string
+    checks: Record<string, unknown>
+    expires_at: string
+  } | null>(null)
   const { data: release } = useQuery({
     queryKey: ["agent-release", releaseId],
     queryFn: () => releasesApi.get(releaseId),
   })
-  const { data: platform } = useQuery({
-    queryKey: ["platform-runtime"],
-    queryFn: tenantApi.readPlatformRuntime,
-    retry: false,
+  const { data: runtimes } = useQuery({
+    queryKey: ["runtime-instances"],
+    queryFn: runtimeInstancesApi.list,
   })
-  const { data: nodes } = useQuery({
-    queryKey: ["runtime-nodes"],
-    queryFn: tenantApi.readRuntimeNodes,
-  })
-  const options = [
-    ...(platform
-      ? [
-          {
-            id: platform.id,
-            label: "平台运行时",
-            capability: platform.harness_capabilities,
-          },
-        ]
-      : []),
-    ...(nodes?.data
-      .filter((node) => node.runtime_profile_id)
-      .map((node) => ({
-        id: node.runtime_profile_id!,
-        label: node.name,
-        capability: node.harness_capabilities,
-      })) ?? []),
-  ]
-  const toggle = (id: string) =>
-    setTargets((value) => {
-      setPrecheck(null)
-      return value.includes(id)
-        ? value.filter((item) => item !== id)
-        : [...value, id]
-    })
+  const options =
+    runtimes?.data.filter(
+      (runtime) => runtime.enabled && runtime.status === "available",
+    ) || []
   const precheckMutation = useMutation({
-    mutationFn: () => releasesApi.precheckActivation(releaseId, targets),
+    mutationFn: () => releasesApi.precheckActivation(releaseId, target),
     onSuccess: (result) => setPrecheck(result),
     onError: handleError.bind(showErrorToast),
   })
   const activateMutation = useMutation({
-    mutationFn: () => releasesApi.activate(releaseId, targets),
+    mutationFn: () => {
+      if (!precheck) throw new Error("activation_precheck_required")
+      return releasesApi.activate(releaseId, {
+        runtime_instance_id: target,
+        precheck_id: precheck.id,
+        precheck_digest: precheck.precheck_digest,
+      })
+    },
     onSuccess: (activation) =>
       window.location.assign(`/system/agent-activations/${activation.id}`),
     onError: handleError.bind(showErrorToast),
@@ -87,13 +82,17 @@ function Page() {
           <div className="mt-3 rounded border p-3">
             <p className="text-sm font-medium">允许使用的 Skill 身份</p>
             <p className="mb-2 text-xs text-muted-foreground">
-              Release 不锁定内容版本；每个任务使用 Runtime 当时已同步并应用的版本。
+              Release 不锁定内容版本；每个任务使用 Runtime
+              当时已同步并应用的版本。
             </p>
             {(
               ((release?.dependency_lock as Record<string, unknown> | undefined)
                 ?.skills as Array<Record<string, unknown>> | undefined) ?? []
             ).map((skill) => (
-              <div className="flex justify-between py-1 text-sm" key={String(skill.id)}>
+              <div
+                className="flex justify-between py-1 text-sm"
+                key={String(skill.id)}
+              >
                 <span>{String(skill.slug)}</span>
                 <span className="text-muted-foreground">
                   {((skill.sources as string[] | undefined) ?? []).join("、")}
@@ -129,31 +128,37 @@ function Page() {
             <CardTitle>显式激活目标</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {options.map((option) => (
-              <label key={option.id} className="flex gap-2">
-                <input
-                  type="checkbox"
-                  checked={targets.includes(option.id)}
-                  onChange={() => toggle(option.id)}
-                />
-                {option.label}
-                <code className="text-xs">
-                  {JSON.stringify(option.capability)}
-                </code>
-              </label>
-            ))}
+            <Select
+              value={target}
+              onValueChange={(value) => {
+                setTarget(value)
+                setPrecheck(null)
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="选择一个 Runtime Instance" />
+              </SelectTrigger>
+              <SelectContent>
+                {options.map((option) => (
+                  <SelectItem key={option.id} value={option.id}>
+                    {option.name} · {option.engine_type} ·{" "}
+                    {option.location_type}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <div className="flex gap-2">
               <Button
                 variant="outline"
-                disabled={!targets.length || precheckMutation.isPending}
+                disabled={!target || precheckMutation.isPending}
                 onClick={() => precheckMutation.mutate()}
               >
                 运行目标预检
               </Button>
               <Button
                 disabled={
-                  !targets.length ||
-                  precheck?.compatible !== true ||
+                  !target ||
+                  precheck?.deployable !== true ||
                   activateMutation.isPending
                 }
                 onClick={() => activateMutation.mutate()}

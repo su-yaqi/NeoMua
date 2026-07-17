@@ -17,7 +17,7 @@ def test_normalize_result_message() -> None:
     assert event == {
         "sequence": 4,
         "event_type": "result",
-        "payload": {"session_id": "session-1", "result": "done"},
+        "payload": {"session_id": "session-1", "result": "done", "usage": {}},
     }
 
 

@@ -149,7 +149,7 @@ function ProjectDetailPage() {
           <Card>
             <CardContent className="py-6">
               {project.data.member_ids.length} 位项目成员；默认 Runtime：
-              {project.data.default_runtime_id || "未配置"}
+              {project.data.default_runtime_instance_id || "未配置"}
             </CardContent>
           </Card>
         </TabsContent>

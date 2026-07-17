@@ -1,6 +1,7 @@
 import { expect, type Page, test } from "@playwright/test"
 
 const namespaceId = "00000000-0000-0000-0000-000000000010"
+const runtimeId = "00000000-0000-0000-0000-000000000030"
 
 async function mockRuntimePage(
   page: Page,
@@ -33,20 +34,52 @@ async function mockRuntimePage(
       },
     }),
   )
-  await page.route("**/api/v1/runtimes/platform", (route) =>
+  await page.route("**/api/v1/runtimes", (route) =>
     route.fulfill({
       json: {
-        id: "00000000-0000-0000-0000-000000000030",
-        namespace_id: namespaceId,
-        route_mode: "platform_gateway",
-        model_id: "claude-test",
-        provider_config_id: "00000000-0000-0000-0000-000000000040",
-        base_url: null,
-        permission_mode: "default",
-        secret_masked: null,
-        compatibility_verified: true,
+        data: [
+          {
+            id: runtimeId,
+            namespace_id: namespaceId,
+            runtime_node_id: null,
+            location_type: "platform",
+            name: "平台 Claude Runtime",
+            installation_key: "platform-claude",
+            engine_type: "claude_code",
+            engine_version: "2.1.191",
+            adapter_version: "1.0.0",
+            status: "available",
+            enabled: true,
+            available_model_count: 1,
+          },
+        ],
+        count: 1,
       },
     }),
+  )
+  await page.route(`**/api/v1/runtimes/${runtimeId}`, (route) =>
+    route.fulfill({
+      json: {
+        id: runtimeId,
+        configurations: [
+          {
+            id: "00000000-0000-0000-0000-000000000031",
+            revision: 1,
+            executable: "claude",
+            arguments: [],
+            environment_allowlist: [],
+            working_directory_policy: "workspace",
+          },
+        ],
+        capability_reports: [],
+      },
+    }),
+  )
+  await page.route(`**/api/v1/runtimes/${runtimeId}/model-bindings`, (route) =>
+    route.fulfill({ json: { data: [], count: 0 } }),
+  )
+  await page.route("**/api/v1/llm/model-definitions", (route) =>
+    route.fulfill({ json: { data: [], count: 0 } }),
   )
   await page.route("**/api/v1/llm/provider-configs", (route) =>
     route.fulfill({ json: { data: [], count: 0 } }),
@@ -78,8 +111,13 @@ test.describe("runtime namespace roles", () => {
     await expect(
       page.getByRole("heading", { name: "运行时管理" }),
     ).toBeVisible()
+    await expect(page.getByText("平台 Claude Runtime")).toBeVisible()
     await expect(
-      page.getByRole("button", { name: "配置", exact: true }),
+      page.getByRole("button", { name: "创建平台 Runtime" }),
+    ).toBeVisible()
+    await page.getByRole("button", { name: "配置与模型能力" }).click()
+    await expect(
+      page.getByRole("button", { name: "保存并应用新修订" }),
     ).toBeVisible()
     await expect(page.getByRole("button", { name: "上传内容" })).toBeVisible()
     await page.getByRole("button", { name: "安装新节点" }).click()
@@ -88,15 +126,20 @@ test.describe("runtime namespace roles", () => {
     )
   })
 
-  test("developer can test but cannot configure or distribute", async ({
+  test("developer reads RuntimeInstance inventory but cannot mutate it", async ({
     page,
   }) => {
     await mockRuntimePage(page, "developer")
     await page.goto("/system/runtimes")
-    await expect(page.getByRole("button", { name: "功能测试" })).toBeVisible()
+    await expect(page.getByText("平台 Claude Runtime")).toBeVisible()
     await expect(
-      page.getByRole("button", { name: "配置", exact: true }),
+      page.getByRole("button", { name: "创建平台 Runtime" }),
     ).toHaveCount(0)
+    await page.getByRole("button", { name: "配置与模型能力" }).click()
+    await expect(
+      page.getByRole("button", { name: "保存并应用新修订" }),
+    ).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "声明绑定" })).toHaveCount(0)
     await expect(page.getByRole("button", { name: "安装新节点" })).toHaveCount(
       0,
     )

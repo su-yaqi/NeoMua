@@ -376,7 +376,7 @@ function Page() {
             {!sync?.count && <p className="text-sm text-muted-foreground">尚无运行时订阅此 Skill。</p>}
             {sync?.data.map((state) => (
               <div key={String(state.id)} className="grid gap-2 rounded border p-3 text-sm md:grid-cols-4">
-                <span>运行时 {String(state.runtime_profile_id).slice(0, 8)}</span>
+                <span>Runtime {String(state.runtime_instance_id || state.runtime_profile_id).slice(0, 8)}</span>
                 <span>期望 v{String(state.desired_version ?? "-")}</span>
                 <span>已应用 v{String(state.applied_version ?? "-")}</span>
                 <span className={state.status === "failed" || state.status === "blocked" ? "text-destructive" : ""}>
@@ -389,7 +389,7 @@ function Page() {
                       onClick={async () => {
                         await skillsApi.retryRuntimeSync(
                           skillId,
-                          String(state.runtime_profile_id),
+                          String(state.runtime_instance_id || state.runtime_profile_id),
                         )
                         await client.invalidateQueries({ queryKey: ["skill-sync", skillId] })
                       }}

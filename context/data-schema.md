@@ -26,19 +26,20 @@ User 1 ---- N Item
 User 1 ---- N RefreshSession
 User 1 ---- N UserNamespaceLink N ---- 1 Namespace
 Namespace 1 ---- N LlmProviderConfig 1 ---- N LlmProviderModel
-Namespace 1 ---- N RuntimeProfile / RuntimeNode / AgentTask / RuntimeArtifact
-RuntimeNode 1 ---- N NodeCredential / AgentTask / ArtifactDeployment
+Namespace 1 ---- N RuntimeNode / RuntimeInstance / AgentTask / RuntimeArtifact
+RuntimeNode 1 ---- N RuntimeInstance / NodeCredential / AgentTask / ArtifactDeployment
 AgentTask 1 ---- N AgentEvent
-RuntimeProfile 1 ---- N RuntimeJob
+RuntimeInstance 1 ---- N RuntimeConfigurationRevision / RuntimeCapabilityReport / RuntimeModelBinding / RuntimeJob
 Namespace 1 ---- N AgentDefinition / SkillDefinition / McpServer / Plugin
 AgentDefinition 1 ---- 1 AgentDraft 1 ---- N capability bindings
 SkillDefinition 1 ---- 1 SkillDraft 1 ---- N SkillDraftFile
 SkillDefinition 1 ---- N SkillVersion / SkillCurrentVersionChange
 AgentRelease 1 ---- N AgentActivation 1 ---- N AgentDeployment
-RuntimeProfile N ---- N AgentRelease (via RuntimeAgentRelease)
-RuntimeProfile N ---- N SkillDefinition (via RuntimeSkillState)
+RuntimeInstance N ---- N AgentRelease (via RuntimeAgentRelease)
+RuntimeInstance N ---- N SkillDefinition (via RuntimeSkillState)
 RuntimeSkillState 1 ---- N RuntimeSkillSyncAttempt
 AgentTask 1 ---- N AgentTaskSkillUsage
+AgentTask 1 ---- 1 AgentTaskModelUsage
 ```
 
 ## 表结构
@@ -47,13 +48,17 @@ AgentTask 1 ---- N AgentTaskSkillUsage
 
 | 表 | 关键职责 |
 |---|---|
-| `runtime_profile` | namespace 内平台或节点运行时的模型、路由、工具与目录策略；平台使用部分唯一索引 |
+| `runtime_node` | 机器身份、公钥、指纹、心跳、连接代次、安装发现与吊销时间；一台 Node 可承载多个 Runtime Instance |
+| `runtime_instance` | namespace 内执行引擎实例；绑定 Node/平台位置、engine type、desired/applied 配置、当前能力报告和状态 |
+| `runtime_configuration_revision` | Runtime 不可变配置修订、配置摘要、应用状态、工作目录策略、环境白名单、安全策略与资源限制 |
+| `runtime_capability_report` | Runtime/engine/Adapter 版本、能力、发现模型、generation、指纹与上报时间 |
+| `llm_model_definition` | namespace 内稳定模型身份；以 provider family 与精确 model key 表达偏好 |
+| `runtime_model_binding` / `runtime_model_validation_attempt` | 稳定模型在具体 Runtime 上的精确路由、engine model id、验证状态与证据 |
 | `runtime_secret` | 运行时密钥加密载荷；浏览器仅见掩码 |
 | `agent_session` | 平台多轮会话与 Claude SDK session ID |
 | `agent_task` | 不可变执行快照、目标节点、任务类型、状态、租约、幂等键和 retry 链 |
 | `agent_event` | 按 `(task_id, sequence)` 唯一保存用户、Agent、工具、状态、错误和结果事件 |
 | `runtime_job` | 仓库探测、Workflow Validator/Handler 的持久任务；保存目标 Runtime、租约、修订、幂等键、结果与人工处理状态 |
-| `runtime_node` | 节点公钥、指纹、版本、心跳、连接代次、配置修订和吊销时间 |
 | `node_enrollment_token` | 一次性注册令牌 HMAC；仅保存哈希、有效期和消费时间 |
 | `node_credential` | 90 天设备凭证、密钥指纹、轮换链与吊销时间；不保存私钥 |
 | `runtime_artifact` | namespace 内不可变内容哈希、逻辑目标、清单、签名和存储键 |
@@ -63,14 +68,16 @@ AgentTask 1 ---- N AgentTaskSkillUsage
 | `runtime_skill_state` | 每个 Runtime/Skill 的订阅数、desired/applied 版本与摘要、代次、同步状态和重试信息 |
 | `runtime_skill_sync_attempt` | 每次 Skill 后台同步的目标代次、版本、摘要、触发来源、下载量、状态和错误 |
 | `agent_task_skill_usage` | 单次任务实际绑定的 Skill 身份、版本、摘要和 Runtime applied generation 证据 |
+| `agent_task_model_usage` | 单次任务冻结并由 Runtime 回报的 Runtime、engine、Adapter、模型 Binding、路由和摘要证据 |
 
 `agent_task` 额外以 `dispatch_connection_id/dispatch_reserved_until` 记录短期发送预留；预留不改变 QUEUED，超时后可重新领取。`artifact_deployment` 固化 `logical_target`，部分唯一索引保证每个 `(node_id, logical_target)` 最多一个 pending/dispatched。`node_credential` 记录 replacement 签发时间和宽限截止时间。任务状态只允许显式迁移；租约过期变为 interrupted，不自动 retry。
 
-### agent_management 表组（v0.5-v0.8）
+### agent_management 表组（v0.5-v0.9）
 
 | 表组 | 关键职责 |
 |---|---|
-| `agent_definition` / `agent_draft` / `harness_profile` | 空间级 Agent 身份、CAS 草稿和受限 Claude Harness 配置 |
+| `agent_definition` / `agent_draft` | 空间级 Agent 身份、CAS 草稿、稳定模型偏好和引擎中立执行策略 |
+| `harness_profile` | v0.9 仅保留只读历史语义，不参与新 Agent 写入或任务路由 |
 | `skill_definition` / `skill_version` | Skill 身份、显式 `current_version_id`、不可变 Bundle 摘要、Manifest、签名与校验结果 |
 | `skill_draft` / `skill_draft_file` | 单一可编辑草稿、CAS revision、校验证据，以及按规范化路径存储的文本/二进制文件 |
 | `skill_current_version_change` | current version 发布、切换或回滚的幂等审计记录 |
@@ -83,6 +90,7 @@ AgentTask 1 ---- N AgentTaskSkillUsage
 | `agent_release` / `agent_release_component` | canonical ResolvedAgentSpec、依赖锁、manifest、签名和来源链 |
 | `agent_activation` / `agent_deployment` | 激活批次及每个 Runtime target 的独立 attempt/status/error |
 | `runtime_agent_release` | 每个 `(runtime, agent)` 的 current/previous Release 指针和 digest |
+| `agent_activation_precheck` / `agent_release_runtime_compatibility` | Runtime 目标预检证据、能力/模型目录摘要与可重建兼容诊断 |
 | `tool_approval_request` | 绑定 task revision、tool call 与 args digest 的可过期审批 |
 | `cli_session` | Operator CLI 轮换 refresh token HMAC、family、绝对到期与吊销链 |
 
@@ -247,4 +255,4 @@ Skill 草稿每个 Skill 只允许一条；文件路径在草稿内唯一并拒�
 | Workflow Agent | `workflow_node_definition.agent_role_key`、`workflow_instance_agent_binding` | Agent 节点声明逻辑角色；实例绑定精确 Runtime、Agent Release 与 Resolved Spec digest |
 | Workflow 执行配置 | `namespace_workflow_configuration`、`workflow_execution_configuration_revision`、`workflow_execution_node_binding`；`workflow_instance.execution_configuration_revision_id` | 每个 namespace/模板版本只有一个当前配置指针；保存使用 expected revision 并创建不可变新修订；每个非人工节点必须明确 Runtime，Agent 节点还必须明确 Release；实例创建时冻结当前修订 |
 
-迁移链在 v0.7 依次加入会话配置修订、独立 Workflow 上下文、Agent 角色绑定和模板执行配置。v0.8 新增 Skill 草稿/文件/current-version 审计、Runtime Skill 状态/attempt 和任务使用证据，并迁移 Skill 身份绑定；当前 Alembic head 为 `e8a1c4b7d902`。
+迁移链在 v0.7 依次加入会话配置修订、独立 Workflow 上下文、Agent 角色绑定和模板执行配置。v0.8 新增 Skill 草稿/文件/current-version 审计、Runtime Skill 状态/attempt 和任务使用证据，并迁移 Skill 身份绑定。v0.9 新增 Runtime Instance、配置/能力报告、稳定模型定义与 Binding、Activation precheck、Binding 验证有效期和逐次 Task 模型调用证据；当前目标 Alembic head 为 `fc5a7b9d1e34`。旧模型只在来源可证明时迁移，未知或歧义记录会阻断升级并要求 Admin 确认。

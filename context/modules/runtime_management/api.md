@@ -6,6 +6,17 @@
 
 敏感字段规则：注册令牌只返回一次；设备私钥永不上传；模型和制品密钥不进入浏览器响应；下载 token 绑定 deployment/node/artifact/storage key 和过期时间。
 
+## Runtime Instance 与模型
+
+- `/runtime-instances` 和 `/runtime-instances/{id}` 读取一对多 Node/Instance 库存、desired/applied 配置、当前能力报告及模型目录。
+- `PUT /runtimes/{id}/configuration` 使用 expected revision 创建不可变配置；`POST .../configuration/apply` 触发平台 Worker 或 Node 应用。
+- `/llm/model-definitions` 保存稳定模型身份；`/runtimes/{id}/model-bindings` 保存具体 Runtime 上的 provider/runtime-native 路由，验证通过后才进入执行目录。
+- 新 Task 必须选择 exact binding 或把 Agent 偏好唯一解析到该 Runtime 的 Binding，并冻结配置、能力、模型目录和 effective spec 摘要。
+
+Runtime Worker 与 Node Runtime 从本地 applied 配置、实际 Adapter、能力缓存和已验证模型路由生成 `model_evidence`，控制面精确核对后才允许首次模型调用。环境变量按运维级 `NEOMUA_RUNTIME_ENV_ALLOWLIST` 与配置 allowlist 的交集下传，应用 secret 和模型凭据始终排除；工作目录、权限、Tool/MCP、能力、超时和模型路由在执行边界复核。当前无法可靠执行的隔离、restricted network、CPU、内存、并发或未知策略会使配置应用失败，不会降级。
+
+平台 Worker 和 Node 每 20 秒上报本地能力事实；Node 离线、报告超过 5 分钟、配置/能力指纹变化、Provider/模型停用或验证到期都会使 Binding 从目录、Activation precheck 和任务创建中失效。
+
 ## Skill 同步与使用
 
 - `GET /skills/{skill_id}/runtime-sync` 与 `GET /runtimes/{runtime_id}/skills` 向 admin/developer 返回 desired/applied、generation、订阅数、状态和脱敏错误。

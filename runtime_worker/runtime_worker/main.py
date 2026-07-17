@@ -5,9 +5,13 @@ from pathlib import Path
 
 import httpx
 
-from runtime_worker.capabilities import discover_harness_capabilities
+from runtime_worker.capabilities import discover_runtime_capabilities
 from runtime_worker.mcp_manager import McpRuntimeManager
 from runtime_worker.release_store import AgentReleaseStore
+from runtime_worker.runtime_configuration import (
+    RuntimeConfigurationStore,
+    sanitize_process_environment,
+)
 from runtime_worker.skill_store import SkillStore
 from runtime_worker.worker import RuntimeWorker
 
@@ -15,16 +19,28 @@ from runtime_worker.worker import RuntimeWorker
 async def main() -> None:
     control_url = os.environ["CONTROL_PLANE_URL"]
     token = os.environ.pop("INTERNAL_RUNTIME_TOKEN")
-    async with httpx.AsyncClient(base_url=control_url, timeout=30) as client:
-        concurrency = int(os.environ.get("RUNTIME_WORKER_CONCURRENCY", "4"))
+    concurrency = int(os.environ.get("RUNTIME_WORKER_CONCURRENCY", "4"))
+    release_root = Path(
+        os.environ.get("NEOMUA_AGENT_RELEASE_ROOT", "/var/lib/neomua/releases")
+    )
+    configuration_store_path = Path(
+        os.environ.get(
+            "NEOMUA_RUNTIME_CONFIGURATION_STORE",
+            "/var/lib/neomua/runtime-configurations.json",
+        )
+    )
+    client = httpx.AsyncClient(base_url=control_url, timeout=30)
+    source_environment = sanitize_process_environment()
+    async with client:
         if concurrency < 2:
             raise RuntimeError(
                 "RUNTIME_WORKER_CONCURRENCY must be at least 2 for roundtable delegation"
             )
-        release_root = Path(
-            os.environ.get("NEOMUA_AGENT_RELEASE_ROOT", "/var/lib/neomua/releases")
+        capabilities = discover_runtime_capabilities()
+        configuration_store = RuntimeConfigurationStore(
+            configuration_store_path,
+            source_environment=source_environment,
         )
-        capabilities = discover_harness_capabilities()
         workers = [
             RuntimeWorker(
                 client,
@@ -34,6 +50,7 @@ async def main() -> None:
                 release_store=AgentReleaseStore(release_root),
                 skill_store=SkillStore(release_root / "skill-cache"),
                 mcp_manager=McpRuntimeManager(),
+                runtime_configuration_store=configuration_store,
             )
             for index in range(concurrency)
         ]

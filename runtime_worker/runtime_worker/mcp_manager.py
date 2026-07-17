@@ -138,7 +138,7 @@ class McpRuntimeManager:
         endpoint = str(config["endpoint"])
         await _assert_public_endpoint(endpoint)
         parsed_origin = urlparse(endpoint)
-        headers = {key: value for key, value in secret_inputs.items()}
+        headers = dict(secret_inputs)
         timeout = httpx.Timeout(
             float(config.get("call_timeout_seconds", 30)),
             connect=float(config.get("connect_timeout_seconds", 10)),
@@ -265,7 +265,7 @@ class McpRuntimeManager:
     ) -> list[dict[str, Any]]:
         endpoint = str(config["endpoint"])
         await _assert_public_endpoint(endpoint)
-        headers = {key: value for key, value in secret_inputs.items()}
+        headers = dict(secret_inputs)
         timeout = httpx.Timeout(
             float(config.get("call_timeout_seconds", 30)),
             connect=float(config.get("connect_timeout_seconds", 10)),

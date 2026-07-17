@@ -1,4 +1,7 @@
+import asyncio
 import json
+import os
+import shutil
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -20,6 +23,8 @@ from runtime_worker.permissions import permission_mode_for_sdk, validate_permiss
 class RunCommand:
     prompt: str
     model: str
+    engine_type: str = "claude_code"
+    executable: str | None = None
     system_prompt: str | None = None
     permission_mode: str = "default"
     tools: list[str] = field(default_factory=list)
@@ -27,11 +32,13 @@ class RunCommand:
     disallowed_tools: list[str] = field(default_factory=list)
     cwd: str | None = None
     env: dict[str, str] = field(default_factory=dict)
+    environment_allowlist: list[str] = field(default_factory=list)
     sdk_session_id: str | None = None
     start_sequence: int = 0
     timeout_seconds: int = 3600
     task_revision: int = 1
     require_approval_tools: list[str] = field(default_factory=list)
+    required_capabilities: dict[str, bool] = field(default_factory=dict)
     add_dirs: list[str] = field(default_factory=list)
     skills: list[str] = field(default_factory=list)
     mcp_servers: dict[str, Any] = field(default_factory=dict)
@@ -151,6 +158,7 @@ class AgentShell:
 
         return ClaudeAgentOptions(
             model=command.model,
+            cli_path=command.executable,
             system_prompt=command.system_prompt,
             tools=command.tools,
             allowed_tools=allowed_tools,
@@ -192,3 +200,151 @@ class AgentShell:
             return False
         await client.interrupt()
         return True
+
+
+class CodexShell:
+    """Built-in Codex CLI adapter using argv execution and JSONL events."""
+
+    def __init__(self, executable: str | None = None) -> None:
+        self.executable = executable or shutil.which("codex")
+        self._processes: dict[str, asyncio.subprocess.Process] = {}
+
+    @staticmethod
+    def build_argv(command: RunCommand, executable: str) -> list[str]:
+        if command.tools or command.allowed_tools or command.disallowed_tools:
+            raise ValueError("adapter_contract_unsupported: Codex tool filters")
+        if command.require_approval_tools:
+            raise ValueError("adapter_contract_unsupported: Codex per-tool approval")
+        if command.mcp_servers:
+            raise ValueError("adapter_contract_unsupported: Codex MCP injection")
+        sandbox = {
+            "default": "workspace-write",
+            "acceptEdits": "workspace-write",
+            "plan": "read-only",
+        }.get(command.permission_mode)
+        if sandbox is None:
+            raise ValueError(
+                f"adapter_contract_unsupported: permission mode {command.permission_mode}"
+            )
+        argv = [
+            executable,
+            "exec",
+            "--json",
+            "--ephemeral",
+            "--model",
+            command.model,
+            "--sandbox",
+            sandbox,
+        ]
+        if command.cwd:
+            argv.extend(["--cd", command.cwd])
+        for directory in command.add_dirs:
+            argv.extend(["--add-dir", directory])
+        if command.system_prompt:
+            argv.extend(
+                ["--config", f"developer_instructions={json.dumps(command.system_prompt)}"]
+            )
+        argv.append(command.prompt)
+        return argv
+
+    async def run_session(
+        self, command: RunCommand, *, task_id: str | None = None
+    ) -> AsyncIterator[dict[str, Any]]:
+        executable = command.executable or self.executable
+        if not executable:
+            raise ValueError("codex executable is not installed")
+        argv = self.build_argv(command, executable)
+        process = await asyncio.create_subprocess_exec(
+            *argv,
+            cwd=command.cwd,
+            env={**os.environ, **command.env},
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        if task_id:
+            self._processes[task_id] = process
+        sequence = command.start_sequence
+        try:
+            assert process.stdout is not None
+            async for raw_line in process.stdout:
+                try:
+                    event = json.loads(raw_line)
+                except json.JSONDecodeError:
+                    continue
+                event_type = event.get("type")
+                normalized: dict[str, Any] | None = None
+                item = event.get("item") if isinstance(event.get("item"), dict) else {}
+                if event_type == "item.completed" and item.get("type") == "agent_message":
+                    normalized = {
+                        "event_type": "assistant_message",
+                        "payload": {"text": str(item.get("text", ""))},
+                    }
+                elif event_type in {"turn.failed", "error"}:
+                    normalized = {
+                        "event_type": "error",
+                        "payload": {
+                            "code": "codex_execution_failed",
+                            "message": str(event.get("message") or event.get("error") or "Codex failed"),
+                        },
+                    }
+                elif event_type == "turn.completed":
+                    normalized = {
+                        "event_type": "result",
+                        "payload": {"usage": event.get("usage", {})},
+                    }
+                if normalized is not None:
+                    sequence += 1
+                    yield {"sequence": sequence, **normalized}
+            return_code = await process.wait()
+            if return_code != 0:
+                assert process.stderr is not None
+                stderr = (await process.stderr.read()).decode(errors="replace")[-2048:]
+                sequence += 1
+                yield {
+                    "sequence": sequence,
+                    "event_type": "error",
+                    "payload": {
+                        "code": "codex_process_failed",
+                        "exit_code": return_code,
+                        "message": stderr,
+                    },
+                }
+        finally:
+            if task_id:
+                self._processes.pop(task_id, None)
+
+    async def interrupt(self, task_id: str) -> bool:
+        process = self._processes.get(task_id)
+        if process is None or process.returncode is not None:
+            return False
+        process.terminate()
+        return True
+
+
+class EngineShell:
+    def __init__(self) -> None:
+        self.adapters = {
+            "claude_code": AgentShell(),
+            "codex": CodexShell(),
+        }
+        self._task_engines: dict[str, str] = {}
+
+    async def run_session(
+        self, command: RunCommand, *, task_id: str | None = None
+    ) -> AsyncIterator[dict[str, Any]]:
+        adapter = self.adapters.get(command.engine_type)
+        if adapter is None:
+            raise ValueError(f"unknown Runtime engine: {command.engine_type}")
+        if task_id:
+            self._task_engines[task_id] = command.engine_type
+        try:
+            async for event in adapter.run_session(command, task_id=task_id):
+                yield event
+        finally:
+            if task_id:
+                self._task_engines.pop(task_id, None)
+
+    async def interrupt(self, task_id: str) -> bool:
+        engine = self._task_engines.get(task_id)
+        adapter = self.adapters.get(engine) if engine else None
+        return await adapter.interrupt(task_id) if adapter else False

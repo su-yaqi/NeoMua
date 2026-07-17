@@ -302,6 +302,12 @@ class LlmProviderModel(SQLModel, table=True):
     __table_args__ = (UniqueConstraint("provider_config_id", "model_id"),)
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    model_definition_id: uuid.UUID | None = Field(
+        default=None,
+        foreign_key="llm_model_definition.id",
+        ondelete="RESTRICT",
+        index=True,
+    )
     provider_config_id: uuid.UUID = Field(
         foreign_key="llm_provider_config.id", nullable=False, ondelete="CASCADE"
     )
@@ -342,6 +348,40 @@ class LlmProviderModel(SQLModel, table=True):
     provider_config: LlmProviderConfig | None = Relationship(back_populates="models")
 
 
+class LlmModelDefinition(SQLModel, table=True):
+    """Stable, provider-route-independent model identity within a namespace."""
+
+    __tablename__ = "llm_model_definition"
+    __table_args__ = (
+        UniqueConstraint(
+            "namespace_id",
+            "provider_family",
+            "model_key",
+            name="uq_llm_model_definition_identity",
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    namespace_id: uuid.UUID = Field(
+        foreign_key="namespace.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    provider_family: str = Field(max_length=128)
+    model_key: str = Field(max_length=255)
+    display_name: str | None = Field(default=None, max_length=255)
+    capability_tags: list[str] = Field(
+        default_factory=list, sa_column=Column(JSON, nullable=False)
+    )
+    enabled: bool = True
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),
+    )
+    updated_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),
+    )
+
+
 class LlmProviderCatalogField(SQLModel):
     name: str
     label: str
@@ -370,6 +410,7 @@ class LlmProviderCatalogPublic(SQLModel):
 
 class LlmProviderModelPublic(SQLModel):
     id: uuid.UUID
+    model_definition_id: uuid.UUID | None = None
     model_id: str
     display_name: str | None = None
     source_type: ProviderModelSourceType

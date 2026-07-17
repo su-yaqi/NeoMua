@@ -11,7 +11,19 @@ export type ActivationCreate = {
     /**
      * Runtime Profile Ids
      */
-    runtime_profile_ids: Array<string>;
+    runtime_profile_ids?: Array<string>;
+    /**
+     * Runtime Instance Id
+     */
+    runtime_instance_id?: string | null;
+    /**
+     * Precheck Id
+     */
+    precheck_id?: string | null;
+    /**
+     * Precheck Digest
+     */
+    precheck_digest?: string | null;
     /**
      * Valid For Seconds
      */
@@ -79,6 +91,56 @@ export type AdminUserUpdate = {
 };
 
 /**
+ * AgentCompleteCreate
+ */
+export type AgentCompleteCreate = {
+    /**
+     * Slug
+     */
+    slug: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Description
+     */
+    description?: string | null;
+    /**
+     * Harness Profile Id
+     */
+    harness_profile_id?: string | null;
+    /**
+     * Provider Config Id
+     */
+    provider_config_id?: string | null;
+    /**
+     * Model Id
+     */
+    model_id?: string | null;
+    /**
+     * Preferred Model Definition Id
+     */
+    preferred_model_definition_id?: string | null;
+    /**
+     * Execution Policy
+     */
+    execution_policy?: {
+        [key: string]: unknown;
+    };
+    /**
+     * System Prompt
+     */
+    system_prompt?: string;
+    /**
+     * Config
+     */
+    config?: {
+        [key: string]: unknown;
+    };
+};
+
+/**
  * AgentCopy
  */
 export type AgentCopy = {
@@ -134,6 +196,16 @@ export type AgentDraftPublic = {
      * Model Id
      */
     model_id: string | null;
+    /**
+     * Preferred Model Definition Id
+     */
+    preferred_model_definition_id: string | null;
+    /**
+     * Execution Policy
+     */
+    execution_policy: {
+        [key: string]: unknown;
+    };
     /**
      * System Prompt
      */
@@ -221,6 +293,10 @@ export type AgentListItem = {
      * Model Id
      */
     model_id?: string | null;
+    /**
+     * Preferred Model Definition Id
+     */
+    preferred_model_definition_id?: string | null;
 };
 
 /**
@@ -304,9 +380,13 @@ export type AgentPublic = {
  */
 export type AgentSkillBinding = {
     /**
-     * Skill Version Id
+     * Skill Id
      */
-    skill_version_id: string;
+    skill_id: string;
+    /**
+     * Enabled
+     */
+    enabled?: boolean;
 };
 
 /**
@@ -477,13 +557,43 @@ export type ArtifactsPublic = {
 };
 
 /**
- * Body_agent-capabilities-upload_skill_version
+ * Body_agent-capabilities-create_skill_complete
  */
-export type BodyAgentCapabilitiesUploadSkillVersion = {
+export type BodyAgentCapabilitiesCreateSkillComplete = {
+    /**
+     * Slug
+     */
+    slug: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Description
+     */
+    description?: string | null;
     /**
      * Version
      */
     version: string;
+    /**
+     * File
+     */
+    file: Blob | File;
+};
+
+/**
+ * Body_agent-capabilities-import_skill_draft
+ */
+export type BodyAgentCapabilitiesImportSkillDraft = {
+    /**
+     * Version
+     */
+    version: string;
+    /**
+     * Expected Revision
+     */
+    expected_revision: number;
     /**
      * File
      */
@@ -557,14 +667,44 @@ export type BodyWorkflowsUploadWorkflowAttachment = {
 };
 
 /**
- * CapabilityReport
+ * CapabilityHeartbeatEvidence
  */
-export type CapabilityReport = {
+export type CapabilityHeartbeatEvidence = {
+    /**
+     * Runtime Instance Id
+     */
+    runtime_instance_id: string;
+    engine_type: RuntimeEngineType;
+    /**
+     * Engine Version
+     */
+    engine_version?: string | null;
+    /**
+     * Adapter Version
+     */
+    adapter_version: string;
+    /**
+     * Configuration Digest
+     */
+    configuration_digest: string;
+    /**
+     * Capability Fingerprint
+     */
+    capability_fingerprint: string;
+};
+
+/**
+ * CapabilityHeartbeatInput
+ */
+export type CapabilityHeartbeatInput = {
     /**
      * Worker Id
      */
     worker_id: string;
-    harness_capabilities: HarnessCapabilities;
+    /**
+     * Evidence
+     */
+    evidence: Array<CapabilityHeartbeatEvidence>;
 };
 
 /**
@@ -616,6 +756,78 @@ export type CliRefresh = {
 };
 
 /**
+ * ConfigurationApplyInput
+ */
+export type ConfigurationApplyInput = {
+    /**
+     * Configuration Revision Id
+     */
+    configuration_revision_id: string;
+};
+
+/**
+ * ConfigurationClaimInput
+ */
+export type ConfigurationClaimInput = {
+    /**
+     * Worker Id
+     */
+    worker_id: string;
+};
+
+/**
+ * ConfigurationResultInput
+ */
+export type ConfigurationResultInput = {
+    /**
+     * Worker Id
+     */
+    worker_id: string;
+    /**
+     * Runtime Instance Id
+     */
+    runtime_instance_id: string;
+    /**
+     * Configuration Revision Id
+     */
+    configuration_revision_id: string;
+    /**
+     * Configuration Digest
+     */
+    configuration_digest: string;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Engine Version
+     */
+    engine_version?: string | null;
+    /**
+     * Adapter Version
+     */
+    adapter_version: string;
+    /**
+     * Capabilities
+     */
+    capabilities?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Discovered Models
+     */
+    discovered_models?: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Error
+     */
+    error?: {
+        [key: string]: unknown;
+    } | null;
+};
+
+/**
  * ConfirmationDecision
  */
 export type ConfirmationDecision = 'submit' | 'accept' | 'reject' | 'skip';
@@ -632,9 +844,49 @@ export type ContextRefresh = {
  */
 export type ConversationAgentInput = {
     /**
+     * Conversation Agent Id
+     */
+    conversation_agent_id?: string | null;
+    /**
      * Runtime Agent Release Id
      */
     runtime_agent_release_id: string;
+    model_selection?: ModelSelectionInput | null;
+};
+
+/**
+ * ConversationConfigurationUpdate
+ */
+export type ConversationConfigurationUpdate = {
+    /**
+     * Expected Revision
+     */
+    expected_revision: number;
+    /**
+     * Provider Config Id
+     */
+    provider_config_id?: string | null;
+    /**
+     * Model Id
+     */
+    model_id?: string | null;
+    /**
+     * Participant Runtime Agent Release Ids
+     */
+    participant_runtime_agent_release_ids?: Array<string>;
+    /**
+     * Organizer Runtime Agent Release Id
+     */
+    organizer_runtime_agent_release_id?: string | null;
+    /**
+     * Organizer Conversation Agent Id
+     */
+    organizer_conversation_agent_id?: string | null;
+    chat_model_selection?: ModelSelectionInput | null;
+    /**
+     * Participant Selections
+     */
+    participant_selections?: Array<ConversationAgentInput>;
 };
 
 /**
@@ -701,7 +953,11 @@ export type ConversationCreate = {
     /**
      * Runtime Id
      */
-    runtime_id: string;
+    runtime_id?: string | null;
+    /**
+     * Runtime Instance Id
+     */
+    runtime_instance_id?: string | null;
     /**
      * Project Id
      */
@@ -715,6 +971,7 @@ export type ConversationCreate = {
      * Model Id
      */
     model_id?: string | null;
+    chat_model_selection?: ModelSelectionInput | null;
     main_agent?: ConversationAgentInput | null;
     /**
      * Collaborators
@@ -731,17 +988,10 @@ export type ConversationDerive = {
      */
     title?: string | null;
     /**
-     * Runtime Id
+     * Runtime Instance Id
      */
-    runtime_id: string;
-    /**
-     * Provider Config Id
-     */
-    provider_config_id: string;
-    /**
-     * Model Id
-     */
-    model_id: string;
+    runtime_instance_id: string;
+    chat_model_selection: ModelSelectionInput;
 };
 
 /**
@@ -854,6 +1104,45 @@ export type DeploymentResult = {
 export type DeploymentStatus = 'pending' | 'dispatched' | 'applied' | 'failed' | 'expired';
 
 /**
+ * DiscoveryInstallation
+ */
+export type DiscoveryInstallation = {
+    /**
+     * Installation Key
+     */
+    installation_key: string;
+    /**
+     * Name
+     */
+    name: string;
+    engine_type: RuntimeEngineType;
+    /**
+     * Engine Version
+     */
+    engine_version?: string | null;
+    /**
+     * Adapter Version
+     */
+    adapter_version: string;
+    /**
+     * Executable Fingerprint
+     */
+    executable_fingerprint: string;
+    /**
+     * Capabilities
+     */
+    capabilities?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Discovered Models
+     */
+    discovered_models?: Array<{
+        [key: string]: unknown;
+    }>;
+};
+
+/**
  * DraftSave
  */
 export type DraftSave = {
@@ -873,6 +1162,16 @@ export type DraftSave = {
      * Model Id
      */
     model_id?: string | null;
+    /**
+     * Preferred Model Definition Id
+     */
+    preferred_model_definition_id?: string | null;
+    /**
+     * Execution Policy
+     */
+    execution_policy?: {
+        [key: string]: unknown;
+    } | null;
     /**
      * System Prompt
      */
@@ -1485,6 +1784,14 @@ export type LlmProviderConfigCreate = {
      * Enabled Model Ids
      */
     enabled_model_ids?: Array<string>;
+    /**
+     * Validate On Create
+     */
+    validate_on_create?: boolean;
+    /**
+     * Sync Models On Create
+     */
+    sync_models_on_create?: boolean;
 };
 
 /**
@@ -1614,6 +1921,55 @@ export type LlmProviderConfigsPublic = {
 };
 
 /**
+ * LlmProviderDraftRequest
+ */
+export type LlmProviderDraftRequest = {
+    /**
+     * Provider Slug
+     */
+    provider_slug: string;
+    /**
+     * Base Url
+     */
+    base_url: string;
+    /**
+     * Secret Inputs
+     */
+    secret_inputs?: {
+        [key: string]: string;
+    };
+    /**
+     * Extra Config
+     */
+    extra_config?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Manual Models
+     */
+    manual_models?: Array<LlmProviderModelInput>;
+    /**
+     * Enabled Model Ids
+     */
+    enabled_model_ids?: Array<string>;
+};
+
+/**
+ * LlmProviderDraftResult
+ */
+export type LlmProviderDraftResult = {
+    validation_status: ProviderValidationStatus;
+    /**
+     * Validation Message
+     */
+    validation_message: string;
+    /**
+     * Models
+     */
+    models?: Array<LlmProviderModelPreview>;
+};
+
+/**
  * LlmProviderModelInput
  */
 export type LlmProviderModelInput = {
@@ -1628,6 +1984,36 @@ export type LlmProviderModelInput = {
 };
 
 /**
+ * LlmProviderModelPreview
+ */
+export type LlmProviderModelPreview = {
+    /**
+     * Model Id
+     */
+    model_id: string;
+    /**
+     * Display Name
+     */
+    display_name?: string | null;
+    source_type: ProviderModelSourceType;
+    /**
+     * Is Enabled
+     */
+    is_enabled: boolean;
+    sync_status: ProviderModelSyncStatus;
+    /**
+     * Raw Metadata
+     */
+    raw_metadata?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Last Synced At
+     */
+    last_synced_at?: string | null;
+};
+
+/**
  * LlmProviderModelPublic
  */
 export type LlmProviderModelPublic = {
@@ -1635,6 +2021,10 @@ export type LlmProviderModelPublic = {
      * Id
      */
     id: string;
+    /**
+     * Model Definition Id
+     */
+    model_definition_id?: string | null;
     /**
      * Model Id
      */
@@ -1695,6 +2085,32 @@ export type McpAgentBinding = {
 };
 
 /**
+ * McpCompleteCreate
+ */
+export type McpCompleteCreate = {
+    /**
+     * Slug
+     */
+    slug: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Description
+     */
+    description?: string | null;
+    revision: McpRevisionCreate;
+    target: McpTargetCreate;
+    /**
+     * Secret Inputs
+     */
+    secret_inputs?: {
+        [key: string]: string;
+    };
+};
+
+/**
  * McpRevisionCreate
  */
 export type McpRevisionCreate = {
@@ -1730,7 +2146,11 @@ export type McpTargetCreate = {
     /**
      * Runtime Profile Id
      */
-    runtime_profile_id: string;
+    runtime_profile_id?: string | null;
+    /**
+     * Runtime Instance Id
+     */
+    runtime_instance_id?: string | null;
     /**
      * Secret Ref
      */
@@ -1796,6 +2216,102 @@ export type MessageInput = {
  * MessageTargetType
  */
 export type MessageTargetType = 'main' | 'agent' | 'all' | 'model' | 'system';
+
+/**
+ * ModelDefinitionCreate
+ */
+export type ModelDefinitionCreate = {
+    /**
+     * Provider Family
+     */
+    provider_family: string;
+    /**
+     * Model Key
+     */
+    model_key: string;
+    /**
+     * Display Name
+     */
+    display_name?: string | null;
+    /**
+     * Capability Tags
+     */
+    capability_tags?: Array<string>;
+};
+
+/**
+ * ModelPreparedInput
+ */
+export type ModelPreparedInput = {
+    /**
+     * Worker Id
+     */
+    worker_id: string;
+    /**
+     * Revision
+     */
+    revision: number;
+    /**
+     * Runtime Instance Id
+     */
+    runtime_instance_id: string;
+    /**
+     * Runtime Model Binding Id
+     */
+    runtime_model_binding_id: string;
+    /**
+     * Engine Type
+     */
+    engine_type: string;
+    /**
+     * Engine Version
+     */
+    engine_version?: string | null;
+    /**
+     * Adapter Version
+     */
+    adapter_version: string;
+    /**
+     * Engine Model Id
+     */
+    engine_model_id: string;
+    /**
+     * Route Type
+     */
+    route_type: string;
+    /**
+     * Route Reference
+     */
+    route_reference: string;
+    /**
+     * Runtime Configuration Digest
+     */
+    runtime_configuration_digest: string;
+    /**
+     * Capability Fingerprint
+     */
+    capability_fingerprint: string;
+    /**
+     * Effective Spec Digest
+     */
+    effective_spec_digest: string;
+};
+
+/**
+ * ModelSelectionInput
+ */
+export type ModelSelectionInput = {
+    mode: ModelSelectionMode;
+    /**
+     * Runtime Model Binding Id
+     */
+    runtime_model_binding_id?: string | null;
+};
+
+/**
+ * ModelSelectionMode
+ */
+export type ModelSelectionMode = 'exact' | 'agent_preference';
 
 /**
  * NamespaceCreate
@@ -1964,6 +2480,48 @@ export type NamespacesPublic = {
      * Count
      */
     count: number;
+};
+
+/**
+ * NativeModelValidationResult
+ */
+export type NativeModelValidationResult = {
+    /**
+     * Worker Id
+     */
+    worker_id: string;
+    /**
+     * Runtime Model Binding Id
+     */
+    runtime_model_binding_id: string;
+    /**
+     * Attempt No
+     */
+    attempt_no: number;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Engine Model Id
+     */
+    engine_model_id: string;
+    /**
+     * Route Key
+     */
+    route_key: string;
+    /**
+     * Evidence
+     */
+    evidence?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Error
+     */
+    error?: {
+        [key: string]: unknown;
+    } | null;
 };
 
 /**
@@ -2248,6 +2806,30 @@ export type NodesPublic = {
 export type PermissionMode = 'default' | 'acceptEdits' | 'plan' | 'dontAsk';
 
 /**
+ * PlatformRuntimeCreate
+ */
+export type PlatformRuntimeCreate = {
+    /**
+     * Name
+     */
+    name: string;
+    engine_type: RuntimeEngineType;
+    /**
+     * Installation Key
+     */
+    installation_key: string;
+    /**
+     * Engine Version
+     */
+    engine_version?: string | null;
+    /**
+     * Adapter Version
+     */
+    adapter_version?: string;
+    configuration: RuntimeConfigurationInput;
+};
+
+/**
  * PlatformRuntimePublic
  */
 export type PlatformRuntimePublic = {
@@ -2313,6 +2895,44 @@ export type PlatformRuntimeUpsert = {
     secret_inputs?: {
         [key: string]: string;
     } | null;
+};
+
+/**
+ * PluginCompleteCreate
+ */
+export type PluginCompleteCreate = {
+    /**
+     * Slug
+     */
+    slug: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Description
+     */
+    description?: string | null;
+    /**
+     * Harness Type
+     */
+    harness_type?: string;
+    /**
+     * Adapter Schema Version
+     */
+    adapter_schema_version?: string;
+    /**
+     * Adapter Config
+     */
+    adapter_config?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Components
+     */
+    components: Array<{
+        [key: string]: unknown;
+    }>;
 };
 
 /**
@@ -2406,13 +3026,39 @@ export type ProjectCreate = {
      */
     description?: string | null;
     /**
-     * Default Runtime Id
+     * Default Runtime Instance Id
      */
-    default_runtime_id?: string | null;
+    default_runtime_instance_id?: string | null;
     /**
      * Member Ids
      */
     member_ids?: Array<string>;
+    /**
+     * Initial Repositories
+     */
+    initial_repositories?: Array<ProjectInitialRepositoryCreate>;
+};
+
+/**
+ * ProjectInitialRepositoryCreate
+ */
+export type ProjectInitialRepositoryCreate = {
+    /**
+     * Remote Url
+     */
+    remote_url: string;
+    /**
+     * Purpose
+     */
+    purpose: string;
+    /**
+     * Default Branch
+     */
+    default_branch?: string | null;
+    /**
+     * Credential Ref
+     */
+    credential_ref?: string | null;
 };
 
 /**
@@ -2574,9 +3220,9 @@ export type ProjectUpdate = {
      */
     description?: string | null;
     /**
-     * Default Runtime Id
+     * Default Runtime Instance Id
      */
-    default_runtime_id?: string | null;
+    default_runtime_instance_id?: string | null;
     /**
      * Archive
      */
@@ -2705,9 +3351,47 @@ export type RepositoryUpdate = {
  */
 export type RepositoryValidationRequest = {
     /**
-     * Runtime Id
+     * Runtime Instance Id
      */
-    runtime_id: string;
+    runtime_instance_id: string;
+};
+
+/**
+ * RuntimeConfigurationInput
+ */
+export type RuntimeConfigurationInput = {
+    /**
+     * Expected Revision
+     */
+    expected_revision: number;
+    /**
+     * Executable
+     */
+    executable: string;
+    /**
+     * Arguments
+     */
+    arguments?: Array<string>;
+    /**
+     * Working Directory Policy
+     */
+    working_directory_policy?: string;
+    /**
+     * Environment Allowlist
+     */
+    environment_allowlist?: Array<string>;
+    /**
+     * Security Policy
+     */
+    security_policy?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Resource Limits
+     */
+    resource_limits?: {
+        [key: string]: unknown;
+    };
 };
 
 /**
@@ -2731,6 +3415,34 @@ export type RuntimeDelegationInput = {
      */
     content: string;
 };
+
+/**
+ * RuntimeDiscoveryReport
+ */
+export type RuntimeDiscoveryReport = {
+    /**
+     * Node Id
+     */
+    node_id: string;
+    /**
+     * Generation
+     */
+    generation: number;
+    /**
+     * Installations
+     */
+    installations: Array<DiscoveryInstallation>;
+};
+
+/**
+ * RuntimeEngineType
+ */
+export type RuntimeEngineType = 'claude_code' | 'codex';
+
+/**
+ * RuntimeInstanceStatus
+ */
+export type RuntimeInstanceStatus = 'discovered' | 'available' | 'unavailable' | 'incompatible' | 'disabled';
 
 /**
  * RuntimeJobResultInput
@@ -2763,6 +3475,38 @@ export type RuntimeJobResultInput = {
  * RuntimeJobStatus
  */
 export type RuntimeJobStatus = 'queued' | 'dispatched' | 'running' | 'succeeded' | 'failed' | 'needs_manual_resolution';
+
+/**
+ * RuntimeModelBindingCreate
+ */
+export type RuntimeModelBindingCreate = {
+    /**
+     * Model Definition Id
+     */
+    model_definition_id: string;
+    route_type: RuntimeModelRouteType;
+    /**
+     * Route Key
+     */
+    route_key: string;
+    /**
+     * Engine Model Id
+     */
+    engine_model_id: string;
+    /**
+     * Provider Config Id
+     */
+    provider_config_id?: string | null;
+    /**
+     * Provider Model Id
+     */
+    provider_model_id?: string | null;
+};
+
+/**
+ * RuntimeModelRouteType
+ */
+export type RuntimeModelRouteType = 'provider_config' | 'runtime_native' | 'legacy_direct';
 
 /**
  * RuntimeRouteMode
@@ -2798,6 +3542,128 @@ export type SessionPublic = {
 };
 
 /**
+ * SkillCompleteEditor
+ */
+export type SkillCompleteEditor = {
+    /**
+     * Slug
+     */
+    slug: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Description
+     */
+    description?: string | null;
+    /**
+     * Version
+     */
+    version: string;
+    /**
+     * Skill Md
+     */
+    skill_md: string;
+};
+
+/**
+ * SkillCurrentVersionUpdate
+ */
+export type SkillCurrentVersionUpdate = {
+    /**
+     * Version Id
+     */
+    version_id: string;
+};
+
+/**
+ * SkillDraftFileCreate
+ */
+export type SkillDraftFileCreate = {
+    /**
+     * Path
+     */
+    path: string;
+    /**
+     * Content
+     */
+    content?: string | null;
+    /**
+     * Content Base64
+     */
+    content_base64?: string | null;
+    /**
+     * Mime Type
+     */
+    mime_type?: string | null;
+    /**
+     * Expected Revision
+     */
+    expected_revision: number;
+};
+
+/**
+ * SkillDraftFileMove
+ */
+export type SkillDraftFileMove = {
+    /**
+     * Path
+     */
+    path: string;
+    /**
+     * Expected Revision
+     */
+    expected_revision: number;
+};
+
+/**
+ * SkillDraftFileUpdate
+ */
+export type SkillDraftFileUpdate = {
+    /**
+     * Content
+     */
+    content?: string | null;
+    /**
+     * Content Base64
+     */
+    content_base64?: string | null;
+    /**
+     * Mime Type
+     */
+    mime_type?: string | null;
+    /**
+     * Expected Revision
+     */
+    expected_revision: number;
+};
+
+/**
+ * SkillDraftMutation
+ */
+export type SkillDraftMutation = {
+    /**
+     * Expected Revision
+     */
+    expected_revision: number;
+};
+
+/**
+ * SkillDraftPublish
+ */
+export type SkillDraftPublish = {
+    /**
+     * Version
+     */
+    version: string;
+    /**
+     * Expected Revision
+     */
+    expected_revision: number;
+};
+
+/**
  * SkillInvokeInput
  */
 export type SkillInvokeInput = {
@@ -2807,6 +3673,56 @@ export type SkillInvokeInput = {
     arguments?: {
         [key: string]: unknown;
     };
+};
+
+/**
+ * SkillSyncResult
+ */
+export type SkillSyncResult = {
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Content Sha256
+     */
+    content_sha256: string;
+    /**
+     * Bytes Downloaded
+     */
+    bytes_downloaded?: number;
+    /**
+     * Error
+     */
+    error?: {
+        [key: string]: unknown;
+    } | null;
+};
+
+/**
+ * SkillUsageItem
+ */
+export type SkillUsageItem = {
+    /**
+     * Skill Id
+     */
+    skill_id: string;
+    /**
+     * Version Id
+     */
+    version_id: string;
+    /**
+     * Version
+     */
+    version: string;
+    /**
+     * Content Sha256
+     */
+    content_sha256: string;
+    /**
+     * Runtime Generation
+     */
+    runtime_generation: number;
 };
 
 /**
@@ -2906,6 +3822,39 @@ export type SpecStandard = {
      * Created At
      */
     created_at?: string;
+};
+
+/**
+ * SpecStandardCompleteCreate
+ */
+export type SpecStandardCompleteCreate = {
+    scope_type: SpecScopeType;
+    /**
+     * Slug
+     */
+    slug: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Description
+     */
+    description?: string | null;
+    /**
+     * Version
+     */
+    version: string;
+    /**
+     * Manifest
+     */
+    manifest: {
+        [key: string]: unknown;
+    };
+    /**
+     * Storage Ref
+     */
+    storage_ref?: string | null;
 };
 
 /**
@@ -3048,11 +3997,20 @@ export type TaskCreate = {
     /**
      * Runtime Agent Release Id
      */
-    runtime_agent_release_id: string;
+    runtime_agent_release_id?: string | null;
     /**
      * Runtime Profile Id
      */
-    runtime_profile_id: string;
+    runtime_profile_id?: string | null;
+    /**
+     * Runtime Instance Id
+     */
+    runtime_instance_id?: string | null;
+    /**
+     * Runtime Model Binding Id
+     */
+    runtime_model_binding_id?: string | null;
+    model_selection_mode?: ModelSelectionMode | null;
     /**
      * Node Id
      */
@@ -3066,12 +4024,60 @@ export type TaskCreate = {
      * Working Directory
      */
     working_directory?: string | null;
+    /**
+     * System Prompt
+     */
+    system_prompt?: string | null;
 };
 
 /**
  * TaskKind
  */
 export type TaskKind = 'ordinary' | 'admin';
+
+/**
+ * TaskPreparationFailure
+ */
+export type TaskPreparationFailure = {
+    /**
+     * Runtime Profile Id
+     */
+    runtime_profile_id?: string | null;
+    /**
+     * Runtime Instance Id
+     */
+    runtime_instance_id?: string | null;
+    /**
+     * Revision
+     */
+    revision: number;
+    /**
+     * Code
+     */
+    code: string;
+    /**
+     * Message
+     */
+    message: string;
+};
+
+/**
+ * TaskSkillUsageReport
+ */
+export type TaskSkillUsageReport = {
+    /**
+     * Runtime Profile Id
+     */
+    runtime_profile_id?: string | null;
+    /**
+     * Runtime Instance Id
+     */
+    runtime_instance_id?: string | null;
+    /**
+     * Skills
+     */
+    skills: Array<SkillUsageItem>;
+};
 
 /**
  * TaskStatus
@@ -3308,6 +4314,53 @@ export type ValidationError = {
 };
 
 /**
+ * WorkflowExecutionConfigurationUpdate
+ */
+export type WorkflowExecutionConfigurationUpdate = {
+    /**
+     * Expected Revision
+     */
+    expected_revision: number;
+    /**
+     * Project Id
+     */
+    project_id?: string | null;
+    /**
+     * Node Bindings
+     */
+    node_bindings: {
+        [key: string]: WorkflowExecutionNodeBindingInput;
+    };
+};
+
+/**
+ * WorkflowExecutionNodeBindingInput
+ */
+export type WorkflowExecutionNodeBindingInput = {
+    /**
+     * Runtime Id
+     */
+    runtime_id?: string | null;
+    /**
+     * Runtime Instance Id
+     */
+    runtime_instance_id?: string | null;
+    /**
+     * Agent Release Id
+     */
+    agent_release_id?: string | null;
+    /**
+     * Runtime Agent Release Id
+     */
+    runtime_agent_release_id?: string | null;
+    model_selection_mode?: ModelSelectionMode | null;
+    /**
+     * Runtime Model Binding Id
+     */
+    runtime_model_binding_id?: string | null;
+};
+
+/**
  * WorkflowInstanceCreate
  */
 export type WorkflowInstanceCreate = {
@@ -3325,10 +4378,6 @@ export type WorkflowInstanceCreate = {
     input: {
         [key: string]: unknown;
     };
-    /**
-     * Runtime Id
-     */
-    runtime_id?: string | null;
 };
 
 /**
@@ -3336,17 +4385,9 @@ export type WorkflowInstanceCreate = {
  */
 export type WorkflowPreflight = {
     /**
-     * Project Id
-     */
-    project_id: string;
-    /**
      * Template Version Id
      */
     template_version_id: string;
-    /**
-     * Runtime Id
-     */
-    runtime_id?: string | null;
 };
 
 /**
@@ -3374,7 +4415,11 @@ export type AppApiRoutesAgentTasksTaskPublic = {
     /**
      * Runtime Profile Id
      */
-    runtime_profile_id: string;
+    runtime_profile_id: string | null;
+    /**
+     * Runtime Instance Id
+     */
+    runtime_instance_id: string | null;
     /**
      * Node Id
      */
@@ -3409,6 +4454,24 @@ export type AppApiRoutesAgentTasksTaskPublic = {
      * Updated At
      */
     updated_at: string;
+    /**
+     * Skill Usage
+     */
+    skill_usage?: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Model Usage
+     */
+    model_usage?: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Model Call Usage
+     */
+    model_call_usage?: Array<{
+        [key: string]: unknown;
+    }>;
 };
 
 /**
@@ -4874,6 +5937,78 @@ export type LlmCreateProviderConfigResponses = {
 
 export type LlmCreateProviderConfigResponse = LlmCreateProviderConfigResponses[keyof LlmCreateProviderConfigResponses];
 
+export type LlmValidateDraftProviderConfigData = {
+    body: LlmProviderDraftRequest;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/llm/provider-configs/draft/validate';
+};
+
+export type LlmValidateDraftProviderConfigErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type LlmValidateDraftProviderConfigError = LlmValidateDraftProviderConfigErrors[keyof LlmValidateDraftProviderConfigErrors];
+
+export type LlmValidateDraftProviderConfigResponses = {
+    /**
+     * Successful Response
+     */
+    200: LlmProviderDraftResult;
+};
+
+export type LlmValidateDraftProviderConfigResponse = LlmValidateDraftProviderConfigResponses[keyof LlmValidateDraftProviderConfigResponses];
+
+export type LlmSyncDraftProviderModelsData = {
+    body: LlmProviderDraftRequest;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/llm/provider-configs/draft/sync-models';
+};
+
+export type LlmSyncDraftProviderModelsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type LlmSyncDraftProviderModelsError = LlmSyncDraftProviderModelsErrors[keyof LlmSyncDraftProviderModelsErrors];
+
+export type LlmSyncDraftProviderModelsResponses = {
+    /**
+     * Successful Response
+     */
+    200: LlmProviderDraftResult;
+};
+
+export type LlmSyncDraftProviderModelsResponse = LlmSyncDraftProviderModelsResponses[keyof LlmSyncDraftProviderModelsResponses];
+
 export type LlmUpdateProviderConfigData = {
     body: LlmProviderConfigUpdate;
     headers?: {
@@ -5032,6 +6167,50 @@ export type RuntimesReadPlatformRuntimeResponses = {
 };
 
 export type RuntimesReadPlatformRuntimeResponse = RuntimesReadPlatformRuntimeResponses[keyof RuntimesReadPlatformRuntimeResponses];
+
+export type RuntimeInstancesCreatePlatformRuntimeInstanceData = {
+    body: PlatformRuntimeCreate;
+    headers?: {
+        /**
+         * Idempotency-Key
+         */
+        'Idempotency-Key'?: string | null;
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/runtimes/platform';
+};
+
+export type RuntimeInstancesCreatePlatformRuntimeInstanceErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeInstancesCreatePlatformRuntimeInstanceError = RuntimeInstancesCreatePlatformRuntimeInstanceErrors[keyof RuntimeInstancesCreatePlatformRuntimeInstanceErrors];
+
+export type RuntimeInstancesCreatePlatformRuntimeInstanceResponses = {
+    /**
+     * Response Runtime-Instances-Create Platform Runtime Instance
+     *
+     * Successful Response
+     */
+    201: {
+        [key: string]: unknown;
+    };
+};
+
+export type RuntimeInstancesCreatePlatformRuntimeInstanceResponse = RuntimeInstancesCreatePlatformRuntimeInstanceResponses[keyof RuntimeInstancesCreatePlatformRuntimeInstanceResponses];
 
 export type RuntimesUpsertPlatformRuntimeData = {
     body: PlatformRuntimeUpsert;
@@ -5438,8 +6617,8 @@ export type RuntimeInternalSigningProbeResponses = {
 
 export type RuntimeInternalSigningProbeResponse = RuntimeInternalSigningProbeResponses[keyof RuntimeInternalSigningProbeResponses];
 
-export type RuntimeInternalReportPlatformCapabilitiesData = {
-    body: CapabilityReport;
+export type RuntimeInternalReportLegacyPlatformCapabilitiesData = {
+    body?: never;
     headers?: {
         /**
          * X-Runtime-Token
@@ -5451,27 +6630,18 @@ export type RuntimeInternalReportPlatformCapabilitiesData = {
     url: '/api/v1/internal/runtime/capabilities';
 };
 
-export type RuntimeInternalReportPlatformCapabilitiesErrors = {
+export type RuntimeInternalReportLegacyPlatformCapabilitiesErrors = {
+    /**
+     * Successful Response
+     */
+    410: unknown;
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type RuntimeInternalReportPlatformCapabilitiesError = RuntimeInternalReportPlatformCapabilitiesErrors[keyof RuntimeInternalReportPlatformCapabilitiesErrors];
-
-export type RuntimeInternalReportPlatformCapabilitiesResponses = {
-    /**
-     * Response Runtime-Internal-Report Platform Capabilities
-     *
-     * Successful Response
-     */
-    200: {
-        [key: string]: number;
-    };
-};
-
-export type RuntimeInternalReportPlatformCapabilitiesResponse = RuntimeInternalReportPlatformCapabilitiesResponses[keyof RuntimeInternalReportPlatformCapabilitiesResponses];
+export type RuntimeInternalReportLegacyPlatformCapabilitiesError = RuntimeInternalReportLegacyPlatformCapabilitiesErrors[keyof RuntimeInternalReportLegacyPlatformCapabilitiesErrors];
 
 export type RuntimeInternalAppendEventsData = {
     body: EventBatch;
@@ -5742,6 +6912,46 @@ export type RuntimeInternalClaimPlatformTaskResponses = {
 
 export type RuntimeInternalClaimPlatformTaskResponse = RuntimeInternalClaimPlatformTaskResponses[keyof RuntimeInternalClaimPlatformTaskResponses];
 
+export type RuntimeInternalPrepareTaskModelData = {
+    body: ModelPreparedInput;
+    headers?: {
+        /**
+         * X-Runtime-Token
+         */
+        'X-Runtime-Token'?: string | null;
+    };
+    path: {
+        /**
+         * Task Id
+         */
+        task_id: string;
+    };
+    query?: never;
+    url: '/api/v1/internal/runtime/tasks/{task_id}/model-prepared';
+};
+
+export type RuntimeInternalPrepareTaskModelErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeInternalPrepareTaskModelError = RuntimeInternalPrepareTaskModelErrors[keyof RuntimeInternalPrepareTaskModelErrors];
+
+export type RuntimeInternalPrepareTaskModelResponses = {
+    /**
+     * Response Runtime-Internal-Prepare Task Model
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type RuntimeInternalPrepareTaskModelResponse = RuntimeInternalPrepareTaskModelResponses[keyof RuntimeInternalPrepareTaskModelResponses];
+
 export type RuntimeInternalRenewPlatformTaskLeaseData = {
     body: LeaseInput;
     headers?: {
@@ -5834,6 +7044,1125 @@ export type RuntimeInternalResolveRouteResponses = {
 };
 
 export type RuntimeInternalResolveRouteResponse = RuntimeInternalResolveRouteResponses[keyof RuntimeInternalResolveRouteResponses];
+
+export type RuntimeNodesListTokensData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/runtimes/nodes/enrollment-tokens';
+};
+
+export type RuntimeNodesListTokensErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeNodesListTokensError = RuntimeNodesListTokensErrors[keyof RuntimeNodesListTokensErrors];
+
+export type RuntimeNodesListTokensResponses = {
+    /**
+     * Successful Response
+     */
+    200: EnrollmentTokensPublic;
+};
+
+export type RuntimeNodesListTokensResponse = RuntimeNodesListTokensResponses[keyof RuntimeNodesListTokensResponses];
+
+export type RuntimeNodesCreateTokenData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/runtimes/nodes/enrollment-tokens';
+};
+
+export type RuntimeNodesCreateTokenErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeNodesCreateTokenError = RuntimeNodesCreateTokenErrors[keyof RuntimeNodesCreateTokenErrors];
+
+export type RuntimeNodesCreateTokenResponses = {
+    /**
+     * Successful Response
+     */
+    201: EnrollmentTokenCreated;
+};
+
+export type RuntimeNodesCreateTokenResponse = RuntimeNodesCreateTokenResponses[keyof RuntimeNodesCreateTokenResponses];
+
+export type RuntimeNodesListNodesData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/runtimes/nodes';
+};
+
+export type RuntimeNodesListNodesErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeNodesListNodesError = RuntimeNodesListNodesErrors[keyof RuntimeNodesListNodesErrors];
+
+export type RuntimeNodesListNodesResponses = {
+    /**
+     * Successful Response
+     */
+    200: NodesPublic;
+};
+
+export type RuntimeNodesListNodesResponse = RuntimeNodesListNodesResponses[keyof RuntimeNodesListNodesResponses];
+
+export type RuntimeNodesReadNodeData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Node Id
+         */
+        node_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/runtimes/nodes/{node_id}';
+};
+
+export type RuntimeNodesReadNodeErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeNodesReadNodeError = RuntimeNodesReadNodeErrors[keyof RuntimeNodesReadNodeErrors];
+
+export type RuntimeNodesReadNodeResponses = {
+    /**
+     * Successful Response
+     */
+    200: NodePublic;
+};
+
+export type RuntimeNodesReadNodeResponse = RuntimeNodesReadNodeResponses[keyof RuntimeNodesReadNodeResponses];
+
+export type RuntimeNodesConfigureNodeRuntimeData = {
+    body: NodeRuntimeUpsert;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Node Id
+         */
+        node_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/runtimes/nodes/{node_id}/runtime';
+};
+
+export type RuntimeNodesConfigureNodeRuntimeErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeNodesConfigureNodeRuntimeError = RuntimeNodesConfigureNodeRuntimeErrors[keyof RuntimeNodesConfigureNodeRuntimeErrors];
+
+export type RuntimeNodesConfigureNodeRuntimeResponses = {
+    /**
+     * Successful Response
+     */
+    200: NodeRuntimePublic;
+};
+
+export type RuntimeNodesConfigureNodeRuntimeResponse = RuntimeNodesConfigureNodeRuntimeResponses[keyof RuntimeNodesConfigureNodeRuntimeResponses];
+
+export type RuntimeNodesRevokeNodeData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Node Id
+         */
+        node_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/runtimes/nodes/{node_id}/credential';
+};
+
+export type RuntimeNodesRevokeNodeErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeNodesRevokeNodeError = RuntimeNodesRevokeNodeErrors[keyof RuntimeNodesRevokeNodeErrors];
+
+export type RuntimeNodesRevokeNodeResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type RuntimeNodesRevokeNodeResponse = RuntimeNodesRevokeNodeResponses[keyof RuntimeNodesRevokeNodeResponses];
+
+export type RuntimeNodesRevokeTokenData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Token Id
+         */
+        token_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/runtimes/nodes/enrollment-tokens/{token_id}';
+};
+
+export type RuntimeNodesRevokeTokenErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeNodesRevokeTokenError = RuntimeNodesRevokeTokenErrors[keyof RuntimeNodesRevokeTokenErrors];
+
+export type RuntimeNodesRevokeTokenResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type RuntimeNodesRevokeTokenResponse = RuntimeNodesRevokeTokenResponses[keyof RuntimeNodesRevokeTokenResponses];
+
+export type RuntimeInstancesListRuntimeInstancesData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Engine Type
+         */
+        engine_type?: RuntimeEngineType | null;
+        /**
+         * Status
+         */
+        status?: RuntimeInstanceStatus | null;
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/runtimes';
+};
+
+export type RuntimeInstancesListRuntimeInstancesErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeInstancesListRuntimeInstancesError = RuntimeInstancesListRuntimeInstancesErrors[keyof RuntimeInstancesListRuntimeInstancesErrors];
+
+export type RuntimeInstancesListRuntimeInstancesResponses = {
+    /**
+     * Response Runtime-Instances-List Runtime Instances
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type RuntimeInstancesListRuntimeInstancesResponse = RuntimeInstancesListRuntimeInstancesResponses[keyof RuntimeInstancesListRuntimeInstancesResponses];
+
+export type RuntimeInstancesRuntimeCatalogData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Engine Type
+         */
+        engine_type?: RuntimeEngineType | null;
+        /**
+         * Model Definition Id
+         */
+        model_definition_id?: string | null;
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/runtime-catalog';
+};
+
+export type RuntimeInstancesRuntimeCatalogErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeInstancesRuntimeCatalogError = RuntimeInstancesRuntimeCatalogErrors[keyof RuntimeInstancesRuntimeCatalogErrors];
+
+export type RuntimeInstancesRuntimeCatalogResponses = {
+    /**
+     * Response Runtime-Instances-Runtime Catalog
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type RuntimeInstancesRuntimeCatalogResponse = RuntimeInstancesRuntimeCatalogResponses[keyof RuntimeInstancesRuntimeCatalogResponses];
+
+export type RuntimeInstancesListNodeRuntimeInstancesData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Node Id
+         */
+        node_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/runtime-nodes/{node_id}/runtimes';
+};
+
+export type RuntimeInstancesListNodeRuntimeInstancesErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeInstancesListNodeRuntimeInstancesError = RuntimeInstancesListNodeRuntimeInstancesErrors[keyof RuntimeInstancesListNodeRuntimeInstancesErrors];
+
+export type RuntimeInstancesListNodeRuntimeInstancesResponses = {
+    /**
+     * Response Runtime-Instances-List Node Runtime Instances
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type RuntimeInstancesListNodeRuntimeInstancesResponse = RuntimeInstancesListNodeRuntimeInstancesResponses[keyof RuntimeInstancesListNodeRuntimeInstancesResponses];
+
+export type RuntimeInstancesEnableNodeRuntimeInstanceData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Node Id
+         */
+        node_id: string;
+        /**
+         * Runtime Id
+         */
+        runtime_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/runtime-nodes/{node_id}/runtimes/{runtime_id}/enable';
+};
+
+export type RuntimeInstancesEnableNodeRuntimeInstanceErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeInstancesEnableNodeRuntimeInstanceError = RuntimeInstancesEnableNodeRuntimeInstanceErrors[keyof RuntimeInstancesEnableNodeRuntimeInstanceErrors];
+
+export type RuntimeInstancesEnableNodeRuntimeInstanceResponses = {
+    /**
+     * Response Runtime-Instances-Enable Node Runtime Instance
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type RuntimeInstancesEnableNodeRuntimeInstanceResponse = RuntimeInstancesEnableNodeRuntimeInstanceResponses[keyof RuntimeInstancesEnableNodeRuntimeInstanceResponses];
+
+export type RuntimeInstancesCreatePlatformRuntimeInstanceAliasData = {
+    body: PlatformRuntimeCreate;
+    headers?: {
+        /**
+         * Idempotency-Key
+         */
+        'Idempotency-Key'?: string | null;
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/runtimes/platform-instances';
+};
+
+export type RuntimeInstancesCreatePlatformRuntimeInstanceAliasErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeInstancesCreatePlatformRuntimeInstanceAliasError = RuntimeInstancesCreatePlatformRuntimeInstanceAliasErrors[keyof RuntimeInstancesCreatePlatformRuntimeInstanceAliasErrors];
+
+export type RuntimeInstancesCreatePlatformRuntimeInstanceAliasResponses = {
+    /**
+     * Response Runtime-Instances-Create Platform Runtime Instance Alias
+     *
+     * Successful Response
+     */
+    201: {
+        [key: string]: unknown;
+    };
+};
+
+export type RuntimeInstancesCreatePlatformRuntimeInstanceAliasResponse = RuntimeInstancesCreatePlatformRuntimeInstanceAliasResponses[keyof RuntimeInstancesCreatePlatformRuntimeInstanceAliasResponses];
+
+export type RuntimeInstancesGetRuntimeInstanceData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Runtime Id
+         */
+        runtime_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/runtimes/{runtime_id}';
+};
+
+export type RuntimeInstancesGetRuntimeInstanceErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeInstancesGetRuntimeInstanceError = RuntimeInstancesGetRuntimeInstanceErrors[keyof RuntimeInstancesGetRuntimeInstanceErrors];
+
+export type RuntimeInstancesGetRuntimeInstanceResponses = {
+    /**
+     * Response Runtime-Instances-Get Runtime Instance
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type RuntimeInstancesGetRuntimeInstanceResponse = RuntimeInstancesGetRuntimeInstanceResponses[keyof RuntimeInstancesGetRuntimeInstanceResponses];
+
+export type RuntimeInstancesCreateRuntimeConfigurationData = {
+    body: RuntimeConfigurationInput;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Runtime Id
+         */
+        runtime_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/runtimes/{runtime_id}/configuration';
+};
+
+export type RuntimeInstancesCreateRuntimeConfigurationErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeInstancesCreateRuntimeConfigurationError = RuntimeInstancesCreateRuntimeConfigurationErrors[keyof RuntimeInstancesCreateRuntimeConfigurationErrors];
+
+export type RuntimeInstancesCreateRuntimeConfigurationResponses = {
+    /**
+     * Response Runtime-Instances-Create Runtime Configuration
+     *
+     * Successful Response
+     */
+    201: {
+        [key: string]: unknown;
+    };
+};
+
+export type RuntimeInstancesCreateRuntimeConfigurationResponse = RuntimeInstancesCreateRuntimeConfigurationResponses[keyof RuntimeInstancesCreateRuntimeConfigurationResponses];
+
+export type RuntimeInstancesApplyRuntimeConfigurationData = {
+    body: ConfigurationApplyInput;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Runtime Id
+         */
+        runtime_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/runtimes/{runtime_id}/configuration/apply';
+};
+
+export type RuntimeInstancesApplyRuntimeConfigurationErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeInstancesApplyRuntimeConfigurationError = RuntimeInstancesApplyRuntimeConfigurationErrors[keyof RuntimeInstancesApplyRuntimeConfigurationErrors];
+
+export type RuntimeInstancesApplyRuntimeConfigurationResponses = {
+    /**
+     * Response Runtime-Instances-Apply Runtime Configuration
+     *
+     * Successful Response
+     */
+    202: {
+        [key: string]: unknown;
+    };
+};
+
+export type RuntimeInstancesApplyRuntimeConfigurationResponse = RuntimeInstancesApplyRuntimeConfigurationResponses[keyof RuntimeInstancesApplyRuntimeConfigurationResponses];
+
+export type RuntimeInstancesListModelDefinitionsData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/llm/model-definitions';
+};
+
+export type RuntimeInstancesListModelDefinitionsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeInstancesListModelDefinitionsError = RuntimeInstancesListModelDefinitionsErrors[keyof RuntimeInstancesListModelDefinitionsErrors];
+
+export type RuntimeInstancesListModelDefinitionsResponses = {
+    /**
+     * Response Runtime-Instances-List Model Definitions
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type RuntimeInstancesListModelDefinitionsResponse = RuntimeInstancesListModelDefinitionsResponses[keyof RuntimeInstancesListModelDefinitionsResponses];
+
+export type RuntimeInstancesCreateModelDefinitionData = {
+    body: ModelDefinitionCreate;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/llm/model-definitions';
+};
+
+export type RuntimeInstancesCreateModelDefinitionErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeInstancesCreateModelDefinitionError = RuntimeInstancesCreateModelDefinitionErrors[keyof RuntimeInstancesCreateModelDefinitionErrors];
+
+export type RuntimeInstancesCreateModelDefinitionResponses = {
+    /**
+     * Response Runtime-Instances-Create Model Definition
+     *
+     * Successful Response
+     */
+    201: {
+        [key: string]: unknown;
+    };
+};
+
+export type RuntimeInstancesCreateModelDefinitionResponse = RuntimeInstancesCreateModelDefinitionResponses[keyof RuntimeInstancesCreateModelDefinitionResponses];
+
+export type RuntimeInstancesListRuntimeModelBindingsData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Runtime Id
+         */
+        runtime_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/runtimes/{runtime_id}/model-bindings';
+};
+
+export type RuntimeInstancesListRuntimeModelBindingsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeInstancesListRuntimeModelBindingsError = RuntimeInstancesListRuntimeModelBindingsErrors[keyof RuntimeInstancesListRuntimeModelBindingsErrors];
+
+export type RuntimeInstancesListRuntimeModelBindingsResponses = {
+    /**
+     * Response Runtime-Instances-List Runtime Model Bindings
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type RuntimeInstancesListRuntimeModelBindingsResponse = RuntimeInstancesListRuntimeModelBindingsResponses[keyof RuntimeInstancesListRuntimeModelBindingsResponses];
+
+export type RuntimeInstancesCreateRuntimeModelBindingData = {
+    body: RuntimeModelBindingCreate;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Runtime Id
+         */
+        runtime_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/runtimes/{runtime_id}/model-bindings';
+};
+
+export type RuntimeInstancesCreateRuntimeModelBindingErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeInstancesCreateRuntimeModelBindingError = RuntimeInstancesCreateRuntimeModelBindingErrors[keyof RuntimeInstancesCreateRuntimeModelBindingErrors];
+
+export type RuntimeInstancesCreateRuntimeModelBindingResponses = {
+    /**
+     * Response Runtime-Instances-Create Runtime Model Binding
+     *
+     * Successful Response
+     */
+    201: {
+        [key: string]: unknown;
+    };
+};
+
+export type RuntimeInstancesCreateRuntimeModelBindingResponse = RuntimeInstancesCreateRuntimeModelBindingResponses[keyof RuntimeInstancesCreateRuntimeModelBindingResponses];
+
+export type RuntimeInstancesValidateRuntimeModelBindingData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Runtime Id
+         */
+        runtime_id: string;
+        /**
+         * Binding Id
+         */
+        binding_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/runtimes/{runtime_id}/model-bindings/{binding_id}/validate';
+};
+
+export type RuntimeInstancesValidateRuntimeModelBindingErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeInstancesValidateRuntimeModelBindingError = RuntimeInstancesValidateRuntimeModelBindingErrors[keyof RuntimeInstancesValidateRuntimeModelBindingErrors];
+
+export type RuntimeInstancesValidateRuntimeModelBindingResponses = {
+    /**
+     * Response Runtime-Instances-Validate Runtime Model Binding
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type RuntimeInstancesValidateRuntimeModelBindingResponse = RuntimeInstancesValidateRuntimeModelBindingResponses[keyof RuntimeInstancesValidateRuntimeModelBindingResponses];
+
+export type RuntimeInstancesDisableRuntimeModelBindingData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Runtime Id
+         */
+        runtime_id: string;
+        /**
+         * Binding Id
+         */
+        binding_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/runtimes/{runtime_id}/model-bindings/{binding_id}/disable';
+};
+
+export type RuntimeInstancesDisableRuntimeModelBindingErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeInstancesDisableRuntimeModelBindingError = RuntimeInstancesDisableRuntimeModelBindingErrors[keyof RuntimeInstancesDisableRuntimeModelBindingErrors];
+
+export type RuntimeInstancesDisableRuntimeModelBindingResponses = {
+    /**
+     * Response Runtime-Instances-Disable Runtime Model Binding
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type RuntimeInstancesDisableRuntimeModelBindingResponse = RuntimeInstancesDisableRuntimeModelBindingResponses[keyof RuntimeInstancesDisableRuntimeModelBindingResponses];
+
+export type InternalRuntimeInstancesReportRuntimeDiscoveryData = {
+    body: RuntimeDiscoveryReport;
+    headers?: {
+        /**
+         * X-Runtime-Token
+         */
+        'X-Runtime-Token'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/internal/runtime/discovery';
+};
+
+export type InternalRuntimeInstancesReportRuntimeDiscoveryErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type InternalRuntimeInstancesReportRuntimeDiscoveryError = InternalRuntimeInstancesReportRuntimeDiscoveryErrors[keyof InternalRuntimeInstancesReportRuntimeDiscoveryErrors];
+
+export type InternalRuntimeInstancesReportRuntimeDiscoveryResponses = {
+    /**
+     * Response Internal-Runtime-Instances-Report Runtime Discovery
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type InternalRuntimeInstancesReportRuntimeDiscoveryResponse = InternalRuntimeInstancesReportRuntimeDiscoveryResponses[keyof InternalRuntimeInstancesReportRuntimeDiscoveryResponses];
+
+export type InternalRuntimeInstancesClaimRuntimeConfigurationData = {
+    body: ConfigurationClaimInput;
+    headers?: {
+        /**
+         * X-Runtime-Token
+         */
+        'X-Runtime-Token'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/internal/runtime/configurations/claim';
+};
+
+export type InternalRuntimeInstancesClaimRuntimeConfigurationErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type InternalRuntimeInstancesClaimRuntimeConfigurationError = InternalRuntimeInstancesClaimRuntimeConfigurationErrors[keyof InternalRuntimeInstancesClaimRuntimeConfigurationErrors];
+
+export type InternalRuntimeInstancesClaimRuntimeConfigurationResponses = {
+    /**
+     * Response Internal-Runtime-Instances-Claim Runtime Configuration
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type InternalRuntimeInstancesClaimRuntimeConfigurationResponse = InternalRuntimeInstancesClaimRuntimeConfigurationResponses[keyof InternalRuntimeInstancesClaimRuntimeConfigurationResponses];
+
+export type InternalRuntimeInstancesHeartbeatRuntimeCapabilitiesData = {
+    body: CapabilityHeartbeatInput;
+    headers?: {
+        /**
+         * X-Runtime-Token
+         */
+        'X-Runtime-Token'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/internal/runtime/capabilities/heartbeat';
+};
+
+export type InternalRuntimeInstancesHeartbeatRuntimeCapabilitiesErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type InternalRuntimeInstancesHeartbeatRuntimeCapabilitiesError = InternalRuntimeInstancesHeartbeatRuntimeCapabilitiesErrors[keyof InternalRuntimeInstancesHeartbeatRuntimeCapabilitiesErrors];
+
+export type InternalRuntimeInstancesHeartbeatRuntimeCapabilitiesResponses = {
+    /**
+     * Response Internal-Runtime-Instances-Heartbeat Runtime Capabilities
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: number;
+    };
+};
+
+export type InternalRuntimeInstancesHeartbeatRuntimeCapabilitiesResponse = InternalRuntimeInstancesHeartbeatRuntimeCapabilitiesResponses[keyof InternalRuntimeInstancesHeartbeatRuntimeCapabilitiesResponses];
+
+export type InternalRuntimeInstancesReportRuntimeConfigurationResultData = {
+    body: ConfigurationResultInput;
+    headers?: {
+        /**
+         * X-Runtime-Token
+         */
+        'X-Runtime-Token'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/internal/runtime/configurations/result';
+};
+
+export type InternalRuntimeInstancesReportRuntimeConfigurationResultErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type InternalRuntimeInstancesReportRuntimeConfigurationResultError = InternalRuntimeInstancesReportRuntimeConfigurationResultErrors[keyof InternalRuntimeInstancesReportRuntimeConfigurationResultErrors];
+
+export type InternalRuntimeInstancesReportRuntimeConfigurationResultResponses = {
+    /**
+     * Response Internal-Runtime-Instances-Report Runtime Configuration Result
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type InternalRuntimeInstancesReportRuntimeConfigurationResultResponse = InternalRuntimeInstancesReportRuntimeConfigurationResultResponses[keyof InternalRuntimeInstancesReportRuntimeConfigurationResultResponses];
+
+export type InternalRuntimeInstancesReportNativeModelValidationResultData = {
+    body: NativeModelValidationResult;
+    headers?: {
+        /**
+         * X-Runtime-Token
+         */
+        'X-Runtime-Token'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/internal/runtime/model-validations/result';
+};
+
+export type InternalRuntimeInstancesReportNativeModelValidationResultErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type InternalRuntimeInstancesReportNativeModelValidationResultError = InternalRuntimeInstancesReportNativeModelValidationResultErrors[keyof InternalRuntimeInstancesReportNativeModelValidationResultErrors];
+
+export type InternalRuntimeInstancesReportNativeModelValidationResultResponses = {
+    /**
+     * Response Internal-Runtime-Instances-Report Native Model Validation Result
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type InternalRuntimeInstancesReportNativeModelValidationResultResponse = InternalRuntimeInstancesReportNativeModelValidationResultResponses[keyof InternalRuntimeInstancesReportNativeModelValidationResultResponses];
+
+export type InternalRuntimeInstancesClaimNativeModelValidationData = {
+    body: ConfigurationClaimInput;
+    headers?: {
+        /**
+         * X-Runtime-Token
+         */
+        'X-Runtime-Token'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/internal/runtime/model-validations/claim';
+};
+
+export type InternalRuntimeInstancesClaimNativeModelValidationErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type InternalRuntimeInstancesClaimNativeModelValidationError = InternalRuntimeInstancesClaimNativeModelValidationErrors[keyof InternalRuntimeInstancesClaimNativeModelValidationErrors];
+
+export type InternalRuntimeInstancesClaimNativeModelValidationResponses = {
+    /**
+     * Response Internal-Runtime-Instances-Claim Native Model Validation
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type InternalRuntimeInstancesClaimNativeModelValidationResponse = InternalRuntimeInstancesClaimNativeModelValidationResponses[keyof InternalRuntimeInstancesClaimNativeModelValidationResponses];
 
 export type RuntimeArtifactsListArtifactsData = {
     body?: never;
@@ -6140,277 +8469,411 @@ export type NodeArtifactsDownloadArtifactResponses = {
     200: unknown;
 };
 
-export type RuntimeNodesListTokensData = {
+export type RuntimeSkillsSkillRuntimeSyncStatusData = {
     body?: never;
     headers?: {
         /**
          * X-Namespace-Id
          */
         'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Skill Id
+         */
+        skill_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/skills/{skill_id}/runtime-sync';
+};
+
+export type RuntimeSkillsSkillRuntimeSyncStatusErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeSkillsSkillRuntimeSyncStatusError = RuntimeSkillsSkillRuntimeSyncStatusErrors[keyof RuntimeSkillsSkillRuntimeSyncStatusErrors];
+
+export type RuntimeSkillsSkillRuntimeSyncStatusResponses = {
+    /**
+     * Response Runtime-Skills-Skill Runtime Sync Status
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type RuntimeSkillsSkillRuntimeSyncStatusResponse = RuntimeSkillsSkillRuntimeSyncStatusResponses[keyof RuntimeSkillsSkillRuntimeSyncStatusResponses];
+
+export type RuntimeSkillsRuntimeSkillStatusData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Runtime Id
+         */
+        runtime_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/runtimes/{runtime_id}/skills';
+};
+
+export type RuntimeSkillsRuntimeSkillStatusErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeSkillsRuntimeSkillStatusError = RuntimeSkillsRuntimeSkillStatusErrors[keyof RuntimeSkillsRuntimeSkillStatusErrors];
+
+export type RuntimeSkillsRuntimeSkillStatusResponses = {
+    /**
+     * Response Runtime-Skills-Runtime Skill Status
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type RuntimeSkillsRuntimeSkillStatusResponse = RuntimeSkillsRuntimeSkillStatusResponses[keyof RuntimeSkillsRuntimeSkillStatusResponses];
+
+export type RuntimeSkillsRetryRuntimeSkillSyncData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * State Id
+         */
+        state_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/runtime-skill-states/{state_id}/retry';
+};
+
+export type RuntimeSkillsRetryRuntimeSkillSyncErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeSkillsRetryRuntimeSkillSyncError = RuntimeSkillsRetryRuntimeSkillSyncErrors[keyof RuntimeSkillsRetryRuntimeSkillSyncErrors];
+
+export type RuntimeSkillsRetryRuntimeSkillSyncResponses = {
+    /**
+     * Response Runtime-Skills-Retry Runtime Skill Sync
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type RuntimeSkillsRetryRuntimeSkillSyncResponse = RuntimeSkillsRetryRuntimeSkillSyncResponses[keyof RuntimeSkillsRetryRuntimeSkillSyncResponses];
+
+export type RuntimeSkillsRetrySkillRuntimeTargetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Skill Id
+         */
+        skill_id: string;
+        /**
+         * Runtime Id
+         */
+        runtime_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/skills/{skill_id}/runtime-sync/{runtime_id}/retry';
+};
+
+export type RuntimeSkillsRetrySkillRuntimeTargetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeSkillsRetrySkillRuntimeTargetError = RuntimeSkillsRetrySkillRuntimeTargetErrors[keyof RuntimeSkillsRetrySkillRuntimeTargetErrors];
+
+export type RuntimeSkillsRetrySkillRuntimeTargetResponses = {
+    /**
+     * Response Runtime-Skills-Retry Skill Runtime Target
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type RuntimeSkillsRetrySkillRuntimeTargetResponse = RuntimeSkillsRetrySkillRuntimeTargetResponses[keyof RuntimeSkillsRetrySkillRuntimeTargetResponses];
+
+export type InternalRuntimeSkillsClaimPlatformSkillSyncData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Runtime-Token
+         */
+        'X-Runtime-Token'?: string | null;
     };
     path?: never;
-    query?: {
-        /**
-         * Namespace Id
-         */
-        namespace_id?: string | null;
-    };
-    url: '/api/v1/runtimes/nodes/enrollment-tokens';
+    query?: never;
+    url: '/api/v1/internal/runtime/skill-sync/claim';
 };
 
-export type RuntimeNodesListTokensErrors = {
+export type InternalRuntimeSkillsClaimPlatformSkillSyncErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type RuntimeNodesListTokensError = RuntimeNodesListTokensErrors[keyof RuntimeNodesListTokensErrors];
+export type InternalRuntimeSkillsClaimPlatformSkillSyncError = InternalRuntimeSkillsClaimPlatformSkillSyncErrors[keyof InternalRuntimeSkillsClaimPlatformSkillSyncErrors];
 
-export type RuntimeNodesListTokensResponses = {
+export type InternalRuntimeSkillsClaimPlatformSkillSyncResponses = {
     /**
+     * Response Internal-Runtime-Skills-Claim Platform Skill Sync
+     *
      * Successful Response
      */
-    200: EnrollmentTokensPublic;
+    200: {
+        [key: string]: unknown;
+    } | null;
 };
 
-export type RuntimeNodesListTokensResponse = RuntimeNodesListTokensResponses[keyof RuntimeNodesListTokensResponses];
+export type InternalRuntimeSkillsClaimPlatformSkillSyncResponse = InternalRuntimeSkillsClaimPlatformSkillSyncResponses[keyof InternalRuntimeSkillsClaimPlatformSkillSyncResponses];
 
-export type RuntimeNodesCreateTokenData = {
+export type InternalRuntimeSkillsDownloadPlatformSkillBundleData = {
     body?: never;
     headers?: {
         /**
-         * X-Namespace-Id
+         * X-Runtime-Token
          */
-        'X-Namespace-Id'?: string | null;
-    };
-    path?: never;
-    query?: {
-        /**
-         * Namespace Id
-         */
-        namespace_id?: string | null;
-    };
-    url: '/api/v1/runtimes/nodes/enrollment-tokens';
-};
-
-export type RuntimeNodesCreateTokenErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type RuntimeNodesCreateTokenError = RuntimeNodesCreateTokenErrors[keyof RuntimeNodesCreateTokenErrors];
-
-export type RuntimeNodesCreateTokenResponses = {
-    /**
-     * Successful Response
-     */
-    201: EnrollmentTokenCreated;
-};
-
-export type RuntimeNodesCreateTokenResponse = RuntimeNodesCreateTokenResponses[keyof RuntimeNodesCreateTokenResponses];
-
-export type RuntimeNodesListNodesData = {
-    body?: never;
-    headers?: {
-        /**
-         * X-Namespace-Id
-         */
-        'X-Namespace-Id'?: string | null;
-    };
-    path?: never;
-    query?: {
-        /**
-         * Namespace Id
-         */
-        namespace_id?: string | null;
-    };
-    url: '/api/v1/runtimes/nodes';
-};
-
-export type RuntimeNodesListNodesErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type RuntimeNodesListNodesError = RuntimeNodesListNodesErrors[keyof RuntimeNodesListNodesErrors];
-
-export type RuntimeNodesListNodesResponses = {
-    /**
-     * Successful Response
-     */
-    200: NodesPublic;
-};
-
-export type RuntimeNodesListNodesResponse = RuntimeNodesListNodesResponses[keyof RuntimeNodesListNodesResponses];
-
-export type RuntimeNodesReadNodeData = {
-    body?: never;
-    headers?: {
-        /**
-         * X-Namespace-Id
-         */
-        'X-Namespace-Id'?: string | null;
+        'X-Runtime-Token'?: string | null;
     };
     path: {
         /**
-         * Node Id
+         * Attempt Id
          */
-        node_id: string;
+        attempt_id: string;
     };
-    query?: {
-        /**
-         * Namespace Id
-         */
-        namespace_id?: string | null;
-    };
-    url: '/api/v1/runtimes/nodes/{node_id}';
+    query?: never;
+    url: '/api/v1/internal/runtime/skill-sync/{attempt_id}/download';
 };
 
-export type RuntimeNodesReadNodeErrors = {
+export type InternalRuntimeSkillsDownloadPlatformSkillBundleErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type RuntimeNodesReadNodeError = RuntimeNodesReadNodeErrors[keyof RuntimeNodesReadNodeErrors];
+export type InternalRuntimeSkillsDownloadPlatformSkillBundleError = InternalRuntimeSkillsDownloadPlatformSkillBundleErrors[keyof InternalRuntimeSkillsDownloadPlatformSkillBundleErrors];
 
-export type RuntimeNodesReadNodeResponses = {
+export type InternalRuntimeSkillsDownloadPlatformSkillBundleResponses = {
     /**
      * Successful Response
      */
-    200: NodePublic;
+    200: unknown;
 };
 
-export type RuntimeNodesReadNodeResponse = RuntimeNodesReadNodeResponses[keyof RuntimeNodesReadNodeResponses];
-
-export type RuntimeNodesConfigureNodeRuntimeData = {
-    body: NodeRuntimeUpsert;
+export type InternalRuntimeSkillsReportPlatformSkillSyncData = {
+    body: SkillSyncResult;
     headers?: {
         /**
-         * X-Namespace-Id
+         * X-Runtime-Token
          */
-        'X-Namespace-Id'?: string | null;
+        'X-Runtime-Token'?: string | null;
     };
     path: {
         /**
-         * Node Id
+         * Attempt Id
          */
-        node_id: string;
+        attempt_id: string;
     };
-    query?: {
-        /**
-         * Namespace Id
-         */
-        namespace_id?: string | null;
-    };
-    url: '/api/v1/runtimes/nodes/{node_id}/runtime';
+    query?: never;
+    url: '/api/v1/internal/runtime/skill-sync/{attempt_id}/result';
 };
 
-export type RuntimeNodesConfigureNodeRuntimeErrors = {
+export type InternalRuntimeSkillsReportPlatformSkillSyncErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type RuntimeNodesConfigureNodeRuntimeError = RuntimeNodesConfigureNodeRuntimeErrors[keyof RuntimeNodesConfigureNodeRuntimeErrors];
+export type InternalRuntimeSkillsReportPlatformSkillSyncError = InternalRuntimeSkillsReportPlatformSkillSyncErrors[keyof InternalRuntimeSkillsReportPlatformSkillSyncErrors];
 
-export type RuntimeNodesConfigureNodeRuntimeResponses = {
+export type InternalRuntimeSkillsReportPlatformSkillSyncResponses = {
     /**
+     * Response Internal-Runtime-Skills-Report Platform Skill Sync
+     *
      * Successful Response
      */
-    200: NodeRuntimePublic;
+    200: {
+        [key: string]: unknown;
+    };
 };
 
-export type RuntimeNodesConfigureNodeRuntimeResponse = RuntimeNodesConfigureNodeRuntimeResponses[keyof RuntimeNodesConfigureNodeRuntimeResponses];
+export type InternalRuntimeSkillsReportPlatformSkillSyncResponse = InternalRuntimeSkillsReportPlatformSkillSyncResponses[keyof InternalRuntimeSkillsReportPlatformSkillSyncResponses];
 
-export type RuntimeNodesRevokeNodeData = {
+export type InternalRuntimeSkillsReportTaskSkillUsageData = {
+    body: TaskSkillUsageReport;
+    headers?: {
+        /**
+         * X-Runtime-Token
+         */
+        'X-Runtime-Token'?: string | null;
+    };
+    path: {
+        /**
+         * Task Id
+         */
+        task_id: string;
+    };
+    query?: never;
+    url: '/api/v1/internal/runtime/skill-sync/tasks/{task_id}/usage';
+};
+
+export type InternalRuntimeSkillsReportTaskSkillUsageErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type InternalRuntimeSkillsReportTaskSkillUsageError = InternalRuntimeSkillsReportTaskSkillUsageErrors[keyof InternalRuntimeSkillsReportTaskSkillUsageErrors];
+
+export type InternalRuntimeSkillsReportTaskSkillUsageResponses = {
+    /**
+     * Response Internal-Runtime-Skills-Report Task Skill Usage
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type InternalRuntimeSkillsReportTaskSkillUsageResponse = InternalRuntimeSkillsReportTaskSkillUsageResponses[keyof InternalRuntimeSkillsReportTaskSkillUsageResponses];
+
+export type InternalRuntimeSkillsReportTaskPreparationFailureData = {
+    body: TaskPreparationFailure;
+    headers?: {
+        /**
+         * X-Runtime-Token
+         */
+        'X-Runtime-Token'?: string | null;
+    };
+    path: {
+        /**
+         * Task Id
+         */
+        task_id: string;
+    };
+    query?: never;
+    url: '/api/v1/internal/runtime/skill-sync/tasks/{task_id}/preparation-failed';
+};
+
+export type InternalRuntimeSkillsReportTaskPreparationFailureErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type InternalRuntimeSkillsReportTaskPreparationFailureError = InternalRuntimeSkillsReportTaskPreparationFailureErrors[keyof InternalRuntimeSkillsReportTaskPreparationFailureErrors];
+
+export type InternalRuntimeSkillsReportTaskPreparationFailureResponses = {
+    /**
+     * Response Internal-Runtime-Skills-Report Task Preparation Failure
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type InternalRuntimeSkillsReportTaskPreparationFailureResponse = InternalRuntimeSkillsReportTaskPreparationFailureResponses[keyof InternalRuntimeSkillsReportTaskPreparationFailureResponses];
+
+export type NodeRuntimeSkillsDownloadNodeSkillBundleData = {
     body?: never;
-    headers?: {
-        /**
-         * X-Namespace-Id
-         */
-        'X-Namespace-Id'?: string | null;
-    };
     path: {
         /**
-         * Node Id
+         * Attempt Id
          */
-        node_id: string;
+        attempt_id: string;
     };
-    query?: {
+    query: {
         /**
-         * Namespace Id
+         * Token
          */
-        namespace_id?: string | null;
+        token: string;
     };
-    url: '/api/v1/runtimes/nodes/{node_id}/credential';
+    url: '/api/v1/node/skill-sync/{attempt_id}/download';
 };
 
-export type RuntimeNodesRevokeNodeErrors = {
+export type NodeRuntimeSkillsDownloadNodeSkillBundleErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type RuntimeNodesRevokeNodeError = RuntimeNodesRevokeNodeErrors[keyof RuntimeNodesRevokeNodeErrors];
+export type NodeRuntimeSkillsDownloadNodeSkillBundleError = NodeRuntimeSkillsDownloadNodeSkillBundleErrors[keyof NodeRuntimeSkillsDownloadNodeSkillBundleErrors];
 
-export type RuntimeNodesRevokeNodeResponses = {
+export type NodeRuntimeSkillsDownloadNodeSkillBundleResponses = {
     /**
      * Successful Response
      */
-    204: void;
+    200: unknown;
 };
-
-export type RuntimeNodesRevokeNodeResponse = RuntimeNodesRevokeNodeResponses[keyof RuntimeNodesRevokeNodeResponses];
-
-export type RuntimeNodesRevokeTokenData = {
-    body?: never;
-    headers?: {
-        /**
-         * X-Namespace-Id
-         */
-        'X-Namespace-Id'?: string | null;
-    };
-    path: {
-        /**
-         * Token Id
-         */
-        token_id: string;
-    };
-    query?: {
-        /**
-         * Namespace Id
-         */
-        namespace_id?: string | null;
-    };
-    url: '/api/v1/runtimes/nodes/enrollment-tokens/{token_id}';
-};
-
-export type RuntimeNodesRevokeTokenErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type RuntimeNodesRevokeTokenError = RuntimeNodesRevokeTokenErrors[keyof RuntimeNodesRevokeTokenErrors];
-
-export type RuntimeNodesRevokeTokenResponses = {
-    /**
-     * Successful Response
-     */
-    204: void;
-};
-
-export type RuntimeNodesRevokeTokenResponse = RuntimeNodesRevokeTokenResponses[keyof RuntimeNodesRevokeTokenResponses];
 
 export type NodeEnrollmentEnrollNodeData = {
     body: NodeEnrollInput;
@@ -6508,6 +8971,46 @@ export type AgentManagementCreateAgentEndpointResponses = {
 };
 
 export type AgentManagementCreateAgentEndpointResponse = AgentManagementCreateAgentEndpointResponses[keyof AgentManagementCreateAgentEndpointResponses];
+
+export type AgentManagementCreateAgentCompleteData = {
+    body: AgentCompleteCreate;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/agents/complete';
+};
+
+export type AgentManagementCreateAgentCompleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentManagementCreateAgentCompleteError = AgentManagementCreateAgentCompleteErrors[keyof AgentManagementCreateAgentCompleteErrors];
+
+export type AgentManagementCreateAgentCompleteResponses = {
+    /**
+     * Response Agent-Management-Create Agent Complete
+     *
+     * Successful Response
+     */
+    201: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentManagementCreateAgentCompleteResponse = AgentManagementCreateAgentCompleteResponses[keyof AgentManagementCreateAgentCompleteResponses];
 
 export type AgentManagementCopyAgentEndpointData = {
     body: AgentCopy;
@@ -7123,6 +9626,26 @@ export type AgentCapabilitiesListSkillsData = {
     path?: never;
     query?: {
         /**
+         * Q
+         */
+        q?: string | null;
+        /**
+         * Archived
+         */
+        archived?: boolean | null;
+        /**
+         * Draft Dirty
+         */
+        draft_dirty?: boolean | null;
+        /**
+         * Offset
+         */
+        offset?: number;
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
          * Namespace Id
          */
         namespace_id?: string | null;
@@ -7191,6 +9714,142 @@ export type AgentCapabilitiesCreateSkillResponses = {
 };
 
 export type AgentCapabilitiesCreateSkillResponse = AgentCapabilitiesCreateSkillResponses[keyof AgentCapabilitiesCreateSkillResponses];
+
+export type AgentCapabilitiesSkillCatalogData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Q
+         */
+        q?: string | null;
+        /**
+         * Offset
+         */
+        offset?: number;
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/skill-catalog';
+};
+
+export type AgentCapabilitiesSkillCatalogErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesSkillCatalogError = AgentCapabilitiesSkillCatalogErrors[keyof AgentCapabilitiesSkillCatalogErrors];
+
+export type AgentCapabilitiesSkillCatalogResponses = {
+    /**
+     * Response Agent-Capabilities-Skill Catalog
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesSkillCatalogResponse = AgentCapabilitiesSkillCatalogResponses[keyof AgentCapabilitiesSkillCatalogResponses];
+
+export type AgentCapabilitiesCreateSkillCompleteData = {
+    body: BodyAgentCapabilitiesCreateSkillComplete;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/skills/complete';
+};
+
+export type AgentCapabilitiesCreateSkillCompleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesCreateSkillCompleteError = AgentCapabilitiesCreateSkillCompleteErrors[keyof AgentCapabilitiesCreateSkillCompleteErrors];
+
+export type AgentCapabilitiesCreateSkillCompleteResponses = {
+    /**
+     * Response Agent-Capabilities-Create Skill Complete
+     *
+     * Successful Response
+     */
+    201: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesCreateSkillCompleteResponse = AgentCapabilitiesCreateSkillCompleteResponses[keyof AgentCapabilitiesCreateSkillCompleteResponses];
+
+export type AgentCapabilitiesCreateSkillCompleteFromEditorData = {
+    body: SkillCompleteEditor;
+    headers?: {
+        /**
+         * Idempotency-Key
+         */
+        'Idempotency-Key'?: string | null;
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/skills/complete/editor';
+};
+
+export type AgentCapabilitiesCreateSkillCompleteFromEditorErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesCreateSkillCompleteFromEditorError = AgentCapabilitiesCreateSkillCompleteFromEditorErrors[keyof AgentCapabilitiesCreateSkillCompleteFromEditorErrors];
+
+export type AgentCapabilitiesCreateSkillCompleteFromEditorResponses = {
+    /**
+     * Response Agent-Capabilities-Create Skill Complete From Editor
+     *
+     * Successful Response
+     */
+    201: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesCreateSkillCompleteFromEditorResponse = AgentCapabilitiesCreateSkillCompleteFromEditorResponses[keyof AgentCapabilitiesCreateSkillCompleteFromEditorResponses];
 
 export type AgentCapabilitiesDeleteSkillData = {
     body?: never;
@@ -7323,6 +9982,480 @@ export type AgentCapabilitiesUpdateSkillResponses = {
 
 export type AgentCapabilitiesUpdateSkillResponse = AgentCapabilitiesUpdateSkillResponses[keyof AgentCapabilitiesUpdateSkillResponses];
 
+export type AgentCapabilitiesGetSkillDraftData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Skill Id
+         */
+        skill_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/skills/{skill_id}/draft';
+};
+
+export type AgentCapabilitiesGetSkillDraftErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesGetSkillDraftError = AgentCapabilitiesGetSkillDraftErrors[keyof AgentCapabilitiesGetSkillDraftErrors];
+
+export type AgentCapabilitiesGetSkillDraftResponses = {
+    /**
+     * Response Agent-Capabilities-Get Skill Draft
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesGetSkillDraftResponse = AgentCapabilitiesGetSkillDraftResponses[keyof AgentCapabilitiesGetSkillDraftResponses];
+
+export type AgentCapabilitiesCreateSkillDraftFileData = {
+    body: SkillDraftFileCreate;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Skill Id
+         */
+        skill_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/skills/{skill_id}/draft/files';
+};
+
+export type AgentCapabilitiesCreateSkillDraftFileErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesCreateSkillDraftFileError = AgentCapabilitiesCreateSkillDraftFileErrors[keyof AgentCapabilitiesCreateSkillDraftFileErrors];
+
+export type AgentCapabilitiesCreateSkillDraftFileResponses = {
+    /**
+     * Response Agent-Capabilities-Create Skill Draft File
+     *
+     * Successful Response
+     */
+    201: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesCreateSkillDraftFileResponse = AgentCapabilitiesCreateSkillDraftFileResponses[keyof AgentCapabilitiesCreateSkillDraftFileResponses];
+
+export type AgentCapabilitiesDeleteSkillDraftFileData = {
+    body: SkillDraftMutation;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Skill Id
+         */
+        skill_id: string;
+        /**
+         * File Id
+         */
+        file_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/skills/{skill_id}/draft/files/{file_id}';
+};
+
+export type AgentCapabilitiesDeleteSkillDraftFileErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesDeleteSkillDraftFileError = AgentCapabilitiesDeleteSkillDraftFileErrors[keyof AgentCapabilitiesDeleteSkillDraftFileErrors];
+
+export type AgentCapabilitiesDeleteSkillDraftFileResponses = {
+    /**
+     * Response Agent-Capabilities-Delete Skill Draft File
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesDeleteSkillDraftFileResponse = AgentCapabilitiesDeleteSkillDraftFileResponses[keyof AgentCapabilitiesDeleteSkillDraftFileResponses];
+
+export type AgentCapabilitiesGetSkillDraftFileData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Skill Id
+         */
+        skill_id: string;
+        /**
+         * File Id
+         */
+        file_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/skills/{skill_id}/draft/files/{file_id}';
+};
+
+export type AgentCapabilitiesGetSkillDraftFileErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesGetSkillDraftFileError = AgentCapabilitiesGetSkillDraftFileErrors[keyof AgentCapabilitiesGetSkillDraftFileErrors];
+
+export type AgentCapabilitiesGetSkillDraftFileResponses = {
+    /**
+     * Response Agent-Capabilities-Get Skill Draft File
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesGetSkillDraftFileResponse = AgentCapabilitiesGetSkillDraftFileResponses[keyof AgentCapabilitiesGetSkillDraftFileResponses];
+
+export type AgentCapabilitiesUpdateSkillDraftFileData = {
+    body: SkillDraftFileUpdate;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Skill Id
+         */
+        skill_id: string;
+        /**
+         * File Id
+         */
+        file_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/skills/{skill_id}/draft/files/{file_id}';
+};
+
+export type AgentCapabilitiesUpdateSkillDraftFileErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesUpdateSkillDraftFileError = AgentCapabilitiesUpdateSkillDraftFileErrors[keyof AgentCapabilitiesUpdateSkillDraftFileErrors];
+
+export type AgentCapabilitiesUpdateSkillDraftFileResponses = {
+    /**
+     * Response Agent-Capabilities-Update Skill Draft File
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesUpdateSkillDraftFileResponse = AgentCapabilitiesUpdateSkillDraftFileResponses[keyof AgentCapabilitiesUpdateSkillDraftFileResponses];
+
+export type AgentCapabilitiesMoveSkillDraftFileData = {
+    body: SkillDraftFileMove;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Skill Id
+         */
+        skill_id: string;
+        /**
+         * File Id
+         */
+        file_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/skills/{skill_id}/draft/files/{file_id}/move';
+};
+
+export type AgentCapabilitiesMoveSkillDraftFileErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesMoveSkillDraftFileError = AgentCapabilitiesMoveSkillDraftFileErrors[keyof AgentCapabilitiesMoveSkillDraftFileErrors];
+
+export type AgentCapabilitiesMoveSkillDraftFileResponses = {
+    /**
+     * Response Agent-Capabilities-Move Skill Draft File
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesMoveSkillDraftFileResponse = AgentCapabilitiesMoveSkillDraftFileResponses[keyof AgentCapabilitiesMoveSkillDraftFileResponses];
+
+export type AgentCapabilitiesValidateSkillDraftData = {
+    body: SkillDraftMutation;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Skill Id
+         */
+        skill_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/skills/{skill_id}/draft/validate';
+};
+
+export type AgentCapabilitiesValidateSkillDraftErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesValidateSkillDraftError = AgentCapabilitiesValidateSkillDraftErrors[keyof AgentCapabilitiesValidateSkillDraftErrors];
+
+export type AgentCapabilitiesValidateSkillDraftResponses = {
+    /**
+     * Response Agent-Capabilities-Validate Skill Draft
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesValidateSkillDraftResponse = AgentCapabilitiesValidateSkillDraftResponses[keyof AgentCapabilitiesValidateSkillDraftResponses];
+
+export type AgentCapabilitiesPublishSkillDraftData = {
+    body: SkillDraftPublish;
+    headers?: {
+        /**
+         * Idempotency-Key
+         */
+        'Idempotency-Key'?: string | null;
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Skill Id
+         */
+        skill_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/skills/{skill_id}/draft/publish';
+};
+
+export type AgentCapabilitiesPublishSkillDraftErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesPublishSkillDraftError = AgentCapabilitiesPublishSkillDraftErrors[keyof AgentCapabilitiesPublishSkillDraftErrors];
+
+export type AgentCapabilitiesPublishSkillDraftResponses = {
+    /**
+     * Response Agent-Capabilities-Publish Skill Draft
+     *
+     * Successful Response
+     */
+    201: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesPublishSkillDraftResponse = AgentCapabilitiesPublishSkillDraftResponses[keyof AgentCapabilitiesPublishSkillDraftResponses];
+
+export type AgentCapabilitiesSetSkillCurrentVersionData = {
+    body: SkillCurrentVersionUpdate;
+    headers?: {
+        /**
+         * Idempotency-Key
+         */
+        'Idempotency-Key'?: string | null;
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Skill Id
+         */
+        skill_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/skills/{skill_id}/current-version';
+};
+
+export type AgentCapabilitiesSetSkillCurrentVersionErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesSetSkillCurrentVersionError = AgentCapabilitiesSetSkillCurrentVersionErrors[keyof AgentCapabilitiesSetSkillCurrentVersionErrors];
+
+export type AgentCapabilitiesSetSkillCurrentVersionResponses = {
+    /**
+     * Response Agent-Capabilities-Set Skill Current Version
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesSetSkillCurrentVersionResponse = AgentCapabilitiesSetSkillCurrentVersionResponses[keyof AgentCapabilitiesSetSkillCurrentVersionResponses];
+
+export type AgentCapabilitiesImportSkillDraftData = {
+    body: BodyAgentCapabilitiesImportSkillDraft;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Skill Id
+         */
+        skill_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/skills/{skill_id}/draft/import';
+};
+
+export type AgentCapabilitiesImportSkillDraftErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesImportSkillDraftError = AgentCapabilitiesImportSkillDraftErrors[keyof AgentCapabilitiesImportSkillDraftErrors];
+
+export type AgentCapabilitiesImportSkillDraftResponses = {
+    /**
+     * Response Agent-Capabilities-Import Skill Draft
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesImportSkillDraftResponse = AgentCapabilitiesImportSkillDraftResponses[keyof AgentCapabilitiesImportSkillDraftResponses];
+
 export type AgentCapabilitiesListSkillVersionsData = {
     body?: never;
     headers?: {
@@ -7368,8 +10501,8 @@ export type AgentCapabilitiesListSkillVersionsResponses = {
 
 export type AgentCapabilitiesListSkillVersionsResponse = AgentCapabilitiesListSkillVersionsResponses[keyof AgentCapabilitiesListSkillVersionsResponses];
 
-export type AgentCapabilitiesUploadSkillVersionData = {
-    body: BodyAgentCapabilitiesUploadSkillVersion;
+export type AgentCapabilitiesRejectDirectSkillVersionUploadData = {
+    body?: never;
     headers?: {
         /**
          * X-Namespace-Id
@@ -7391,27 +10524,18 @@ export type AgentCapabilitiesUploadSkillVersionData = {
     url: '/api/v1/skills/{skill_id}/versions';
 };
 
-export type AgentCapabilitiesUploadSkillVersionErrors = {
+export type AgentCapabilitiesRejectDirectSkillVersionUploadErrors = {
+    /**
+     * Successful Response
+     */
+    410: unknown;
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type AgentCapabilitiesUploadSkillVersionError = AgentCapabilitiesUploadSkillVersionErrors[keyof AgentCapabilitiesUploadSkillVersionErrors];
-
-export type AgentCapabilitiesUploadSkillVersionResponses = {
-    /**
-     * Response Agent-Capabilities-Upload Skill Version
-     *
-     * Successful Response
-     */
-    201: {
-        [key: string]: unknown;
-    };
-};
-
-export type AgentCapabilitiesUploadSkillVersionResponse = AgentCapabilitiesUploadSkillVersionResponses[keyof AgentCapabilitiesUploadSkillVersionResponses];
+export type AgentCapabilitiesRejectDirectSkillVersionUploadError = AgentCapabilitiesRejectDirectSkillVersionUploadErrors[keyof AgentCapabilitiesRejectDirectSkillVersionUploadErrors];
 
 export type AgentCapabilitiesGetSkillVersionData = {
     body?: never;
@@ -7461,6 +10585,108 @@ export type AgentCapabilitiesGetSkillVersionResponses = {
 };
 
 export type AgentCapabilitiesGetSkillVersionResponse = AgentCapabilitiesGetSkillVersionResponses[keyof AgentCapabilitiesGetSkillVersionResponses];
+
+export type AgentCapabilitiesListSkillVersionFilesData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Skill Id
+         */
+        skill_id: string;
+        /**
+         * Version
+         */
+        version: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/skills/{skill_id}/versions/{version}/files';
+};
+
+export type AgentCapabilitiesListSkillVersionFilesErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesListSkillVersionFilesError = AgentCapabilitiesListSkillVersionFilesErrors[keyof AgentCapabilitiesListSkillVersionFilesErrors];
+
+export type AgentCapabilitiesListSkillVersionFilesResponses = {
+    /**
+     * Response Agent-Capabilities-List Skill Version Files
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesListSkillVersionFilesResponse = AgentCapabilitiesListSkillVersionFilesResponses[keyof AgentCapabilitiesListSkillVersionFilesResponses];
+
+export type AgentCapabilitiesGetSkillVersionFileData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Skill Id
+         */
+        skill_id: string;
+        /**
+         * Version
+         */
+        version: string;
+        /**
+         * File Path
+         */
+        file_path: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/skills/{skill_id}/versions/{version}/files/{file_path}';
+};
+
+export type AgentCapabilitiesGetSkillVersionFileErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesGetSkillVersionFileError = AgentCapabilitiesGetSkillVersionFileErrors[keyof AgentCapabilitiesGetSkillVersionFileErrors];
+
+export type AgentCapabilitiesGetSkillVersionFileResponses = {
+    /**
+     * Response Agent-Capabilities-Get Skill Version File
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesGetSkillVersionFileResponse = AgentCapabilitiesGetSkillVersionFileResponses[keyof AgentCapabilitiesGetSkillVersionFileResponses];
 
 export type AgentCapabilitiesDeprecateSkillVersionData = {
     body?: never;
@@ -7765,6 +10991,46 @@ export type AgentCapabilitiesCreateMcpServerResponses = {
 };
 
 export type AgentCapabilitiesCreateMcpServerResponse = AgentCapabilitiesCreateMcpServerResponses[keyof AgentCapabilitiesCreateMcpServerResponses];
+
+export type AgentCapabilitiesCreateMcpServerCompleteData = {
+    body: McpCompleteCreate;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/mcp-servers/complete';
+};
+
+export type AgentCapabilitiesCreateMcpServerCompleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesCreateMcpServerCompleteError = AgentCapabilitiesCreateMcpServerCompleteErrors[keyof AgentCapabilitiesCreateMcpServerCompleteErrors];
+
+export type AgentCapabilitiesCreateMcpServerCompleteResponses = {
+    /**
+     * Response Agent-Capabilities-Create Mcp Server Complete
+     *
+     * Successful Response
+     */
+    201: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesCreateMcpServerCompleteResponse = AgentCapabilitiesCreateMcpServerCompleteResponses[keyof AgentCapabilitiesCreateMcpServerCompleteResponses];
 
 export type AgentCapabilitiesDeleteMcpServerData = {
     body?: never;
@@ -8430,6 +11696,46 @@ export type AgentCapabilitiesCreatePluginResponses = {
 };
 
 export type AgentCapabilitiesCreatePluginResponse = AgentCapabilitiesCreatePluginResponses[keyof AgentCapabilitiesCreatePluginResponses];
+
+export type AgentCapabilitiesCreatePluginCompleteData = {
+    body: PluginCompleteCreate;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/plugins/complete';
+};
+
+export type AgentCapabilitiesCreatePluginCompleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentCapabilitiesCreatePluginCompleteError = AgentCapabilitiesCreatePluginCompleteErrors[keyof AgentCapabilitiesCreatePluginCompleteErrors];
+
+export type AgentCapabilitiesCreatePluginCompleteResponses = {
+    /**
+     * Response Agent-Capabilities-Create Plugin Complete
+     *
+     * Successful Response
+     */
+    201: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentCapabilitiesCreatePluginCompleteResponse = AgentCapabilitiesCreatePluginCompleteResponses[keyof AgentCapabilitiesCreatePluginCompleteResponses];
 
 export type AgentCapabilitiesGetPluginData = {
     body?: never;
@@ -9192,6 +12498,51 @@ export type AgentReleasesGetResolvedSpecResponses = {
 
 export type AgentReleasesGetResolvedSpecResponse = AgentReleasesGetResolvedSpecResponses[keyof AgentReleasesGetResolvedSpecResponses];
 
+export type AgentReleasesReleaseRuntimeCompatibilityData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Release Id
+         */
+        release_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/agent-releases/{release_id}/compatibility';
+};
+
+export type AgentReleasesReleaseRuntimeCompatibilityErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AgentReleasesReleaseRuntimeCompatibilityError = AgentReleasesReleaseRuntimeCompatibilityErrors[keyof AgentReleasesReleaseRuntimeCompatibilityErrors];
+
+export type AgentReleasesReleaseRuntimeCompatibilityResponses = {
+    /**
+     * Response Agent-Releases-Release Runtime Compatibility
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type AgentReleasesReleaseRuntimeCompatibilityResponse = AgentReleasesReleaseRuntimeCompatibilityResponses[keyof AgentReleasesReleaseRuntimeCompatibilityResponses];
+
 export type AgentReleasesPrecheckActivationData = {
     body: ActivationCreate;
     headers?: {
@@ -9951,7 +13302,7 @@ export type ProjectsListProjectsResponses = {
 
 export type ProjectsListProjectsResponse = ProjectsListProjectsResponses[keyof ProjectsListProjectsResponses];
 
-export type ProjectsCreateProjectData = {
+export type ProjectsCreateProjectAliasData = {
     body: ProjectCreate;
     headers?: {
         /**
@@ -9967,6 +13318,46 @@ export type ProjectsCreateProjectData = {
         namespace_id?: string | null;
     };
     url: '/api/v1/projects';
+};
+
+export type ProjectsCreateProjectAliasErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ProjectsCreateProjectAliasError = ProjectsCreateProjectAliasErrors[keyof ProjectsCreateProjectAliasErrors];
+
+export type ProjectsCreateProjectAliasResponses = {
+    /**
+     * Response Projects-Create Project Alias
+     *
+     * Successful Response
+     */
+    201: {
+        [key: string]: unknown;
+    };
+};
+
+export type ProjectsCreateProjectAliasResponse = ProjectsCreateProjectAliasResponses[keyof ProjectsCreateProjectAliasResponses];
+
+export type ProjectsCreateProjectData = {
+    body: ProjectCreate;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/projects/complete';
 };
 
 export type ProjectsCreateProjectErrors = {
@@ -10644,6 +14035,46 @@ export type ProjectsCreateSpecStandardResponses = {
 
 export type ProjectsCreateSpecStandardResponse = ProjectsCreateSpecStandardResponses[keyof ProjectsCreateSpecStandardResponses];
 
+export type ProjectsCreateSpecStandardCompleteData = {
+    body: SpecStandardCompleteCreate;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/spec-standards/complete';
+};
+
+export type ProjectsCreateSpecStandardCompleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ProjectsCreateSpecStandardCompleteError = ProjectsCreateSpecStandardCompleteErrors[keyof ProjectsCreateSpecStandardCompleteErrors];
+
+export type ProjectsCreateSpecStandardCompleteResponses = {
+    /**
+     * Response Projects-Create Spec Standard Complete
+     *
+     * Successful Response
+     */
+    201: {
+        [key: string]: unknown;
+    };
+};
+
+export type ProjectsCreateSpecStandardCompleteResponse = ProjectsCreateSpecStandardCompleteResponses[keyof ProjectsCreateSpecStandardCompleteResponses];
+
 export type ProjectsListStandardVersionsData = {
     body?: never;
     headers?: {
@@ -10913,18 +14344,19 @@ export type ConversationsListConversationModelsData = {
          */
         'X-Namespace-Id'?: string | null;
     };
-    path?: never;
-    query: {
+    path: {
         /**
          * Runtime Id
          */
         runtime_id: string;
+    };
+    query?: {
         /**
          * Namespace Id
          */
         namespace_id?: string | null;
     };
-    url: '/api/v1/conversation-catalog/models';
+    url: '/api/v1/conversation-catalog/runtimes/{runtime_id}/models';
 };
 
 export type ConversationsListConversationModelsErrors = {
@@ -10957,18 +14389,19 @@ export type ConversationsListConversationAgentsData = {
          */
         'X-Namespace-Id'?: string | null;
     };
-    path?: never;
-    query: {
+    path: {
         /**
          * Runtime Id
          */
         runtime_id: string;
+    };
+    query?: {
         /**
          * Namespace Id
          */
         namespace_id?: string | null;
     };
-    url: '/api/v1/conversation-catalog/agents';
+    url: '/api/v1/conversation-catalog/runtimes/{runtime_id}/agents';
 };
 
 export type ConversationsListConversationAgentsErrors = {
@@ -11080,6 +14513,141 @@ export type ConversationsCreateConversationResponses = {
 };
 
 export type ConversationsCreateConversationResponse = ConversationsCreateConversationResponses[keyof ConversationsCreateConversationResponses];
+
+export type ConversationsListConfigurationRevisionsData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Conversation Id
+         */
+        conversation_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/conversations/{conversation_id}/configuration-revisions';
+};
+
+export type ConversationsListConfigurationRevisionsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ConversationsListConfigurationRevisionsError = ConversationsListConfigurationRevisionsErrors[keyof ConversationsListConfigurationRevisionsErrors];
+
+export type ConversationsListConfigurationRevisionsResponses = {
+    /**
+     * Response Conversations-List Configuration Revisions
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type ConversationsListConfigurationRevisionsResponse = ConversationsListConfigurationRevisionsResponses[keyof ConversationsListConfigurationRevisionsResponses];
+
+export type ConversationsUpdateConfigurationData = {
+    body: ConversationConfigurationUpdate;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Conversation Id
+         */
+        conversation_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/conversations/{conversation_id}/configuration-revisions';
+};
+
+export type ConversationsUpdateConfigurationErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ConversationsUpdateConfigurationError = ConversationsUpdateConfigurationErrors[keyof ConversationsUpdateConfigurationErrors];
+
+export type ConversationsUpdateConfigurationResponses = {
+    /**
+     * Response Conversations-Update Configuration
+     *
+     * Successful Response
+     */
+    201: {
+        [key: string]: unknown;
+    };
+};
+
+export type ConversationsUpdateConfigurationResponse = ConversationsUpdateConfigurationResponses[keyof ConversationsUpdateConfigurationResponses];
+
+export type ConversationsPrecheckConfigurationData = {
+    body: ConversationConfigurationUpdate;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Conversation Id
+         */
+        conversation_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/conversations/{conversation_id}/configuration-revisions/precheck';
+};
+
+export type ConversationsPrecheckConfigurationErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ConversationsPrecheckConfigurationError = ConversationsPrecheckConfigurationErrors[keyof ConversationsPrecheckConfigurationErrors];
+
+export type ConversationsPrecheckConfigurationResponses = {
+    /**
+     * Response Conversations-Precheck Configuration
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type ConversationsPrecheckConfigurationResponse = ConversationsPrecheckConfigurationResponses[keyof ConversationsPrecheckConfigurationResponses];
 
 export type ConversationsReadConversationData = {
     body?: never;
@@ -11638,6 +15206,153 @@ export type WorkflowsReadWorkflowVersionResponses = {
 
 export type WorkflowsReadWorkflowVersionResponse = WorkflowsReadWorkflowVersionResponses[keyof WorkflowsReadWorkflowVersionResponses];
 
+export type WorkflowsReadWorkflowExecutionConfigurationData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Template Id
+         */
+        template_id: string;
+        /**
+         * Version Id
+         */
+        version_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/workflow-templates/{template_id}/versions/{version_id}/execution-configuration';
+};
+
+export type WorkflowsReadWorkflowExecutionConfigurationErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type WorkflowsReadWorkflowExecutionConfigurationError = WorkflowsReadWorkflowExecutionConfigurationErrors[keyof WorkflowsReadWorkflowExecutionConfigurationErrors];
+
+export type WorkflowsReadWorkflowExecutionConfigurationResponses = {
+    /**
+     * Response Workflows-Read Workflow Execution Configuration
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type WorkflowsReadWorkflowExecutionConfigurationResponse = WorkflowsReadWorkflowExecutionConfigurationResponses[keyof WorkflowsReadWorkflowExecutionConfigurationResponses];
+
+export type WorkflowsUpdateWorkflowExecutionConfigurationData = {
+    body: WorkflowExecutionConfigurationUpdate;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Template Id
+         */
+        template_id: string;
+        /**
+         * Version Id
+         */
+        version_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/workflow-templates/{template_id}/versions/{version_id}/execution-configuration';
+};
+
+export type WorkflowsUpdateWorkflowExecutionConfigurationErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type WorkflowsUpdateWorkflowExecutionConfigurationError = WorkflowsUpdateWorkflowExecutionConfigurationErrors[keyof WorkflowsUpdateWorkflowExecutionConfigurationErrors];
+
+export type WorkflowsUpdateWorkflowExecutionConfigurationResponses = {
+    /**
+     * Response Workflows-Update Workflow Execution Configuration
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type WorkflowsUpdateWorkflowExecutionConfigurationResponse = WorkflowsUpdateWorkflowExecutionConfigurationResponses[keyof WorkflowsUpdateWorkflowExecutionConfigurationResponses];
+
+export type WorkflowsPrecheckWorkflowExecutionConfigurationData = {
+    body: WorkflowExecutionConfigurationUpdate;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Template Id
+         */
+        template_id: string;
+        /**
+         * Version Id
+         */
+        version_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/workflow-templates/{template_id}/versions/{version_id}/execution-configuration/precheck';
+};
+
+export type WorkflowsPrecheckWorkflowExecutionConfigurationErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type WorkflowsPrecheckWorkflowExecutionConfigurationError = WorkflowsPrecheckWorkflowExecutionConfigurationErrors[keyof WorkflowsPrecheckWorkflowExecutionConfigurationErrors];
+
+export type WorkflowsPrecheckWorkflowExecutionConfigurationResponses = {
+    /**
+     * Response Workflows-Precheck Workflow Execution Configuration
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type WorkflowsPrecheckWorkflowExecutionConfigurationResponse = WorkflowsPrecheckWorkflowExecutionConfigurationResponses[keyof WorkflowsPrecheckWorkflowExecutionConfigurationResponses];
+
 export type WorkflowsReadEnablementData = {
     body?: never;
     headers?: {
@@ -11768,6 +15483,98 @@ export type WorkflowsPreflightWorkflowResponses = {
 };
 
 export type WorkflowsPreflightWorkflowResponse = WorkflowsPreflightWorkflowResponses[keyof WorkflowsPreflightWorkflowResponses];
+
+export type WorkflowsListVisibleWorkflowInstancesData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Template Id
+         */
+        template_id?: string | null;
+        /**
+         * Template Version Id
+         */
+        template_version_id?: string | null;
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/workflow-instances';
+};
+
+export type WorkflowsListVisibleWorkflowInstancesErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type WorkflowsListVisibleWorkflowInstancesError = WorkflowsListVisibleWorkflowInstancesErrors[keyof WorkflowsListVisibleWorkflowInstancesErrors];
+
+export type WorkflowsListVisibleWorkflowInstancesResponses = {
+    /**
+     * Response Workflows-List Visible Workflow Instances
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type WorkflowsListVisibleWorkflowInstancesResponse = WorkflowsListVisibleWorkflowInstancesResponses[keyof WorkflowsListVisibleWorkflowInstancesResponses];
+
+export type WorkflowsCreateVisibleWorkflowInstanceData = {
+    body: WorkflowInstanceCreate;
+    headers?: {
+        /**
+         * Idempotency-Key
+         */
+        'Idempotency-Key'?: string | null;
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/workflow-instances';
+};
+
+export type WorkflowsCreateVisibleWorkflowInstanceErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type WorkflowsCreateVisibleWorkflowInstanceError = WorkflowsCreateVisibleWorkflowInstanceErrors[keyof WorkflowsCreateVisibleWorkflowInstanceErrors];
+
+export type WorkflowsCreateVisibleWorkflowInstanceResponses = {
+    /**
+     * Response Workflows-Create Visible Workflow Instance
+     *
+     * Successful Response
+     */
+    201: {
+        [key: string]: unknown;
+    };
+};
+
+export type WorkflowsCreateVisibleWorkflowInstanceResponse = WorkflowsCreateVisibleWorkflowInstanceResponses[keyof WorkflowsCreateVisibleWorkflowInstanceResponses];
 
 export type WorkflowsListWorkflowInstancesData = {
     body?: never;

@@ -2,8 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useEffect, useState } from "react"
 import {
   agentsApi,
-  harnessProfilesApi,
-  tenantApi,
+  modelDefinitionsApi,
   type ValidationResult,
 } from "@/api/tenantApi"
 import { Badge } from "@/components/ui/badge"
@@ -42,21 +41,16 @@ export default function AgentEditor({
     queryKey: ["agent-draft", agentId],
     queryFn: () => agentsApi.getDraft(agentId),
   })
-  const { data: profiles } = useQuery({
-    queryKey: ["harness-profiles"],
-    queryFn: harnessProfilesApi.list,
-  })
-  const { data: providerConfigs } = useQuery({
-    queryKey: ["llm-provider-configs"],
-    queryFn: tenantApi.readLlmProviderConfigs,
+  const { data: modelDefinitions } = useQuery({
+    queryKey: ["model-definitions"],
+    queryFn: modelDefinitionsApi.list,
   })
 
   // Local editable state, initialized from draft.
   const [expectedRevision, setExpectedRevision] = useState<number | null>(null)
-  const [harnessProfileId, setHarnessProfileId] = useState<string>("")
   const [systemPrompt, setSystemPrompt] = useState("")
-  const [modelId, setModelId] = useState("")
-  const [providerConfigId, setProviderConfigId] = useState("")
+  const [preferredModelDefinitionId, setPreferredModelDefinitionId] =
+    useState("")
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
   const [timeoutSeconds, setTimeoutSeconds] = useState(3600)
@@ -70,10 +64,8 @@ export default function AgentEditor({
   useEffect(() => {
     if (draft) {
       setExpectedRevision(draft.revision)
-      setHarnessProfileId(draft.harness_profile_id ?? "")
       setSystemPrompt(draft.system_prompt)
-      setModelId(draft.model_id ?? "")
-      setProviderConfigId(draft.provider_config_id ?? "")
+      setPreferredModelDefinitionId(draft.preferred_model_definition_id ?? "")
       setDirty(false)
     }
   }, [draft])
@@ -88,13 +80,13 @@ export default function AgentEditor({
   useEffect(() => {
     if (draft) {
       setTimeoutSeconds(
-        typeof draft.config.timeout_seconds === "number"
-          ? draft.config.timeout_seconds
+        typeof draft.execution_policy.timeout_seconds === "number"
+          ? draft.execution_policy.timeout_seconds
           : 3600,
       )
       setWorkingDirectoryStrategy(
-        typeof draft.config.working_directory_strategy === "string"
-          ? draft.config.working_directory_strategy
+        typeof draft.execution_policy.working_directory_strategy === "string"
+          ? draft.execution_policy.working_directory_strategy
           : "inherit",
       )
     }
@@ -104,14 +96,13 @@ export default function AgentEditor({
     mutationFn: () =>
       agentsApi.saveDraft(agentId, {
         expected_revision: expectedRevision!,
-        harness_profile_id: harnessProfileId || null,
-        provider_config_id: providerConfigId || null,
-        model_id: modelId || null,
+        preferred_model_definition_id: preferredModelDefinitionId || null,
         system_prompt: systemPrompt,
-        config: {
+        execution_policy: {
           timeout_seconds: timeoutSeconds,
           working_directory_strategy: workingDirectoryStrategy,
         },
+        config: {},
       }),
     onSuccess: () => {
       showSuccessToast("草稿已保存")
@@ -210,8 +201,7 @@ export default function AgentEditor({
       <Tabs defaultValue="overview">
         <TabsList>
           <TabsTrigger value="overview">概览</TabsTrigger>
-          <TabsTrigger value="model">模型与提示词</TabsTrigger>
-          <TabsTrigger value="harness">Harness</TabsTrigger>
+          <TabsTrigger value="model">模型偏好与策略</TabsTrigger>
           <TabsTrigger value="capabilities">能力</TabsTrigger>
           <TabsTrigger value="publish">校验与发布</TabsTrigger>
         </TabsList>
@@ -253,46 +243,37 @@ export default function AgentEditor({
         <TabsContent value="model">
           <Card>
             <CardHeader>
-              <CardTitle>模型与系统提示词</CardTitle>
+              <CardTitle>模型偏好与系统提示词</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label>模型</Label>
+                <Label>稳定模型偏好</Label>
                 <Select
-                  value={
-                    providerConfigId && modelId
-                      ? `${providerConfigId}::${modelId}`
-                      : ""
-                  }
+                  value={preferredModelDefinitionId}
                   onValueChange={(value) => {
-                    const separator = value.indexOf("::")
-                    setProviderConfigId(value.slice(0, separator))
-                    setModelId(value.slice(separator + 2))
+                    setPreferredModelDefinitionId(value)
                     setDirty(true)
                   }}
                   disabled={!canManage || archived}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="选择当前空间已启用的模型" />
+                    <SelectValue placeholder="选择稳定模型身份" />
                   </SelectTrigger>
                   <SelectContent>
-                    {providerConfigs?.data
-                      .filter((config) => config.enabled)
-                      .flatMap((config) =>
-                        config.models
-                          .filter((model) => model.is_enabled)
-                          .map((model) => (
-                            <SelectItem
-                              key={`${config.id}::${model.model_id}`}
-                              value={`${config.id}::${model.model_id}`}
-                            >
-                              {config.config_name} /{" "}
-                              {model.display_name ?? model.model_id}
-                            </SelectItem>
-                          )),
-                      )}
+                    {modelDefinitions?.data
+                      .filter((model) => model.enabled)
+                      .map((model) => (
+                        <SelectItem key={model.id} value={model.id}>
+                          {model.display_name ?? model.model_key} ·{" "}
+                          {model.provider_family}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground">
+                  Agent 不绑定 Runtime 或路由。实际模型由 Conversation、Agent
+                  组或 Workflow 的 exact / agent_preference 配置解析并冻结。
+                </p>
               </div>
               <div className="space-y-2">
                 <Label>系统提示词</Label>
@@ -343,40 +324,6 @@ export default function AgentEditor({
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="harness">
-          <Card>
-            <CardHeader>
-              <CardTitle>Harness Profile</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Harness Profile</Label>
-                <Select
-                  value={harnessProfileId}
-                  onValueChange={(v) => {
-                    setHarnessProfileId(v)
-                    setDirty(true)
-                  }}
-                  disabled={!canManage || archived}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="选择 Harness Profile" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {profiles?.data
-                      .filter((p) => !p.archived)
-                      .map((p) => (
-                        <SelectItem key={p.id} value={p.id}>
-                          {p.name} ({p.harness_type})
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
               </div>
             </CardContent>
           </Card>

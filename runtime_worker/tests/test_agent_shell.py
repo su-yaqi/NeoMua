@@ -1,6 +1,6 @@
 import pytest
 
-from runtime_worker.agent_shell import AgentShell, RunCommand
+from runtime_worker.agent_shell import AgentShell, CodexShell, RunCommand
 
 
 def test_command_rejects_bypass_permissions() -> None:
@@ -22,3 +22,40 @@ def test_build_options_keeps_tool_boundaries() -> None:
     assert options.allowed_tools == ["Read"]
     assert options.disallowed_tools == ["Bash"]
     assert options.cwd == "/workspace"
+
+
+def test_codex_adapter_builds_explicit_engine_command() -> None:
+    command = RunCommand(
+        engine_type="codex",
+        prompt="review",
+        model="gpt-5.4",
+        permission_mode="plan",
+        cwd="/workspace",
+        add_dirs=["/shared"],
+    )
+    assert CodexShell.build_argv(command, "/usr/local/bin/codex") == [
+        "/usr/local/bin/codex",
+        "exec",
+        "--json",
+        "--ephemeral",
+        "--model",
+        "gpt-5.4",
+        "--sandbox",
+        "read-only",
+        "--cd",
+        "/workspace",
+        "--add-dir",
+        "/shared",
+        "review",
+    ]
+
+
+def test_codex_adapter_rejects_unimplemented_tool_filter_contract() -> None:
+    command = RunCommand(
+        engine_type="codex",
+        prompt="review",
+        model="gpt-5.4",
+        tools=["Read"],
+    )
+    with pytest.raises(ValueError, match="Codex tool filters"):
+        CodexShell.build_argv(command, "codex")
