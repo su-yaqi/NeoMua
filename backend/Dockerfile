@@ -34,6 +34,7 @@ COPY ./workflow_runtime/pyproject.toml /app/workflow_runtime/
 COPY ./workflow_runtime/workflow_runtime /app/workflow_runtime/workflow_runtime
 
 COPY ./backend/app /app/backend/app
+COPY ./backend/tests /app/backend/tests
 COPY ./workflow_apps /app/workflow_apps
 
 # Sync the project

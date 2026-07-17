@@ -2,8 +2,11 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 import random
+import tempfile
 import time
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -12,6 +15,7 @@ from workflow_runtime.executor import execute_runtime_job
 from runtime_worker.agent_shell import AgentShell, RunCommand
 from runtime_worker.mcp_manager import McpRuntimeManager
 from runtime_worker.release_store import AgentReleaseStore, canonical_bytes
+from runtime_worker.skill_store import SkillCacheMiss, SkillStore
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +46,7 @@ class RuntimeWorker:
         harness_capabilities: dict[str, Any] | None = None,
         capability_report_interval: float = 60,
         release_store: AgentReleaseStore | None = None,
+        skill_store: SkillStore | None = None,
         mcp_manager: McpRuntimeManager | None = None,
     ) -> None:
         self.client = client
@@ -55,6 +60,7 @@ class RuntimeWorker:
         self.capability_report_interval = capability_report_interval
         self._last_capability_report = 0.0
         self.release_store = release_store
+        self.skill_store = skill_store
         self.mcp_manager = mcp_manager
 
     async def validate_mcp_once(self) -> bool:
@@ -137,6 +143,86 @@ class RuntimeWorker:
             json=body,
         )
         self._classify_response(reported)
+        return True
+
+    async def sync_skill_once(self) -> bool:
+        if self.skill_store is None:
+            return False
+        try:
+            response = await self.client.post(
+                "/api/v1/internal/runtime/skill-sync/claim",
+                headers=self.headers,
+            )
+        except httpx.TransportError as exc:
+            raise TransientWorkerError("Skill sync claim failed") from exc
+        if response.status_code == 204:
+            return False
+        self._classify_response(response)
+        payload = response.json()
+        descriptor, name = tempfile.mkstemp(prefix="neomua-skill-", suffix=".zip")
+        archive = Path(name)
+        body: dict[str, Any]
+        try:
+            try:
+                result = self.skill_store.verify_cached(payload)
+            except SkillCacheMiss:
+                result = None
+            if result is not None:
+                os.close(descriptor)
+                body = {"status": "verified", **result}
+            else:
+                async with self.client.stream(
+                    "GET", payload["download_path"], headers=self.headers
+                ) as download:
+                    self._classify_response(download)
+                    with os.fdopen(descriptor, "wb") as target:
+                        async for chunk in download.aiter_bytes(1024 * 1024):
+                            target.write(chunk)
+                        target.flush()
+                        os.fsync(target.fileno())
+                result = self.skill_store.apply_archive(payload, archive)
+                body = {"status": "verified", **result}
+        except (OSError, ValueError, KeyError, httpx.HTTPError) as exc:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+            body = {
+                "status": "failed",
+                "content_sha256": payload.get("manifest", {}).get(
+                    "content_sha256", "0" * 64
+                ),
+                "error": {"code": "skill_sync_failed", "message": str(exc)},
+            }
+        finally:
+            archive.unlink(missing_ok=True)
+        reported = await self.client.post(
+            f"/api/v1/internal/runtime/skill-sync/{payload['attempt_id']}/result",
+            headers=self.headers,
+            json=body,
+        )
+        self._classify_response(reported)
+        if body["status"] == "verified":
+            try:
+                self.skill_store.activate(payload)
+                commit_body = {
+                    "status": "committed",
+                    "content_sha256": body["content_sha256"],
+                    "bytes_downloaded": body.get("bytes_downloaded", 0),
+                }
+            except (OSError, ValueError, KeyError) as exc:
+                commit_body = {
+                    "status": "failed",
+                    "content_sha256": body["content_sha256"],
+                    "bytes_downloaded": body.get("bytes_downloaded", 0),
+                    "error": {"code": "skill_commit_failed", "message": str(exc)},
+                }
+            committed = await self.client.post(
+                f"/api/v1/internal/runtime/skill-sync/{payload['attempt_id']}/result",
+                headers=self.headers,
+                json=commit_body,
+            )
+            self._classify_response(committed)
         return True
 
     async def report_capabilities(self) -> None:
@@ -366,7 +452,66 @@ class RuntimeWorker:
                     release_binding["resolved_spec_digest"],
                 )
                 command.add_dirs = [str(release_path)]
-                command.skills = list(release_binding.get("skill_slugs", []))
+                if release_binding.get("resolved_spec_schema_version") == "1.1":
+                    if self.skill_store is None:
+                        raise TransientWorkerError("Skill store is unavailable")
+                    try:
+                        skill_path, evidence = self.skill_store.bind_task(
+                            task_id,
+                            str(release_binding["runtime_profile_id"]),
+                            list(release_binding.get("skills", [])),
+                        )
+                    except ValueError as exc:
+                        self.skill_store.remove_task_binding(task_id)
+                        message = str(exc)
+                        code = (
+                            "skill_cache_corrupt"
+                            if "corrupt" in message or "damaged" in message
+                            else "skill_not_ready"
+                        )
+                        failed = await self.client.post(
+                            f"/api/v1/internal/runtime/skill-sync/tasks/{task_id}/preparation-failed",
+                            headers=self.headers,
+                            json={
+                                "runtime_profile_id": release_binding[
+                                    "runtime_profile_id"
+                                ],
+                                "revision": revision,
+                                "code": code,
+                                "message": message,
+                            },
+                        )
+                        self._classify_response(failed, task_scoped=True)
+                        return True
+                    usage = await self.client.post(
+                        f"/api/v1/internal/runtime/skill-sync/tasks/{task_id}/usage",
+                        headers=self.headers,
+                        json={
+                            "runtime_profile_id": release_binding["runtime_profile_id"],
+                            "skills": evidence,
+                        },
+                    )
+                    if usage.status_code >= 400:
+                        self.skill_store.remove_task_binding(task_id)
+                        failed = await self.client.post(
+                            f"/api/v1/internal/runtime/skill-sync/tasks/{task_id}/preparation-failed",
+                            headers=self.headers,
+                            json={
+                                "runtime_profile_id": release_binding[
+                                    "runtime_profile_id"
+                                ],
+                                "revision": revision,
+                                "code": "skill_usage_evidence_rejected",
+                                "message": "Control plane rejected Skill usage evidence",
+                            },
+                        )
+                        if failed.is_success:
+                            return True
+                    self._classify_response(usage, task_scoped=True)
+                    command.add_dirs.append(str(skill_path))
+                command.skills = [
+                    str(item["slug"]) for item in release_binding.get("skills", [])
+                ]
         except (KeyError, TypeError, ValueError) as exc:
             raise TransientWorkerError("claim response is invalid") from exc
 
@@ -466,6 +611,8 @@ class RuntimeWorker:
                     },
                 )
         finally:
+            if self.skill_store is not None:
+                self.skill_store.remove_task_binding(task_id)
             lease.cancel()
             try:
                 await lease
@@ -532,6 +679,7 @@ class RuntimeWorker:
                 ):
                     await self.report_capabilities()
                 validated_mcp = await self.validate_mcp_once()
+                synced_skill = await self.sync_skill_once()
                 applied = await self.apply_release_once()
                 ran_runtime_job = await self.run_runtime_job_once()
                 worked = await self.run_once()
@@ -540,6 +688,7 @@ class RuntimeWorker:
                     not worked
                     and not applied
                     and not validated_mcp
+                    and not synced_skill
                     and not ran_runtime_job
                 ):
                     await asyncio.sleep(2)

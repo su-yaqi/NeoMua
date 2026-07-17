@@ -555,11 +555,11 @@ def effective_tool_policy(
 
 
 class ResolvedAgentSpec(BaseModel):
-    schema_version: str = "1.0"
+    schema_version: str = "1.1"
     agent_id: uuid.UUID
     agent_release_id: uuid.UUID | None = None
     harness_type: str
-    harness_adapter_version: str = "claude-code-1.0"
+    harness_adapter_version: str = "claude-code-1.1"
     adapter_config: dict[str, Any]
     model: dict[str, Any]
     system_prompt: str
@@ -666,47 +666,71 @@ def resolve_agent_spec(
         select(AgentDraftSkill).where(AgentDraftSkill.agent_draft_id == draft.id)
     ).all()
     skills: list[dict[str, Any]] = []
+    skill_index: dict[uuid.UUID, dict[str, Any]] = {}
+    disabled_skill_ids = {row.skill_id for row in skill_rows if not row.enabled}
     required_tools: dict[str, list[str]] = {}
     required_mcp_tools: dict[str, list[str]] = {}
-    for skill_link in skill_rows:
-        skill_identity = session.get(SkillDefinition, skill_link.skill_id)
-        skill_version = session.get(SkillVersion, skill_link.skill_version_id)
+
+    def add_skill_identity(skill_identity: SkillDefinition | None, source: str) -> None:
         if (
             skill_identity is None
-            or skill_version is None
             or skill_identity.namespace_id != agent.namespace_id
-            or skill_version.skill_id != skill_identity.id
-            or skill_version.deprecated
+            or skill_identity.archived
+            or skill_identity.current_version_id is None
         ):
             diagnostics.append(
                 Diagnostic(
                     code="skill_dependency_invalid",
                     field="skills",
-                    message="Skill dependency is missing, deprecated, or cross-namespace",
+                    message="Skill dependency is missing, archived, unpublished, or cross-namespace",
                 )
             )
-            continue
-        skills.append(
-            {
-                "id": str(skill_identity.id),
-                "slug": skill_identity.slug,
-                "version_id": str(skill_version.id),
-                "version": skill_version.version,
-                "content_sha256": skill_version.content_sha256,
-                "manifest": skill_version.manifest,
-                "invocation_mode": skill_version.invocation_mode,
-                "files": _load_skill_files(skill_version),
-            }
-        )
+            return
+        skill_version = session.get(SkillVersion, skill_identity.current_version_id)
+        if (
+            skill_version is None
+            or skill_version.skill_id != skill_identity.id
+            or skill_version.deprecated
+        ):
+            diagnostics.append(
+                Diagnostic(
+                    code="skill_current_version_invalid",
+                    field="skills",
+                    message=f"Skill {skill_identity.slug} has no usable current version",
+                )
+            )
+            return
+        existing = skill_index.get(skill_identity.id)
+        if existing is not None:
+            if source not in existing["sources"]:
+                existing["sources"].append(source)
+            return
+        item = {
+            "id": str(skill_identity.id),
+            "slug": skill_identity.slug,
+            "enabled": True,
+            "sources": [source],
+        }
+        skill_index[skill_identity.id] = item
+        skills.append(item)
         for tool in skill_version.required_capabilities.get("tools", []):
             required_tools.setdefault(tool, []).append(
-                f"skill:{skill_identity.slug}@{skill_version.version}"
+                f"{source}/skill:{skill_identity.slug}"
+            )
+        for tool in skill_version.required_capabilities.get("mcp_tools", []):
+            required_mcp_tools.setdefault(tool, []).append(
+                f"{source}/skill:{skill_identity.slug}"
+            )
+
+    for skill_link in skill_rows:
+        if skill_link.enabled:
+            add_skill_identity(
+                session.get(SkillDefinition, skill_link.skill_id), "agent"
             )
     plugin_rows = session.exec(
         select(AgentDraftPlugin).where(AgentDraftPlugin.agent_draft_id == draft.id)
     ).all()
     plugins: list[dict[str, Any]] = []
-    seen_skill_versions = {skill["slug"]: skill["version"] for skill in skills}
     plugin_mcp_components: list[tuple[dict[str, Any], str]] = []
     plugin_tool_policies: dict[str, list[tuple[str, str]]] = {}
     plugin_config_fragments: list[dict[str, Any]] = []
@@ -738,66 +762,38 @@ def resolve_agent_spec(
             )
         for component in plugin_version.manifest.get("provides", []):
             if component.get("type") == "skill":
-                slug = component.get("slug")
-                component_version = component.get("version")
-                if (
-                    slug in seen_skill_versions
-                    and seen_skill_versions[slug] != component_version
-                ):
+                skill_identity: SkillDefinition | None = None
+                try:
+                    if component.get("skill_id"):
+                        skill_identity = session.get(
+                            SkillDefinition, uuid.UUID(str(component["skill_id"]))
+                        )
+                    elif component.get("skill_version_id"):
+                        legacy_version = session.get(
+                            SkillVersion,
+                            uuid.UUID(str(component["skill_version_id"])),
+                        )
+                        if legacy_version:
+                            skill_identity = session.get(
+                                SkillDefinition, legacy_version.skill_id
+                            )
+                except (TypeError, ValueError):
+                    skill_identity = None
+                if skill_identity is None:
                     diagnostics.append(
                         Diagnostic(
-                            code="dependency_version_conflict",
+                            code="plugin_skill_invalid",
                             field="plugins",
-                            message=f"Skill {slug} is required at multiple versions",
+                            message=f"Plugin {plugin_identity.slug} contains an unavailable Skill identity",
                         )
                     )
                     continue
-                if slug not in seen_skill_versions:
-                    skill_version = session.get(
-                        SkillVersion, uuid.UUID(str(component.get("skill_version_id")))
-                    )
-                    skill_identity = (
-                        session.get(SkillDefinition, skill_version.skill_id)
-                        if skill_version
-                        else None
-                    )
-                    if (
-                        skill_version is None
-                        or skill_identity is None
-                        or skill_identity.namespace_id != agent.namespace_id
-                        or skill_version.deprecated
-                    ):
-                        diagnostics.append(
-                            Diagnostic(
-                                code="plugin_skill_invalid",
-                                field="plugins",
-                                message=f"Plugin {plugin_identity.slug} contains an unavailable Skill",
-                            )
-                        )
-                        continue
-                    skills.append(
-                        {
-                            "id": str(skill_identity.id),
-                            "slug": skill_identity.slug,
-                            "version_id": str(skill_version.id),
-                            "version": skill_version.version,
-                            "content_sha256": skill_version.content_sha256,
-                            "manifest": skill_version.manifest,
-                            "invocation_mode": skill_version.invocation_mode,
-                            "files": _load_skill_files(skill_version),
-                        }
-                    )
-                    for tool in skill_version.required_capabilities.get("tools", []):
-                        required_tools.setdefault(tool, []).append(
-                            f"plugin:{plugin_identity.slug}/skill:{skill_identity.slug}@{skill_version.version}"
-                        )
-                    for tool in skill_version.required_capabilities.get(
-                        "mcp_tools", []
-                    ):
-                        required_mcp_tools.setdefault(tool, []).append(
-                            f"plugin:{plugin_identity.slug}/skill:{skill_identity.slug}@{skill_version.version}"
-                        )
-                    seen_skill_versions[slug] = component_version
+                if skill_identity.id in disabled_skill_ids:
+                    continue
+                add_skill_identity(
+                    skill_identity,
+                    f"plugin:{plugin_identity.slug}@{plugin_version.version}",
+                )
             elif component.get("type") == "mcp_server":
                 plugin_mcp_components.append(
                     (
@@ -830,11 +826,6 @@ def resolve_agent_spec(
                 "provides": plugin_version.manifest.get("provides", []),
             }
         )
-    for skill in skills:
-        for tool in skill["manifest"].get("required_mcp_tools", []):
-            required_mcp_tools.setdefault(tool, []).append(
-                f"skill:{skill['slug']}@{skill['version']}"
-            )
     adapter_config = {**(profile.config if profile else {}), **draft.config}
     for contribution in plugin_config_fragments:
         source = contribution["source"]
@@ -1147,9 +1138,9 @@ def resolve_agent_spec(
     dependency_lock = {
         "skills": [
             {
+                "id": item["id"],
                 "slug": item["slug"],
-                "version": item["version"],
-                "digest": item["content_sha256"],
+                "sources": item["sources"],
             }
             for item in spec.skills
         ],
@@ -1193,8 +1184,8 @@ def resolve_agent_spec(
 
 
 class ClaudeCodeHarnessAdapter:
-    schema_version = "1.0"
-    adapter_version = "claude-code-1.0"
+    schema_version = "1.1"
+    adapter_version = "claude-code-1.1"
 
     def validate_spec(self, spec: ResolvedAgentSpec) -> list[Diagnostic]:
         if spec.harness_type != "claude_code":
@@ -1267,19 +1258,14 @@ class ClaudeCodeHarnessAdapter:
         return diagnostics
 
     def materialization_manifest(self, spec: ResolvedAgentSpec) -> dict[str, Any]:
-        files = [
-            {
-                "path": f".claude/skills/{item['slug']}/{file['path']}",
-                "content_digest": file["sha256"],
-            }
-            for item in spec.skills
-            for file in item["files"]
-        ]
         options = self.build_execution_options(spec)
         return {
             "schema_version": self.schema_version,
             "adapter_version": self.adapter_version,
-            "files": files,
+            "files": [],
+            "skill_identities": [
+                {"id": item["id"], "slug": item["slug"]} for item in spec.skills
+            ],
             "mcp_config_digest": canonical_digest(spec.mcp_servers),
             "tool_schema_digest": canonical_digest(spec.tools),
             "options_digest": canonical_digest(options),

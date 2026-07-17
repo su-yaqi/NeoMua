@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
 import { Plus } from "lucide-react"
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 import {
   mcpServersApi,
@@ -55,18 +55,38 @@ export function CreateSkillCompleteDialog() {
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
   const [version, setVersion] = useState("1.0.0")
-  const [file, setFile] = useState<File | null>(null)
+  const [skillMd, setSkillMd] = useState("")
+  const [customized, setCustomized] = useState(false)
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { showSuccessToast, showErrorToast } = useCustomToast()
+  useEffect(() => {
+    if (customized) return
+    setSkillMd(`---
+name: ${slug || "skill-identifier"}
+description: ${description || name || "Describe this Skill"}
+version: ${version}
+platforms: [linux, darwin]
+invocation_mode: discoverable
+required_tools: [Read]
+required_mcp_tools: []
+config_schema: {}
+content_types: [md]
+source: internal
+---
+# ${name || "Skill instructions"}
+
+Describe when and how the agent should use this Skill.
+`)
+  }, [customized, description, name, slug, version])
   const mutation = useMutation({
     mutationFn: () =>
-      skillsApi.createComplete({
+      skillsApi.createFromEditor({
         slug,
         name,
         description: description || undefined,
         version,
-        file: file!,
+        skill_md: skillMd,
       }),
     onSuccess: ({ skill }) => {
       showSuccessToast("Skill 与首个不可变版本已创建")
@@ -88,7 +108,7 @@ export function CreateSkillCompleteDialog() {
         <DialogHeader>
           <DialogTitle>新建 Skill</DialogTitle>
           <DialogDescription>
-            填写身份并上传首个版本；扫描失败不会留下空 Skill。
+            填写身份并编辑首个 SKILL.md；校验失败不会留下空 Skill。
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
@@ -112,12 +132,29 @@ export function CreateSkillCompleteDialog() {
             />
           </div>
           <div className="space-y-2">
-            <Label>Skill ZIP</Label>
-            <Input
-              type="file"
-              accept=".zip"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            <div className="flex items-center justify-between">
+              <Label>SKILL.md</Label>
+              {customized ? (
+                <Button size="sm" variant="ghost" onClick={() => setCustomized(false)}>
+                  恢复标准模板
+                </Button>
+              ) : null}
+            </div>
+            <textarea
+              className="min-h-72 w-full rounded border bg-background p-3 font-mono text-xs"
+              value={skillMd}
+              spellCheck={false}
+              onChange={(event) => {
+                setCustomized(true)
+                setSkillMd(event.target.value)
+              }}
             />
+            <details>
+              <summary className="cursor-pointer text-sm">安全预览</summary>
+              <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded bg-muted p-3 text-xs">
+                {skillMd.replace(/^---[\s\S]*?---\s*/, "")}
+              </pre>
+            </details>
           </div>
         </div>
         <DialogFooter>
@@ -127,10 +164,10 @@ export function CreateSkillCompleteDialog() {
             </Button>
           </DialogClose>
           <Button
-            disabled={!name || !slug || !version || !file || mutation.isPending}
+            disabled={!name || !slug || !version || !skillMd || mutation.isPending}
             onClick={() => mutation.mutate()}
           >
-            {mutation.isPending ? "扫描并创建中..." : "扫描并创建"}
+            {mutation.isPending ? "校验并创建中..." : "创建并发布"}
           </Button>
         </DialogFooter>
       </DialogContent>

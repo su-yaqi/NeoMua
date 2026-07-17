@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
 import { useEffect, useState } from "react"
-import { pluginsApi } from "@/api/tenantApi"
+import { pluginsApi, skillsApi } from "@/api/tenantApi"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -24,11 +24,46 @@ function Page() {
     queryKey: ["plugin", pluginId],
     queryFn: () => pluginsApi.get(pluginId),
   })
+  const skillCatalog = useQuery({
+    queryKey: ["skills"],
+    queryFn: () => skillsApi.list(),
+  })
   useEffect(() => {
     if (data?.components)
       setComponents(JSON.stringify(data.components, null, 2))
   }, [data])
   const revision = Number(data?.revision ?? 1)
+  const selectedSkillIds = (() => {
+    try {
+      return new Set(
+        (JSON.parse(components) as Array<Record<string, unknown>>)
+          .filter((item) => item.type === "skill")
+          .map((item) => String(item.skill_id)),
+      )
+    } catch {
+      return new Set<string>()
+    }
+  })()
+  const toggleSkill = (skillId: string) => {
+    let parsed: Array<Record<string, unknown>>
+    try {
+      parsed = JSON.parse(components) as Array<Record<string, unknown>>
+    } catch {
+      return
+    }
+    const without = parsed.filter(
+      (item) => !(item.type === "skill" && item.skill_id === skillId),
+    )
+    setComponents(
+      JSON.stringify(
+        selectedSkillIds.has(skillId)
+          ? without
+          : [...without, { type: "skill", skill_id: skillId }],
+        null,
+        2,
+      ),
+    )
+  }
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold">
@@ -42,6 +77,22 @@ function Page() {
           <CardTitle>声明式 Contributions</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
+          <div className="space-y-2 rounded border p-3">
+            <p className="text-sm font-medium">
+              Skill 身份贡献（内容版本由 Runtime 独立同步）
+            </p>
+            {skillCatalog.data?.data.map((skill) => (
+              <label className="flex items-center gap-2 text-sm" key={skill.id}>
+                <input
+                  type="checkbox"
+                  checked={selectedSkillIds.has(skill.id)}
+                  disabled={!canManage || skill.archived}
+                  onChange={() => toggleSkill(skill.id)}
+                />
+                {skill.name} · {skill.slug} · 当前 v{skill.current_version.version}
+              </label>
+            ))}
+          </div>
           <textarea
             disabled={!canManage}
             className="min-h-64 w-full rounded border bg-background p-3 font-mono text-xs"
@@ -55,7 +106,7 @@ function Page() {
                   await pluginsApi.saveDraft(pluginId, {
                     expected_revision: revision,
                     harness_type: "claude_code",
-                    adapter_schema_version: "1.0",
+                    adapter_schema_version: "1.1",
                     adapter_config: {},
                     components: JSON.parse(components),
                   })

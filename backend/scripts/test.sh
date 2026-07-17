@@ -3,6 +3,10 @@
 set -e
 set -x
 
-coverage run -m pytest tests/
+if [ "$#" -eq 0 ]; then
+    set -- tests/
+fi
+
+coverage run -m pytest "$@"
 coverage report
-coverage html --title "${@-coverage}"
+coverage html --title "coverage"

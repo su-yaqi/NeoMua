@@ -15,3 +15,11 @@
 ## 内容分发
 
 admin 上传 ZIP 前先取得数据库并发额度并检查临时目录容量；平台逐文件计算哈希、拒绝路径逃逸/符号链接并签署不可变清单。每个 `(node, logical_target)` 同时最多一个在途 deployment。节点下载后验证双签名、ZIP 与文件哈希，在目标级文件锁内 staging 并原子切换 current；重启时以 current symlink 为事实来源修复 state，无法证明状态时标记 degraded。
+
+## Skill 后台同步与任务使用
+
+1. Agent Activation/Reconcile 从 Release 的 Skill identity 集合维护每个 Runtime 的订阅数，并把各 Skill 的 `current_version_id` 写为 desired；current 变化推进 generation。
+2. 平台 Worker 周期轮询 claim；节点由 WSS 通知后请求 desired。两者都按内容摘要查本地缓存，未命中才下载签名 Bundle。
+3. Runtime 验证签名、Manifest 摘要、内容摘要与文件安全性，写入内容寻址缓存后回传 verified；控制面确认 generation 仍为当前目标，再通知 commit，Runtime 原子推进本地 applied 指针并回传 committed。
+4. 同步失败按有限退避重试并保留旧 applied；首次没有 applied 的必需 Skill 会阻断 Activation/Task，不能静默缺省执行。
+5. 任务领取后只核对本地 applied 缓存，为该 task 建立只读绑定并上报 Skill/version/digest/generation。执行结束移除任务绑定；整个热路径不访问控制面查询 Skill、不下载、不解包、不重新解析。

@@ -9,7 +9,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, select
 
 from app import crud
-from app.agent_management.capability_models import AgentRelease, RuntimeAgentRelease
+from app.agent_management.capability_models import (
+    AgentRelease,
+    RuntimeAgentRelease,
+    SkillDefinition,
+)
 from app.api.deps import CurrentUser, SessionDep, require_namespace_runtime_user
 from app.core.config import settings
 from app.models import NamespaceRole
@@ -18,6 +22,7 @@ from app.runtime.models import (
     AgentEvent,
     AgentEventType,
     AgentTask,
+    AgentTaskSkillUsage,
     RuntimeNode,
     RuntimeProfile,
     RuntimeRouteMode,
@@ -50,6 +55,7 @@ class TaskPublic(BaseModel):
     retry_of_task_id: uuid.UUID | None
     created_at: datetime
     updated_at: datetime
+    skill_usage: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class TasksPublic(BaseModel):
@@ -210,6 +216,7 @@ def create_task(
         "agent_release_id": str(release.id),
         "agent_release_version": release.version,
         "resolved_spec_digest": release.resolved_spec_digest,
+        "resolved_spec_schema_version": release.resolved_spec_schema_version,
         "system_prompt": resolved_spec["system_prompt"],
         "provider_config_id": resolved_spec["model"]["provider_config_id"],
         "model_id": resolved_spec["model"]["model_id"],
@@ -309,7 +316,27 @@ def read_task(
     _: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
 ) -> TaskPublic:
-    return _public(_get_task(session, task_id, namespace_id))
+    task = _get_task(session, task_id, namespace_id)
+    result = _public(task)
+    usages = session.exec(
+        select(AgentTaskSkillUsage).where(AgentTaskSkillUsage.task_id == task.id)
+    ).all()
+    result.skill_usage = []
+    for usage in usages:
+        skill = session.get(SkillDefinition, usage.skill_id)
+        result.skill_usage.append(
+            {
+                "skill_id": str(usage.skill_id),
+                "skill_name": skill.name if skill else None,
+                "skill_slug": skill.slug if skill else None,
+                "version_id": str(usage.version_id),
+                "version": usage.version,
+                "content_sha256": usage.content_sha256,
+                "runtime_generation": usage.runtime_generation,
+                "reported_at": usage.reported_at.isoformat(),
+            }
+        )
+    return result
 
 
 @router.get("/{task_id}/events")

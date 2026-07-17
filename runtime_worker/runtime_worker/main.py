@@ -8,6 +8,7 @@ import httpx
 from runtime_worker.capabilities import discover_harness_capabilities
 from runtime_worker.mcp_manager import McpRuntimeManager
 from runtime_worker.release_store import AgentReleaseStore
+from runtime_worker.skill_store import SkillStore
 from runtime_worker.worker import RuntimeWorker
 
 
@@ -31,6 +32,7 @@ async def main() -> None:
                 f"{socket.gethostname()}:{index + 1}",
                 harness_capabilities=capabilities,
                 release_store=AgentReleaseStore(release_root),
+                skill_store=SkillStore(release_root / "skill-cache"),
                 mcp_manager=McpRuntimeManager(),
             )
             for index in range(concurrency)

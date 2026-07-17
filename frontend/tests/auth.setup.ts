@@ -2,13 +2,14 @@ import { test as setup } from "@playwright/test"
 import { randomEmail, randomPassword } from "./utils/random"
 
 const authFile = "playwright/.auth/user.json"
+const apiUrl = process.env.VITE_API_URL ?? "http://127.0.0.1:8000"
 
 setup("authenticate", async ({ page, request }) => {
   const email = randomEmail()
   const password = randomPassword()
 
   const createResponse = await request.post(
-    "http://127.0.0.1:8000/api/v1/private/users/",
+    `${apiUrl}/api/v1/private/users/`,
     {
       data: {
         email,

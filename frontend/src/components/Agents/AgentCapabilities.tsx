@@ -36,16 +36,9 @@ export default function AgentCapabilities({
     queryKey: ["agent-capabilities", agentId],
     queryFn: () => agentsApi.getCapabilities(agentId),
   })
-  const { data: skillVersions = [] } = useQuery({
-    queryKey: ["skill-version-options"],
-    queryFn: async () => {
-      const identities = await skillsApi.list()
-      return (
-        await Promise.all(
-          identities.data.map((item) => skillsApi.versions(item.id)),
-        )
-      ).flatMap((item) => item.data)
-    },
+  const { data: skillCatalog } = useQuery({
+    queryKey: ["skills"],
+    queryFn: () => skillsApi.list(),
   })
   const { data: pluginVersions = [] } = useQuery({
     queryKey: ["plugin-version-options"],
@@ -115,15 +108,17 @@ export default function AgentCapabilities({
     queryKey: ["tools"],
     queryFn: toolsApi.list,
   })
-  const [skills, setSkills] = useState<string[]>([])
+  const [skills, setSkills] = useState<Record<string, boolean>>({})
   const [plugins, setPlugins] = useState<string[]>([])
   const [mcpBindings, setMcpBindings] = useState<Record<string, string[]>>({})
   const [toolPolicies, setToolPolicies] = useState<Record<string, string>>({})
   useEffect(() => {
     if (!current) return
     setSkills(
-      (current.skills as Array<{ skill_version_id: string }>).map(
-        (item) => item.skill_version_id,
+      Object.fromEntries(
+        (current.skills as Array<{ skill_id: string; enabled: boolean }>).map(
+          (item) => [item.skill_id, item.enabled],
+        ),
       ),
     )
     setPlugins(
@@ -153,7 +148,14 @@ export default function AgentCapabilities({
     mutationFn: async (kind: "skills" | "plugins" | "mcp" | "tools") => {
       const revision = Number(current.revision)
       if (kind === "skills")
-        return agentsApi.setSkills(agentId, revision, skills)
+        return agentsApi.setSkills(
+          agentId,
+          revision,
+          Object.entries(skills).map(([skill_id, enabled]) => ({
+            skill_id,
+            enabled,
+          })),
+        )
       if (kind === "plugins")
         return agentsApi.setPlugins(agentId, revision, plugins)
       if (kind === "mcp")
@@ -196,19 +198,35 @@ export default function AgentCapabilities({
     <div className="grid gap-4 xl:grid-cols-2">
       <Card>
         <CardHeader>
-          <CardTitle>精确 Skill Version</CardTitle>
+          <CardTitle>Skills（始终使用最新已同步版本）</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-          {skillVersions.map((item) => (
-            <label className="flex gap-2" key={item.id}>
-              <input
-                type="checkbox"
-                checked={skills.includes(item.id)}
-                disabled={!canManage || item.deprecated}
-                onChange={() => toggle(item.id, skills, setSkills)}
-              />
-              {item.version} · {item.content_sha256.slice(0, 12)}
-            </label>
+          {skillCatalog?.data.map((item) => (
+            <div className="flex items-center justify-between gap-3" key={item.id}>
+              <div>
+                <p className="font-medium">{item.name}</p>
+                <p className="text-xs text-muted-foreground">
+                  {item.slug} · 当前 v{item.current_version.version}
+                </p>
+              </div>
+              <select
+                className="rounded border bg-background px-2 py-1 text-sm"
+                value={
+                  item.id in skills ? (skills[item.id] ? "enabled" : "disabled") : "unbound"
+                }
+                disabled={!canManage || item.archived}
+                onChange={(event) => {
+                  const next = { ...skills }
+                  if (event.target.value === "unbound") delete next[item.id]
+                  else next[item.id] = event.target.value === "enabled"
+                  setSkills(next)
+                }}
+              >
+                <option value="unbound">未绑定</option>
+                <option value="enabled">启用</option>
+                <option value="disabled">显式禁用</option>
+              </select>
+            </div>
           ))}
           {canManage && (
             <Button onClick={() => save.mutate("skills")}>保存 Skills</Button>

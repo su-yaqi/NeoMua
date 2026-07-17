@@ -21,6 +21,7 @@ from node_runtime.runtime_config import RuntimeConfigManager
 from node_runtime.artifacts.controller import ArtifactController
 from node_runtime.agent_releases import AgentReleaseController
 from node_runtime.mcp_validation import NodeMcpValidationController
+from node_runtime.skill_sync import NodeSkillSyncController
 
 
 class PermanentConnectionError(RuntimeError):
@@ -73,6 +74,7 @@ class NodeConnection:
         secret_fingerprints: Callable[[], dict[str, str]] | None = None,
         agent_release_controller: AgentReleaseController | None = None,
         mcp_validation_controller: NodeMcpValidationController | None = None,
+        skill_sync_controller: NodeSkillSyncController | None = None,
     ) -> None:
         self.url = websocket_url(platform_url)
         self.identity = identity
@@ -86,6 +88,7 @@ class NodeConnection:
         self.secret_fingerprints = secret_fingerprints
         self.agent_release_controller = agent_release_controller
         self.mcp_validation_controller = mcp_validation_controller
+        self.skill_sync_controller = skill_sync_controller
 
     async def connect_once(self) -> None:
         try:
@@ -223,6 +226,15 @@ class NodeConnection:
                     else:
                         await websocket.send(response.model_dump_json())
                 if release_responses:
+                    continue
+            if self.skill_sync_controller:
+                skill_responses = await self.skill_sync_controller.handle(message)
+                for response in skill_responses:
+                    if self.task_controller:
+                        self.task_controller.outbox.put_nowait(response)
+                    else:
+                        await websocket.send(response.model_dump_json())
+                if skill_responses:
                     continue
             if self.mcp_validation_controller:
                 validation_responses = await self.mcp_validation_controller.handle(

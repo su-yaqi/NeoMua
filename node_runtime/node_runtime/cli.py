@@ -19,6 +19,7 @@ from node_runtime.runtime_config import RuntimeConfigManager
 from node_runtime.artifacts.controller import ArtifactController
 from node_runtime.artifacts.installer import ArtifactInstaller
 from node_runtime.agent_releases import AgentReleaseController
+from node_runtime.skill_sync import NodeSkillSyncController
 from node_runtime.mcp_validation import NodeMcpValidationController
 from node_runtime.secrets import node_secret_fingerprints
 from node_runtime.service import SystemdServiceManager, UnsupportedServiceManager
@@ -108,11 +109,15 @@ def run(state_dir: Path = typer.Option(Path("/var/lib/neomua-node"))) -> None:
     agent_release_controller = AgentReleaseController(
         identity.node_id, state_dir / "agent-releases"
     )
+    skill_sync_controller = NodeSkillSyncController(
+        str(config.platform_url), identity.node_id, state_dir / "skill-cache"
+    )
     task_controller = NodeTaskController(
         identity.node_id,
         spool,
         route_store,
         release_store=agent_release_controller.store,
+        skill_store=skill_sync_controller.store,
     )
     installer = ArtifactInstaller(
         {key: Path(value) for key, value in config.artifact_roots.items()},
@@ -143,5 +148,6 @@ def run(state_dir: Path = typer.Option(Path("/var/lib/neomua-node"))) -> None:
         secret_fingerprints=lambda: node_secret_fingerprints(secret_index),
         agent_release_controller=agent_release_controller,
         mcp_validation_controller=NodeMcpValidationController(identity.node_id),
+        skill_sync_controller=skill_sync_controller,
     )
     asyncio.run(connection.run_forever())

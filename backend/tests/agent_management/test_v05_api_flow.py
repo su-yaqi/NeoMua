@@ -111,20 +111,20 @@ def test_v05_managed_capability_release_and_precheck_flow(
 
     suffix = uuid.uuid4().hex[:8]
     skill_slug = f"managed-skill-{suffix}"
-    skill = client.post(
-        f"{settings.API_V1_STR}/skills",
-        json={"slug": skill_slug, "name": "Managed Skill"},
-        headers=headers,
-    )
-    assert skill.status_code == 201, skill.text
-    skill_version = client.post(
-        f"{settings.API_V1_STR}/skills/{skill.json()['id']}/versions",
-        data={"version": "1.0.0"},
+    skill_result = client.post(
+        f"{settings.API_V1_STR}/skills/complete",
+        data={
+            "slug": skill_slug,
+            "name": "Managed Skill",
+            "version": "1.0.0",
+        },
         files={"file": ("skill.zip", _skill_zip(skill_slug), "application/zip")},
         headers=headers,
     )
-    assert skill_version.status_code == 201, skill_version.text
-    assert skill_version.json()["validation_result"]["status"] == "validated"
+    assert skill_result.status_code == 201, skill_result.text
+    skill = skill_result.json()["skill"]
+    skill_version = skill_result.json()["version"]
+    assert skill_version["validation_result"]["status"] == "validated"
 
     mcp = client.post(
         f"{settings.API_V1_STR}/mcp-servers",
@@ -254,7 +254,7 @@ def test_v05_managed_capability_release_and_precheck_flow(
         f"{settings.API_V1_STR}/agents/{agent_id}/draft/skills",
         json={
             "expected_revision": 2,
-            "skills": [{"skill_version_id": skill_version.json()["id"]}],
+            "skills": [{"skill_id": skill["id"], "enabled": True}],
         },
         headers=headers,
     )

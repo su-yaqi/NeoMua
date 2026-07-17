@@ -53,6 +53,12 @@ from app.runtime.models import (
 )
 from app.runtime.policy import TaskStatus, require_task_transition
 from app.runtime.security import redact_event_payload, require_internal_runtime
+from app.runtime.skill_sync import (
+    ensure_release_skill_subscriptions,
+    reconcile_runtime_skill_subscriptions,
+    release_skill_blockers,
+    release_skills_ready,
+)
 
 router = APIRouter(tags=["agent-releases"])
 internal_router = APIRouter(
@@ -396,6 +402,7 @@ def _create_deployment(
     *,
     attempt: int,
     expires_at: datetime,
+    subscribe_skills: bool = True,
 ) -> AgentDeployment:
     spec = release.resolved_spec
     try:
@@ -423,6 +430,17 @@ def _create_deployment(
     diagnostics = ClaudeCodeHarnessAdapter().validate_target(
         parsed, runtime, capability_inventory
     )
+    if subscribe_skills:
+        try:
+            ensure_release_skill_subscriptions(session, release, runtime.id)
+        except ValueError as exc:
+            diagnostics.append(
+                Diagnostic(
+                    code="skill_current_version_invalid",
+                    field="skills",
+                    message=str(exc),
+                )
+            )
     for mcp in parsed.mcp_servers:
         target = session.exec(
             select(McpTargetBinding).where(
@@ -551,6 +569,7 @@ def precheck_activation(
             runtime,
             attempt=1,
             expires_at=expires_at,
+            subscribe_skills=False,
         )
         for runtime in runtimes
     ]
@@ -839,6 +858,24 @@ def claim_agent_deployment(
                 row.error = {"code": "release_missing"}
                 session.add(row)
                 continue
+            blockers = release_skill_blockers(session, release, runtime.id)
+            if blockers:
+                failed = any(item.get("status") == "failed" for item in blockers)
+                row.status = (
+                    AgentDeploymentStatus.FAILED
+                    if failed
+                    else AgentDeploymentStatus.INCOMPATIBLE
+                )
+                row.error = {
+                    "code": "skill_sync_failed" if failed else "skill_sync_blocked",
+                    "skills": blockers,
+                }
+                session.add(row)
+                if activation is not None:
+                    _recompute_activation(session, activation)
+                continue
+            if not release_skills_ready(session, release, runtime.id):
+                continue
             row.status = AgentDeploymentStatus.DISPATCHED
             row.updated_at = now
             session.add(row)
@@ -932,6 +969,7 @@ def report_agent_deployment(
             binding.materialization_digest = body.materialization_digest
             binding.updated_at = datetime.now(timezone.utc)
         session.add(binding)
+        reconcile_runtime_skill_subscriptions(session, runtime.id)
     deployment.updated_at = datetime.now(timezone.utc)
     session.add(deployment)
     _recompute_activation(session, activation)

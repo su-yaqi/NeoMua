@@ -139,12 +139,12 @@
 
 内部 `/internal/runtime/*` 仅接受独立服务凭证；浏览器 JWT 无法访问。Model Gateway token 绑定 namespace/runtime/task/model，不能换模型或跨空间使用。
 
-### agent management（v0.5）
+### agent management（v0.5-v0.8）
 
 | 资源 | 主要正式接口 |
 |---|---|
 | Agent/Harness | `/agents`、`/agents/{id}/draft`、`/agents/{id}/draft/validate`、`/harness-profiles` |
-| Skill/Tool | `/skills[/{id}/versions]`、`/tools/catalog`、`/tools/{key}/namespace-policy`、`/agents/{id}/draft/skills|tools` |
+| Skill/Tool | `/skills`、`/skills/complete/editor`、`/skills/{id}/draft[/files]`、`/skills/{id}/draft/validate|publish|import`、`/skills/{id}/current-version`、`/skills/{id}/versions`、`/tools/catalog`、`/tools/{key}/namespace-policy`、`/agents/{id}/draft/skills|tools` |
 | MCP | `/mcp-servers[/{id}/revisions]`、`/mcp-revisions/{id}/targets`、`/mcp-targets/{id}/secret|validate|validations|runtime` |
 | Plugin | `/plugins[/{id}/draft|versions]`、`/agents/{id}/draft/plugins` |
 | Release/Activation | `/agents/{id}/releases`、`/agent-releases/{id}`、`/agent-releases/{id}/activations/precheck|activations`、`/agent-deployments/{id}/retry|rollback` |
@@ -154,6 +154,27 @@
 发布、激活、Plugin Version、retry/rollback 和任务创建使用 `Idempotency-Key`。MCP/Release Worker 领取与回传继续位于受独立服务凭证保护的 `/internal/runtime/*`；节点结果经已鉴权 WSS 转发。读接口不返回 secret value。
 
 v0.7 为 Agent、Skill、MCP 与 Plugin 增加 complete-create 接口，由一次请求原子创建身份与必要初始草稿/版本/Revision；失败不遗留只有名称和标识的半成品。用户输入字段仍使用稳定的 `slug` API 名称，但 UI 展示为“唯一标识”。
+
+v0.8 的 `POST /skills/complete/editor` 原子创建 Skill 身份、草稿与初始文件；旧 ZIP complete-create 继续兼容，但后续版本统一进入草稿工作台。草稿文件支持创建、读取、更新、移动和删除，任何内容变更推进 revision 并使旧校验失效；只有当前 revision 校验通过后才能发布。发布和 `POST /skills/{id}/current-version` 以 `Idempotency-Key` 原子推进 `current_version_id` 并保留切换审计。已发布版本只读，可浏览文件或 deprecate，不能覆盖内容。
+
+`PUT /agents/{id}/draft/skills` 与 Plugin 草稿中的 Skill contribution 只提交 Skill identity 和 enabled 状态，不接受版本锁定；Release Resolved Spec 同样只携带 Skill 身份。
+
+### Skill Runtime 同步（v0.8）
+
+| Method | Path | 权限与用途 |
+|---|---|---|
+| GET | `/skills/{skill_id}/runtime-sync` | admin/developer 查看一个 Skill 在各 Runtime 的 desired/applied 矩阵 |
+| GET | `/runtimes/{runtime_id}/skills` | admin/developer 查看一个 Runtime 的全部 Skill 同步状态 |
+| POST | `/runtime-skill-states/{state_id}/retry` | admin 显式重试失败状态 |
+| POST | `/skills/{skill_id}/runtime-sync/{runtime_id}/retry` | admin 按 Skill/Runtime 目标显式重试 |
+| POST | `/internal/runtime/skill-sync/claim` | 平台 Worker 在任务循环之外领取待同步目标 |
+| GET | `/internal/runtime/skill-sync/{attempt_id}/download` | 平台 Worker 使用服务凭证下载目标签名 Bundle |
+| POST | `/internal/runtime/skill-sync/{attempt_id}/result` | 平台 Worker 回传 verified/committed/failed 两阶段结果 |
+| GET | `/node/skill-sync/{attempt_id}/download` | 节点凭目标绑定短期令牌下载 Bundle |
+| POST | `/internal/runtime/skill-sync/tasks/{task_id}/usage` | Runtime 上报单次任务实际使用的本地 Skill 证据 |
+| POST | `/internal/runtime/skill-sync/tasks/{task_id}/preparation-failed` | Runtime 上报缺失或损坏缓存并阻断任务准备 |
+
+节点侧同步通知、desired 请求、结果和 commit 通过设备鉴权 WSS 消息完成。同步与任务使用互不调用：任务领取只核对本地 applied 缓存并创建任务级只读绑定，不在热路径下载、解包或重新解析 Skill。
 
 ### project management（v0.6）
 

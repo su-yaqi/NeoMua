@@ -24,6 +24,7 @@ from app.api.routes import (
     private,
     runtime_artifacts,
     runtime_internal,
+    runtime_skills,
     runtimes,
     users,
     utils,
@@ -47,6 +48,9 @@ api_router.include_router(runtimes.router)
 api_router.include_router(runtime_internal.router)
 api_router.include_router(runtime_artifacts.router)
 api_router.include_router(runtime_artifacts.node_router)
+api_router.include_router(runtime_skills.router)
+api_router.include_router(runtime_skills.internal_router)
+api_router.include_router(runtime_skills.node_router)
 api_router.include_router(node_enrollment.admin_router)
 api_router.include_router(node_enrollment.node_router)
 api_router.include_router(node_socket.router)

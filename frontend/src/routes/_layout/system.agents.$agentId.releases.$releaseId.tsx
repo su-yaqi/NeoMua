@@ -84,6 +84,23 @@ function Page() {
           <code className="text-xs">
             {String(release?.resolved_spec_digest ?? "")}
           </code>
+          <div className="mt-3 rounded border p-3">
+            <p className="text-sm font-medium">允许使用的 Skill 身份</p>
+            <p className="mb-2 text-xs text-muted-foreground">
+              Release 不锁定内容版本；每个任务使用 Runtime 当时已同步并应用的版本。
+            </p>
+            {(
+              ((release?.dependency_lock as Record<string, unknown> | undefined)
+                ?.skills as Array<Record<string, unknown>> | undefined) ?? []
+            ).map((skill) => (
+              <div className="flex justify-between py-1 text-sm" key={String(skill.id)}>
+                <span>{String(skill.slug)}</span>
+                <span className="text-muted-foreground">
+                  {((skill.sources as string[] | undefined) ?? []).join("、")}
+                </span>
+              </div>
+            ))}
+          </div>
           <pre className="mt-2 max-h-96 overflow-auto rounded bg-muted p-3 text-xs">
             {JSON.stringify(release?.manifest ?? {}, null, 2)}
           </pre>

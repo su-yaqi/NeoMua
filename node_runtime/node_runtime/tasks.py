@@ -8,6 +8,7 @@ from runtime_worker.agent_shell import AgentShell, RunCommand
 from runtime_worker.mcp_manager import McpRuntimeManager
 from runtime_worker.permissions import validate_permission_mode
 from runtime_worker.release_store import AgentReleaseStore
+from runtime_worker.skill_store import SkillStore
 from workflow_runtime.executor import execute_runtime_job
 
 from node_runtime.model_route import ModelRouteStore, build_route_env
@@ -33,7 +34,7 @@ class TaskDispatcher:
         self.spool = spool
         self.executor = executor
 
-    def accept(self, command: dict) -> DispatchDecision:
+    def accept(self, command: dict, *, start: bool = True) -> DispatchDecision:
         task_id = str(command["task_id"])
         revision = int(command["revision"])
         validate = getattr(self.executor, "validate", None)
@@ -42,7 +43,7 @@ class TaskDispatcher:
         result = DispatchDecision(
             self.spool.record_dispatch(task_id, revision, command["snapshot"])
         )
-        if result == DispatchDecision.ACCEPTED:
+        if result == DispatchDecision.ACCEPTED and start:
             self.executor.start(task_id, revision, command)
         return result
 
@@ -57,6 +58,7 @@ class NodeTaskExecutor:
         *,
         shell: AgentShell | None = None,
         release_store: AgentReleaseStore | None = None,
+        skill_store: SkillStore | None = None,
         approval_callback=None,
         delegation_callback=None,
         mcp_manager: McpRuntimeManager | None = None,
@@ -69,6 +71,7 @@ class NodeTaskExecutor:
         self.running: dict[str, asyncio.Task] = {}
         self.cancelling: set[str] = set()
         self.release_store = release_store
+        self.skill_store = skill_store
         self.approval_callback = approval_callback
         self.delegation_callback = delegation_callback
         self.mcp_manager = mcp_manager or McpRuntimeManager()
@@ -82,6 +85,13 @@ class NodeTaskExecutor:
             str(snapshot["agent_release_id"]),
             str(snapshot["resolved_spec_digest"]),
         )
+        if snapshot.get("resolved_spec_schema_version") == "1.1":
+            if self.skill_store is None:
+                raise ValueError("skill_store_unavailable")
+            self.skill_store.usage_evidence(
+                str(snapshot["runtime_profile_id"]),
+                list(snapshot.get("skills", [])),
+            )
         validate_permission_mode(snapshot.get("permission_mode", "default"))
         cwd = snapshot.get("working_directory")
         roots = snapshot.get("allowed_working_roots", [])
@@ -97,6 +107,21 @@ class NodeTaskExecutor:
         self.running[task_id] = asyncio.create_task(
             self._run_with_lease(task_id, revision, command)
         )
+
+    def prepare_skill_binding(self, command: dict) -> list[dict]:
+        snapshot = command["snapshot"]
+        if snapshot.get("resolved_spec_schema_version") != "1.1":
+            return []
+        if self.skill_store is None:
+            raise ValueError("skill_store_unavailable")
+        task_id = str(command["task_id"])
+        path, evidence = self.skill_store.bind_task(
+            task_id,
+            str(snapshot["runtime_profile_id"]),
+            list(snapshot.get("skills", [])),
+        )
+        command["_skill_binding_path"] = str(path)
+        return evidence
 
     async def _run_with_lease(self, task_id: str, revision: int, command: dict) -> None:
         lease = asyncio.create_task(self._lease_loop(task_id, revision))
@@ -149,7 +174,12 @@ class NodeTaskExecutor:
                             str(snapshot["agent_release_id"]),
                             str(snapshot["resolved_spec_digest"]),
                         )
-                    )
+                    ),
+                    *(
+                        [str(command["_skill_binding_path"])]
+                        if command.get("_skill_binding_path")
+                        else []
+                    ),
                 ],
                 skills=[str(item["slug"]) for item in snapshot.get("skills", [])],
                 roundtable_participants=list(
@@ -228,6 +258,8 @@ class NodeTaskExecutor:
             self.spool.append(task_id, sequence, "error", payload)
             await self._queue_pending(task_id)
         finally:
+            if self.skill_store is not None:
+                self.skill_store.remove_task_binding(task_id)
             self.spool.mark_dispatch_state(task_id, "terminal")
 
     async def _queue_pending(self, task_id: str) -> None:
@@ -277,6 +309,7 @@ class NodeTaskController:
         *,
         shell: AgentShell | None = None,
         release_store: AgentReleaseStore | None = None,
+        skill_store: SkillStore | None = None,
     ) -> None:
         self.node_id = node_id
         self.spool = spool
@@ -284,6 +317,7 @@ class NodeTaskController:
         self.approval_waiters: dict[str, asyncio.Future[bool]] = {}
         self.delegation_waiters: dict[str, asyncio.Future[dict]] = {}
         self.runtime_jobs: dict[str, asyncio.Task] = {}
+        self.pending_tasks: dict[str, tuple[int, dict]] = {}
         self.executor = NodeTaskExecutor(
             spool,
             route_store,
@@ -291,6 +325,7 @@ class NodeTaskController:
             node_id,
             shell=shell,
             release_store=release_store,
+            skill_store=skill_store,
             approval_callback=self._request_approval,
             delegation_callback=self._request_delegation,
         )
@@ -338,8 +373,29 @@ class NodeTaskController:
             return responses
         if message.type == "task_dispatch":
             try:
-                decision = self.dispatcher.accept(message.payload)
+                decision = self.dispatcher.accept(message.payload, start=False)
+                if decision == DispatchDecision.ACCEPTED:
+                    evidence = self.executor.prepare_skill_binding(message.payload)
+                elif (
+                    decision == DispatchDecision.DUPLICATE
+                    and self.executor.skill_store is not None
+                    and message.payload["snapshot"].get("resolved_spec_schema_version")
+                    == "1.1"
+                ):
+                    evidence = self.executor.skill_store.usage_evidence(
+                        str(message.payload["snapshot"]["runtime_profile_id"]),
+                        list(message.payload["snapshot"].get("skills", [])),
+                    )
+                else:
+                    evidence = []
             except Exception as exc:
+                self.spool.mark_dispatch_state(
+                    str(message.payload.get("task_id", "")), "terminal"
+                )
+                if self.executor.skill_store is not None:
+                    self.executor.skill_store.remove_task_binding(
+                        str(message.payload.get("task_id", ""))
+                    )
                 return [
                     envelope(
                         "task_rejected",
@@ -348,6 +404,11 @@ class NodeTaskController:
                     )
                 ]
             if decision in {DispatchDecision.ACCEPTED, DispatchDecision.DUPLICATE}:
+                if decision == DispatchDecision.ACCEPTED:
+                    self.pending_tasks[str(message.payload["task_id"])] = (
+                        int(message.payload["revision"]),
+                        message.payload,
+                    )
                 return [
                     envelope(
                         "task_accepted",
@@ -356,9 +417,14 @@ class NodeTaskController:
                             "task_id": message.payload["task_id"],
                             "revision": message.payload["revision"],
                             "duplicate": decision == DispatchDecision.DUPLICATE,
+                            "skill_evidence": evidence,
                         },
                     )
                 ]
+            if self.executor.skill_store is not None:
+                self.executor.skill_store.remove_task_binding(
+                    str(message.payload["task_id"])
+                )
             return [
                 envelope(
                     "task_rejected",
@@ -366,6 +432,20 @@ class NodeTaskController:
                     {"task_id": message.payload["task_id"], "reason": decision.value},
                 )
             ]
+        if message.type == "task_accept_ack":
+            task_id = str(message.payload["task_id"])
+            pending = self.pending_tasks.pop(task_id, None)
+            if pending is not None:
+                revision, command = pending
+                self.executor.start(task_id, revision, command)
+            return []
+        if message.type == "task_accept_rejected":
+            task_id = str(message.payload["task_id"])
+            self.pending_tasks.pop(task_id, None)
+            if self.executor.skill_store is not None:
+                self.executor.skill_store.remove_task_binding(task_id)
+            self.spool.mark_dispatch_state(task_id, "terminal")
+            return []
         if message.type == "task_events_ack":
             self.spool.acknowledge(
                 str(message.payload["task_id"]),

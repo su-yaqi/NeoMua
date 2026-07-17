@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ValidationError
+from sqlalchemy import or_
 from sqlmodel import col, select
 
 from app.agent_management.capabilities import (
@@ -38,6 +39,14 @@ from app.agent_management.release_routes import (
     request_tool_approval,
 )
 from app.api.deps import SessionDep
+from app.api.routes.runtime_skills import (
+    SkillSyncResult,
+    SkillUsageItem,
+    apply_skill_sync_result,
+    create_sync_attempt,
+    record_task_skill_usage,
+    sync_payload,
+)
 from app.conversation_management.models import (
     AgentDelegation,
     Conversation,
@@ -78,6 +87,8 @@ from app.runtime.models import (
     RuntimeProfile,
     RuntimeRouteMode,
     RuntimeSecret,
+    RuntimeSkillState,
+    RuntimeSkillSyncAttempt,
 )
 from app.runtime.policy import TaskStatus, require_task_transition
 from app.runtime.repository import (
@@ -88,6 +99,13 @@ from app.runtime.repository import (
     reserve_node_tasks,
 )
 from app.runtime.security import issue_gateway_token
+from app.runtime.skill_sync import (
+    issue_skill_download_token,
+    reconcile_runtime_skill_subscriptions,
+    release_skill_blockers,
+    release_skills_committing,
+    release_skills_ready,
+)
 
 router = APIRouter(prefix="/node", tags=["node-socket"])
 
@@ -141,6 +159,16 @@ async def _send_pending_control(
             task.dispatch_reserved_until = None
             session.add(task)
             session.commit()
+            continue
+        release = (
+            session.get(AgentRelease, task.agent_release_id)
+            if task.agent_release_id
+            else None
+        )
+        if release is not None and release_skills_committing(
+            session, release, runtime.id
+        ):
+            release_task_reservation(session, task.id, connection_id)
             continue
         route: dict[str, Any] = {"mode": runtime.route_mode.value}
         if runtime.route_mode == RuntimeRouteMode.PLATFORM_GATEWAY:
@@ -358,6 +386,7 @@ async def _send_pending_agent_releases(
         websocket, session, node.id, connection_id
     ):
         return
+    await _send_pending_skill_sync(websocket, session, node, connection_id)
     deployments = session.exec(
         select(AgentDeployment)
         .where(
@@ -385,6 +414,24 @@ async def _send_pending_agent_releases(
             deployment.status = AgentDeploymentStatus.FAILED
             deployment.error = {"code": "release_missing"}
             session.add(deployment)
+            continue
+        blockers = release_skill_blockers(session, release, runtime.id)
+        if blockers:
+            failed = any(item.get("status") == "failed" for item in blockers)
+            deployment.status = (
+                AgentDeploymentStatus.FAILED
+                if failed
+                else AgentDeploymentStatus.INCOMPATIBLE
+            )
+            deployment.error = {
+                "code": "skill_sync_failed" if failed else "skill_sync_blocked",
+                "skills": blockers,
+            }
+            session.add(deployment)
+            if activation is not None:
+                _recompute_activation(session, activation)
+            continue
+        if not release_skills_ready(session, release, runtime.id):
             continue
         capability_inventory = {
             "runtime_type": "node",
@@ -425,6 +472,63 @@ async def _send_pending_agent_releases(
             session.commit()
             raise
     session.commit()
+
+
+async def _send_pending_skill_sync(
+    websocket: WebSocket,
+    session: SessionDep,
+    node: RuntimeNode,
+    connection_id: uuid.UUID,
+) -> None:
+    if node.runtime_profile_id is None or not await _connection_is_current(
+        websocket, session, node.id, connection_id
+    ):
+        return
+    state = session.exec(
+        select(RuntimeSkillState)
+        .where(
+            RuntimeSkillState.runtime_profile_id == node.runtime_profile_id,
+            RuntimeSkillState.subscription_count > 0,
+            or_(
+                RuntimeSkillState.status == "pending",
+                (
+                    (RuntimeSkillState.status == "failed")
+                    & (RuntimeSkillState.retry_count < 5)
+                    & (RuntimeSkillState.next_retry_at <= datetime.now(timezone.utc))
+                ),
+                (
+                    (RuntimeSkillState.status == "syncing")
+                    & (
+                        RuntimeSkillState.updated_at
+                        <= datetime.now(timezone.utc) - timedelta(minutes=10)
+                    )
+                ),
+                (
+                    (RuntimeSkillState.status == "committing")
+                    & (
+                        RuntimeSkillState.updated_at
+                        <= datetime.now(timezone.utc) - timedelta(minutes=1)
+                    )
+                ),
+            ),
+            col(RuntimeSkillState.desired_version_id).is_not(None),
+        )
+        .order_by(col(RuntimeSkillState.updated_at))
+        .with_for_update(skip_locked=True)
+    ).first()
+    if state is None:
+        return
+    await websocket.send_json(
+        _envelope(
+            "skill_sync_requested",
+            node.id,
+            {
+                "runtime_skill_state_id": str(state.id),
+                "skill_id": str(state.skill_id),
+                "generation": state.generation,
+            },
+        )
+    )
 
 
 async def _send_tool_approval_decisions(
@@ -1260,6 +1364,55 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                 )
                 task.updated_at = datetime.now(timezone.utc)
                 session.add(task)
+                if task.snapshot.get("resolved_spec_schema_version") == "1.1":
+                    try:
+                        evidence = [
+                            SkillUsageItem.model_validate(item)
+                            for item in message.payload.get("skill_evidence", [])
+                        ]
+                        record_task_skill_usage(
+                            session,
+                            task,
+                            current.runtime_profile_id,
+                            evidence,
+                        )
+                    except (HTTPException, ValidationError) as exc:
+                        session.rollback()
+                        rejected_task = session.exec(
+                            select(AgentTask)
+                            .where(AgentTask.id == task_id)
+                            .with_for_update()
+                        ).first()
+                        if rejected_task is not None and rejected_task.status in {
+                            TaskStatus.QUEUED,
+                            TaskStatus.DISPATCHED,
+                        }:
+                            require_task_transition(
+                                rejected_task.status, TaskStatus.REJECTED
+                            )
+                            rejected_task.status = TaskStatus.REJECTED
+                            rejected_task.final_result = {
+                                "code": "task_skill_evidence_rejected",
+                                "detail": str(exc),
+                            }
+                            rejected_task.completed_at = datetime.now(timezone.utc)
+                            rejected_task.dispatch_connection_id = None
+                            rejected_task.dispatch_reserved_until = None
+                            session.add(rejected_task)
+                            session.commit()
+                        await websocket.send_json(
+                            _envelope(
+                                "task_accept_rejected",
+                                node.id,
+                                {
+                                    "code": "task_skill_evidence_rejected",
+                                    "task_id": str(task_id),
+                                    "detail": str(exc),
+                                },
+                                message.message_id,
+                            )
+                        )
+                        continue
                 session.commit()
                 await websocket.send_json(
                     _envelope(
@@ -1525,6 +1678,151 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                         message.message_id,
                     )
                 )
+            elif message.type == "skill_sync_desired_request":
+                try:
+                    state_id = uuid.UUID(message.payload["runtime_skill_state_id"])
+                    generation = int(message.payload["generation"])
+                except (KeyError, TypeError, ValueError):
+                    state_id = uuid.UUID(int=0)
+                    generation = -1
+                state = session.exec(
+                    select(RuntimeSkillState)
+                    .where(RuntimeSkillState.id == state_id)
+                    .with_for_update()
+                ).first()
+                if (
+                    state is None
+                    or state.runtime_profile_id != current.runtime_profile_id
+                    or state.generation != generation
+                    or state.subscription_count <= 0
+                ):
+                    await websocket.send_json(
+                        _envelope(
+                            "skill_sync_unavailable",
+                            node.id,
+                            {"code": "skill_sync_desired_scope_mismatch"},
+                            message.message_id,
+                        )
+                    )
+                    continue
+                try:
+                    attempt, skill, version = create_sync_attempt(
+                        session, state, trigger="notification"
+                    )
+                except ValueError as exc:
+                    if state.status != "blocked":
+                        state.status = "failed"
+                        state.last_error = {
+                            "code": "skill_bundle_invalid",
+                            "message": str(exc),
+                        }
+                    session.add(state)
+                    session.commit()
+                    await websocket.send_json(
+                        _envelope(
+                            "skill_sync_unavailable",
+                            node.id,
+                            {"code": state.status, "detail": state.last_error},
+                            message.message_id,
+                        )
+                    )
+                    continue
+                payload = sync_payload(attempt, skill, version)
+                payload.update(
+                    {
+                        "runtime_profile_id": str(state.runtime_profile_id),
+                        "download_path": f"/api/v1/node/skill-sync/{attempt.id}/download",
+                        "download_token": issue_skill_download_token(
+                            attempt_id=attempt.id,
+                            node_id=node.id,
+                            runtime_profile_id=state.runtime_profile_id,
+                            skill_id=state.skill_id,
+                            version_id=version.id,
+                            content_sha256=version.content_sha256,
+                            storage_key=version.storage_key,
+                        ),
+                    }
+                )
+                session.commit()
+                await websocket.send_json(
+                    _envelope(
+                        "skill_sync_desired",
+                        node.id,
+                        payload,
+                        message.message_id,
+                    )
+                )
+            elif message.type == "skill_sync_result":
+                try:
+                    attempt_id = uuid.UUID(message.payload["attempt_id"])
+                    body = SkillSyncResult.model_validate(
+                        {
+                            key: value
+                            for key, value in message.payload.items()
+                            if key != "attempt_id"
+                        }
+                    )
+                    state = session.exec(
+                        select(RuntimeSkillState)
+                        .join(
+                            RuntimeSkillSyncAttempt,
+                            col(RuntimeSkillSyncAttempt.runtime_skill_state_id)
+                            == RuntimeSkillState.id,
+                        )
+                        .where(RuntimeSkillSyncAttempt.id == attempt_id)
+                    ).first()
+                except (KeyError, ValueError, ValidationError):
+                    state = None
+                if (
+                    state is None
+                    or state.runtime_profile_id != current.runtime_profile_id
+                ):
+                    await websocket.send_json(
+                        _envelope(
+                            "error",
+                            node.id,
+                            {"code": "skill_sync_scope_mismatch"},
+                            message.message_id,
+                        )
+                    )
+                    continue
+                try:
+                    result = apply_skill_sync_result(attempt_id, body, session)
+                except HTTPException as exc:
+                    session.rollback()
+                    await websocket.send_json(
+                        _envelope(
+                            "error",
+                            node.id,
+                            {
+                                "code": "skill_sync_result_rejected",
+                                "detail": exc.detail,
+                            },
+                            message.message_id,
+                        )
+                    )
+                    continue
+                if body.status == "verified" and result["status"] == "committing":
+                    await websocket.send_json(
+                        _envelope(
+                            "skill_sync_commit",
+                            node.id,
+                            {"attempt_id": str(attempt_id)},
+                            message.message_id,
+                        )
+                    )
+                    continue
+                await websocket.send_json(
+                    _envelope(
+                        "skill_sync_result_ack",
+                        node.id,
+                        {"attempt_id": str(attempt_id), "status": result["status"]},
+                        message.message_id,
+                    )
+                )
+                await _send_pending_agent_releases(
+                    websocket, session, current, connection_id
+                )
             elif message.type == "agent_release_result":
                 try:
                     deployment_id = uuid.UUID(message.payload["deployment_id"])
@@ -1621,6 +1919,9 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                         )
                         agent_binding.updated_at = datetime.now(timezone.utc)
                     session.add(agent_binding)
+                    reconcile_runtime_skill_subscriptions(
+                        session, deployment.runtime_profile_id
+                    )
                 deployment.updated_at = datetime.now(timezone.utc)
                 session.add(deployment)
                 _recompute_activation(session, activation)

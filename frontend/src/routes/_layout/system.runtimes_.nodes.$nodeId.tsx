@@ -4,6 +4,7 @@ import { createFileRoute } from "@tanstack/react-router"
 import { mcpServersApi, tenantApi } from "@/api/tenantApi"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import RuntimeSkillMatrix from "@/components/Runtimes/RuntimeSkillMatrix"
 
 type NodeMcpTarget = {
   id: string
@@ -105,6 +106,14 @@ function RuntimeNodePage() {
           </div>
         </CardContent>
       </Card>
+      {node.data?.runtime_profile_id ? (
+        <Card>
+          <CardHeader><CardTitle>Skill 同步状态</CardTitle></CardHeader>
+          <CardContent>
+            <RuntimeSkillMatrix runtimeId={node.data.runtime_profile_id} />
+          </CardContent>
+        </Card>
+      ) : null}
       <Card>
         <CardHeader>
           <CardTitle>MCP 本地凭证与目标就绪状态</CardTitle>

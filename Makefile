@@ -52,7 +52,7 @@ test-backend:
 	docker compose exec -T backend bash scripts/tests-start.sh
 
 test-e2e:
-	docker compose exec -T playwright bunx playwright test
+	docker compose --profile test run --rm --build playwright bunx playwright test
 
 generate-client:
 	bash ./scripts/generate-client.sh

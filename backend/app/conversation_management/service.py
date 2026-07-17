@@ -722,6 +722,7 @@ def create_agent_task(
             "agent_release_id": str(release.id),
             "agent_release_version": release.version,
             "resolved_spec_digest": release.resolved_spec_digest,
+            "resolved_spec_schema_version": release.resolved_spec_schema_version,
             "system_prompt": system_prompt,
             "provider_config_id": resolved_spec["model"]["provider_config_id"],
             "model_id": resolved_spec["model"]["model_id"],
@@ -733,6 +734,9 @@ def create_agent_task(
             "require_approval_tools": resolved_spec["policies"].get(
                 "require_approval_tools", []
             ),
+            "skills": resolved_spec["skills"],
+            "plugins": resolved_spec["plugins"],
+            "mcp_servers": resolved_spec["mcp_servers"],
             "working_directory": runtime.config.get("cwd"),
             "timeout_seconds": int(runtime.config.get("timeout_seconds", 3600)),
             "conversation_configuration_revision_id": (
@@ -1075,9 +1079,11 @@ def conversation_public(session: Session, conversation: Conversation) -> dict[st
         if conversation.current_configuration_revision_id
         else None
     )
-    active_ids = set(current.participant_ids) if current is not None else {
-        str(item.id) for item in agents
-    }
+    active_ids = (
+        set(current.participant_ids)
+        if current is not None
+        else {str(item.id) for item in agents}
+    )
     organizer_id = (
         str(current.organizer_agent_id)
         if current is not None and current.organizer_agent_id

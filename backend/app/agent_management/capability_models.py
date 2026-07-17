@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, cast
 
-from sqlalchemy import JSON, Column, UniqueConstraint
+from sqlalchemy import JSON, Column, ForeignKey, Text, UniqueConstraint, Uuid
 from sqlalchemy import DateTime as _DateTime
 from sqlalchemy import Enum as _SAEnum
 from sqlmodel import Field, SQLModel
@@ -61,6 +61,34 @@ class SkillDefinition(SQLModel, table=True):
     name: str = Field(max_length=255)
     description: str | None = None
     archived: bool = False
+    current_version_id: uuid.UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            Uuid,
+            ForeignKey(
+                "skill_version.id",
+                name="fk_skill_definition_current_version_id",
+                ondelete="RESTRICT",
+                use_alter=True,
+            ),
+            nullable=True,
+            index=True,
+        ),
+    )
+    draft_id: uuid.UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            Uuid,
+            ForeignKey(
+                "skill_draft.id",
+                name="fk_skill_definition_draft_id",
+                ondelete="SET NULL",
+                use_alter=True,
+            ),
+            nullable=True,
+            index=True,
+        ),
+    )
     created_by: uuid.UUID | None = Field(
         default=None, foreign_key="user.id", ondelete="SET NULL"
     )
@@ -103,8 +131,104 @@ class SkillVersion(SQLModel, table=True):
     validation_result: dict[str, Any] = Field(
         default_factory=dict, sa_column=Column(JSON, nullable=False)
     )
+    manifest_digest: str | None = Field(default=None, max_length=64)
+    signature: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    signing_public_key: str | None = Field(
+        default=None, sa_column=Column(Text, nullable=True)
+    )
     deprecated: bool = False
     created_by: uuid.UUID | None = Field(
+        default=None, foreign_key="user.id", ondelete="SET NULL"
+    )
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+    published_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+
+
+class SkillDraft(SQLModel, table=True):
+    __tablename__ = "skill_draft"
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    skill_id: uuid.UUID = Field(
+        foreign_key="skill_definition.id",
+        nullable=False,
+        ondelete="CASCADE",
+        unique=True,
+        index=True,
+    )
+    revision: int = 1
+    base_version_id: uuid.UUID | None = Field(
+        default=None, foreign_key="skill_version.id", ondelete="SET NULL"
+    )
+    content_sha256: str | None = Field(default=None, max_length=64)
+    validated_revision: int | None = None
+    validation_digest: str | None = Field(default=None, max_length=64)
+    validation_result: dict[str, Any] | None = Field(
+        default=None, sa_column=Column(JSON, nullable=True)
+    )
+    updated_by: uuid.UUID | None = Field(
+        default=None, foreign_key="user.id", ondelete="SET NULL"
+    )
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+    updated_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+
+
+class SkillDraftFile(SQLModel, table=True):
+    __tablename__ = "skill_draft_file"
+    __table_args__ = (
+        UniqueConstraint("draft_id", "path", name="uq_skill_draft_file_path"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    draft_id: uuid.UUID = Field(
+        foreign_key="skill_draft.id",
+        nullable=False,
+        ondelete="CASCADE",
+        index=True,
+    )
+    path: str = Field(max_length=1024)
+    mime_type: str = Field(max_length=255)
+    size: int
+    content_sha256: str = Field(max_length=64, index=True)
+    storage_key: str = Field(max_length=1024)
+    is_text: bool = True
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+    updated_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+
+
+class SkillCurrentVersionChange(SQLModel, table=True):
+    __tablename__ = "skill_current_version_change"
+    __table_args__ = (
+        UniqueConstraint(
+            "skill_id", "idempotency_key", name="uq_skill_current_version_change_key"
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    skill_id: uuid.UUID = Field(
+        foreign_key="skill_definition.id",
+        nullable=False,
+        ondelete="CASCADE",
+        index=True,
+    )
+    from_version_id: uuid.UUID | None = Field(
+        default=None, foreign_key="skill_version.id", ondelete="RESTRICT"
+    )
+    to_version_id: uuid.UUID = Field(
+        foreign_key="skill_version.id", nullable=False, ondelete="RESTRICT"
+    )
+    action: str = Field(max_length=32)
+    idempotency_key: str = Field(max_length=255)
+    changed_by: uuid.UUID | None = Field(
         default=None, foreign_key="user.id", ondelete="SET NULL"
     )
     created_at: datetime = Field(
@@ -191,9 +315,10 @@ class AgentDraftSkill(SQLModel, table=True):
     skill_id: uuid.UUID = Field(
         foreign_key="skill_definition.id", nullable=False, ondelete="RESTRICT"
     )
-    skill_version_id: uuid.UUID = Field(
-        foreign_key="skill_version.id", nullable=False, ondelete="RESTRICT"
+    skill_version_id: uuid.UUID | None = Field(
+        default=None, foreign_key="skill_version.id", nullable=True, ondelete="RESTRICT"
     )
+    enabled: bool = True
 
 
 class AgentDraftToolPolicy(SQLModel, table=True):

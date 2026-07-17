@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { tenantApi } from "@/api/tenantApi"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import RuntimeConfigDialog from "./RuntimeConfigDialog"
+import RuntimeSkillMatrix from "./RuntimeSkillMatrix"
 import TestConversationSheet from "./TestConversationSheet"
 
 export default function PlatformRuntimeCard({
@@ -50,6 +51,12 @@ export default function PlatformRuntimeCard({
         ) : (
           <p className="text-sm text-muted-foreground">尚未配置平台运行时。</p>
         )}
+        {runtime.data ? (
+          <div className="mt-5 border-t pt-4">
+            <p className="mb-2 text-sm font-medium">Skill 同步状态</p>
+            <RuntimeSkillMatrix runtimeId={runtime.data.id} />
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   )

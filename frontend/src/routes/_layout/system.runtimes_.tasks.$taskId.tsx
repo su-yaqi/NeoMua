@@ -114,6 +114,30 @@ function RuntimeTaskPage() {
           </details>
         </CardContent>
       </Card>
+      {task.data?.skill_usage?.length ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>实际 Skill 使用记录</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {task.data.skill_usage.map((usage) => (
+              <button
+                type="button"
+                key={String(usage.skill_id)}
+                className="grid w-full gap-2 rounded border p-3 text-left text-sm md:grid-cols-4"
+                onClick={() =>
+                  window.location.assign(`/system/skills/${String(usage.skill_id)}`)
+                }
+              >
+                <span>{String(usage.skill_name ?? usage.skill_slug)}</span>
+                <span>v{String(usage.version)}</span>
+                <code>{String(usage.content_sha256).slice(0, 16)}</code>
+                <span>generation {String(usage.runtime_generation)}</span>
+              </button>
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
       {((approvals.data?.data ?? []) as Array<Record<string, unknown>>).map(
         (approval) => (
           <Card key={String(approval.id)}>

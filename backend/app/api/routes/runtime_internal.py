@@ -51,6 +51,7 @@ from app.runtime.security import (
     require_internal_runtime,
     verify_gateway_token,
 )
+from app.runtime.skill_sync import release_skills_committing
 
 router = APIRouter(
     prefix="/internal/runtime",
@@ -321,6 +322,8 @@ def claim_platform_task(body: ClaimInput, session: SessionDep) -> dict[str, Any]
         session.add(task)
         session.commit()
         raise HTTPException(409, "release_not_active")
+    if release_skills_committing(session, release, runtime.id):
+        raise HTTPException(204)
     mcp_runtime_configs: list[dict[str, Any]] = []
     for server in task.snapshot.get("mcp_servers", []):
         binding = session.exec(
@@ -405,12 +408,12 @@ def claim_platform_task(body: ClaimInput, session: SessionDep) -> dict[str, Any]
         "task_id": str(task.id),
         "revision": task.revision,
         "release_binding": {
+            "runtime_profile_id": str(runtime.id),
             "agent_id": str(release.agent_id),
             "release_id": str(release.id),
             "resolved_spec_digest": release.resolved_spec_digest,
-            "skill_slugs": [
-                item["slug"] for item in release.resolved_spec.get("skills", [])
-            ],
+            "resolved_spec_schema_version": release.resolved_spec_schema_version,
+            "skills": release.resolved_spec.get("skills", []),
         },
         "mcp_runtime_configs": mcp_runtime_configs,
         "command": {

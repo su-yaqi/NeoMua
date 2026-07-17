@@ -80,8 +80,12 @@ def test_refresh_rotates_and_replay_revokes_family(client: TestClient) -> None:
     replacement = client.cookies.get("neomua_refresh")
     assert replacement and replacement != old_refresh
 
+    client.cookies.delete("neomua_refresh")
     client.cookies.set(
-        "neomua_refresh", old_refresh, path=f"{settings.API_V1_STR}/login"
+        "neomua_refresh",
+        old_refresh,
+        domain="testserver.local",
+        path=f"{settings.API_V1_STR}/login",
     )
     replay_csrf = client.cookies.get("neomua_csrf")
     replay = client.post(
@@ -93,8 +97,12 @@ def test_refresh_rotates_and_replay_revokes_family(client: TestClient) -> None:
     )
     assert replay.status_code == 401
 
+    client.cookies.delete("neomua_refresh")
     client.cookies.set(
-        "neomua_refresh", replacement, path=f"{settings.API_V1_STR}/login"
+        "neomua_refresh",
+        replacement,
+        domain="testserver.local",
+        path=f"{settings.API_V1_STR}/login",
     )
     assert (
         client.post(

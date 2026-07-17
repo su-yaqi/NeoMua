@@ -9,7 +9,12 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlmodel import col, select
 
-from app.agent_management.capability_models import AgentRelease, RuntimeAgentRelease
+from app.agent_management.capability_models import (
+    AgentRelease,
+    RuntimeAgentRelease,
+    SkillDefinition,
+    SkillVersion,
+)
 from app.api.deps import (
     CurrentUser,
     SessionDep,
@@ -387,6 +392,7 @@ def create_session_message(
             "agent_release_id": str(release.id),
             "agent_release_version": release.version,
             "resolved_spec_digest": release.resolved_spec_digest,
+            "resolved_spec_schema_version": release.resolved_spec_schema_version,
             "system_prompt": resolved_spec["system_prompt"],
             "model_id": resolved_spec["model"]["model_id"],
             "permission_mode": resolved_spec["policies"]["permission_mode"],
@@ -460,7 +466,23 @@ def invoke_session_skill(
         ),
         None,
     )
-    if skill is None or skill.get("invocation_mode") != "explicit_user_message":
+    skill_identity = None
+    skill_version = None
+    if skill is not None:
+        try:
+            skill_identity = session.get(
+                SkillDefinition, uuid.UUID(str(skill.get("id")))
+            )
+        except (TypeError, ValueError):
+            skill_identity = None
+        if skill_identity and skill_identity.current_version_id:
+            skill_version = session.get(SkillVersion, skill_identity.current_version_id)
+    if (
+        skill is None
+        or skill_identity is None
+        or skill_version is None
+        or skill_version.invocation_mode != "explicit_user_message"
+    ):
         raise HTTPException(
             409, "Skill is not an explicit invocation in this Session Release"
         )
@@ -468,7 +490,6 @@ def invoke_session_skill(
         {
             "type": "skill_invocation",
             "skill": skill_slug,
-            "version": skill["version"],
             "arguments": body.arguments,
         },
         ensure_ascii=False,

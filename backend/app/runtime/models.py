@@ -240,6 +240,115 @@ class AgentTask(SQLModel, table=True):
     completed_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
 
 
+class RuntimeSkillState(SQLModel, table=True):
+    __tablename__ = "runtime_skill_state"
+    __table_args__ = (
+        UniqueConstraint(
+            "runtime_profile_id", "skill_id", name="uq_runtime_skill_state"
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    namespace_id: uuid.UUID = Field(
+        foreign_key="namespace.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    runtime_profile_id: uuid.UUID = Field(
+        foreign_key="runtime_profile.id",
+        nullable=False,
+        ondelete="CASCADE",
+        index=True,
+    )
+    skill_id: uuid.UUID = Field(
+        foreign_key="skill_definition.id",
+        nullable=False,
+        ondelete="CASCADE",
+        index=True,
+    )
+    desired_version_id: uuid.UUID | None = Field(
+        default=None, foreign_key="skill_version.id", ondelete="RESTRICT"
+    )
+    desired_digest: str | None = Field(default=None, max_length=64)
+    applied_version_id: uuid.UUID | None = Field(
+        default=None, foreign_key="skill_version.id", ondelete="RESTRICT"
+    )
+    applied_digest: str | None = Field(default=None, max_length=64)
+    generation: int = 1
+    applied_generation: int | None = None
+    status: str = Field(default="pending", max_length=32, index=True)
+    subscription_count: int = 0
+    retry_count: int = 0
+    next_retry_at: datetime | None = Field(
+        default=None, sa_type=DateTime(timezone=True)
+    )
+    last_error: dict[str, Any] | None = Field(
+        default=None, sa_column=Column(POSTGRES_JSON, nullable=True)
+    )
+    last_reconciled_at: datetime | None = Field(
+        default=None, sa_type=DateTime(timezone=True)
+    )
+    applied_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    updated_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+
+
+class RuntimeSkillSyncAttempt(SQLModel, table=True):
+    __tablename__ = "runtime_skill_sync_attempt"
+    __table_args__ = (
+        UniqueConstraint(
+            "runtime_skill_state_id", "attempt_no", name="uq_runtime_skill_attempt"
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    runtime_skill_state_id: uuid.UUID = Field(
+        foreign_key="runtime_skill_state.id",
+        nullable=False,
+        ondelete="CASCADE",
+        index=True,
+    )
+    attempt_no: int
+    generation: int
+    version_id: uuid.UUID = Field(
+        foreign_key="skill_version.id", nullable=False, ondelete="RESTRICT"
+    )
+    content_sha256: str = Field(max_length=64)
+    trigger: str = Field(default="reconcile", max_length=32)
+    status: str = Field(default="pending", max_length=32)
+    bytes_downloaded: int = 0
+    error: dict[str, Any] | None = Field(
+        default=None, sa_column=Column(POSTGRES_JSON, nullable=True)
+    )
+    started_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+    completed_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+
+
+class AgentTaskSkillUsage(SQLModel, table=True):
+    __tablename__ = "agent_task_skill_usage"
+    __table_args__ = (
+        UniqueConstraint("task_id", "skill_id", name="uq_agent_task_skill_usage"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    task_id: uuid.UUID = Field(
+        foreign_key="agent_task.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    skill_id: uuid.UUID = Field(
+        foreign_key="skill_definition.id", nullable=False, ondelete="RESTRICT"
+    )
+    version_id: uuid.UUID = Field(
+        foreign_key="skill_version.id", nullable=False, ondelete="RESTRICT"
+    )
+    version: str = Field(max_length=64)
+    content_sha256: str = Field(max_length=64)
+    runtime_generation: int
+    reported_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+
+
 class RuntimeJob(SQLModel, table=True):
     __tablename__ = "runtime_job"
     __table_args__ = (

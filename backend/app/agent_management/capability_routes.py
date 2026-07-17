@@ -1,12 +1,16 @@
 """Namespace management APIs for Skills, Tools, MCP servers, and Plugins."""
 
+import base64
 import hashlib
+import io
+import mimetypes
 import os
 import re
 import tempfile
 import uuid
+import zipfile
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 from fastapi import (
@@ -20,12 +24,19 @@ from fastapi import (
     UploadFile,
 )
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, select
 
 from app.agent_management.capabilities import (
+    ALLOWED_SKILL_SUFFIXES,
+    FORBIDDEN_SKILL_SUFFIXES,
+    MAX_SKILL_EXPANDED_BYTES,
+    MAX_SKILL_FILE_BYTES,
+    MAX_SKILL_FILES,
     canonical_bytes,
     canonical_digest,
+    parse_skill_frontmatter,
     runtime_capability_fingerprint,
     scan_skill_archive,
     seed_builtin_tools,
@@ -52,7 +63,10 @@ from app.agent_management.capability_models import (
     Plugin,
     PluginDraft,
     PluginVersion,
+    SkillCurrentVersionChange,
     SkillDefinition,
+    SkillDraft,
+    SkillDraftFile,
     SkillVersion,
     ToolBaseline,
     ToolDefinition,
@@ -76,8 +90,12 @@ from app.runtime.artifacts.local_storage import LocalArtifactStorage
 from app.runtime.artifacts.s3_storage import S3ArtifactStorage
 from app.runtime.artifacts.signing import configured_artifact_signer
 from app.runtime.artifacts.storage import ArtifactStorage
-from app.runtime.models import RuntimeProfile, RuntimeType
+from app.runtime.models import RuntimeProfile, RuntimeSkillState, RuntimeType
 from app.runtime.security import require_internal_runtime
+from app.runtime.skill_sync import (
+    ensure_skill_version_signature,
+    mark_skill_current_changed,
+)
 
 router = APIRouter(tags=["agent-capabilities"])
 node_router = APIRouter(
@@ -113,12 +131,51 @@ class ExactBinding(StrictBody):
 
 
 class AgentSkillBinding(StrictBody):
-    skill_version_id: uuid.UUID
+    skill_id: uuid.UUID
+    enabled: bool = True
 
 
 class AgentSkillBindings(StrictBody):
     expected_revision: int
     skills: list[AgentSkillBinding]
+
+
+class SkillDraftFileCreate(StrictBody):
+    path: str = Field(min_length=1, max_length=1024)
+    content: str | None = None
+    content_base64: str | None = None
+    mime_type: str | None = Field(default=None, max_length=255)
+    expected_revision: int
+
+
+class SkillDraftFileUpdate(StrictBody):
+    content: str | None = None
+    content_base64: str | None = None
+    mime_type: str | None = Field(default=None, max_length=255)
+    expected_revision: int
+
+
+class SkillDraftFileMove(StrictBody):
+    path: str = Field(min_length=1, max_length=1024)
+    expected_revision: int
+
+
+class SkillDraftMutation(StrictBody):
+    expected_revision: int
+
+
+class SkillDraftPublish(StrictBody):
+    version: str
+    expected_revision: int
+
+
+class SkillCurrentVersionUpdate(StrictBody):
+    version_id: uuid.UUID
+
+
+class SkillCompleteEditor(IdentityCreate):
+    version: str
+    skill_md: str = Field(min_length=1)
 
 
 class ToolIntent(StrictBody):
@@ -175,14 +232,14 @@ class McpValidationResult(StrictBody):
 class PluginDraftSave(StrictBody):
     expected_revision: int
     harness_type: str = "claude_code"
-    adapter_schema_version: str = "1.0"
+    adapter_schema_version: str = "1.1"
     adapter_config: dict[str, Any] = Field(default_factory=dict)
     components: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class PluginCompleteCreate(IdentityCreate):
     harness_type: str = "claude_code"
-    adapter_schema_version: str = "1.0"
+    adapter_schema_version: str = "1.1"
     adapter_config: dict[str, Any] = Field(default_factory=dict)
     components: list[dict[str, Any]] = Field(min_length=1)
 
@@ -256,8 +313,7 @@ def get_agent_capabilities(
     return {
         "revision": draft.revision,
         "skills": [
-            {"skill_id": row.skill_id, "skill_version_id": row.skill_version_id}
-            for row in skills
+            {"skill_id": row.skill_id, "enabled": row.enabled} for row in skills
         ],
         "tools": [
             {"tool_key": row.tool_key, "policy": row.policy.value} for row in tools
@@ -285,6 +341,8 @@ def _identity_public(value: Any) -> dict[str, Any]:
         "name": value.name,
         "description": value.description,
         "archived": value.archived,
+        "current_version_id": getattr(value, "current_version_id", None),
+        "draft_id": getattr(value, "draft_id", None),
         "created_at": value.created_at,
         "updated_at": value.updated_at,
     }
@@ -303,8 +361,12 @@ def _skill_version_public(value: SkillVersion) -> dict[str, Any]:
         "required_capabilities": value.required_capabilities,
         "content_types": value.content_types,
         "validation_result": value.validation_result,
+        "manifest_digest": value.manifest_digest,
+        "signature": value.signature,
+        "signing_public_key": value.signing_public_key,
         "deprecated": value.deprecated,
         "created_at": value.created_at,
+        "published_at": value.published_at,
     }
 
 
@@ -322,18 +384,334 @@ def _artifact_storage() -> ArtifactStorage:
     raise HTTPException(503, "Configured immutable Skill storage is unavailable")
 
 
+def _read_storage_bytes(key: str) -> bytes:
+    stream = _artifact_storage().open(key)
+    try:
+        return stream.read()
+    finally:
+        stream.close()
+
+
+def _put_storage_bytes(key: str, content: bytes) -> None:
+    temp_root = Path(settings.ARTIFACT_TEMP_DIR or tempfile.gettempdir())
+    temp_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    descriptor, name = tempfile.mkstemp(prefix="neomua-skill-file-", dir=temp_root)
+    temporary = Path(name)
+    try:
+        with os.fdopen(descriptor, "wb") as target:
+            target.write(content)
+            target.flush()
+            os.fsync(target.fileno())
+        _artifact_storage().put_once(key, temporary)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _validate_skill_file_path(path: str, *, allow_skill_md: bool = True) -> str:
+    if not path or "\\" in path or any(ord(char) < 32 for char in path):
+        raise HTTPException(422, "Skill file path is invalid")
+    posix = PurePosixPath(path)
+    windows = PureWindowsPath(path)
+    if (
+        posix.is_absolute()
+        or windows.is_absolute()
+        or path.startswith("/")
+        or any(part in {"", ".", ".."} for part in posix.parts)
+    ):
+        raise HTTPException(422, "Skill file path is unsafe")
+    normalized = str(posix)
+    if normalized.casefold() == "skill.md" and normalized != "SKILL.md":
+        raise HTTPException(422, "SKILL.md uses a reserved case-sensitive path")
+    if normalized == "SKILL.md" and not allow_skill_md:
+        raise HTTPException(422, "SKILL.md cannot be moved or deleted")
+    suffix = posix.suffix.lower()
+    if suffix in FORBIDDEN_SKILL_SUFFIXES or suffix not in ALLOWED_SKILL_SUFFIXES:
+        raise HTTPException(
+            422, f"Unsupported Skill content type: {suffix or '(none)'}"
+        )
+    return normalized
+
+
+def _decode_draft_content(
+    *, content: str | None, content_base64: str | None
+) -> tuple[bytes, bool]:
+    if (content is None) == (content_base64 is None):
+        raise HTTPException(422, "Provide exactly one of content or content_base64")
+    if content is not None:
+        raw = content.encode("utf-8")
+        is_text = True
+    else:
+        try:
+            raw = base64.b64decode(content_base64 or "", validate=True)
+        except ValueError as exc:
+            raise HTTPException(422, "content_base64 is invalid") from exc
+        is_text = False
+    if len(raw) > MAX_SKILL_FILE_BYTES:
+        raise HTTPException(413, "Skill file exceeds size limit")
+    return raw, is_text
+
+
+def _draft_digest(files: list[SkillDraftFile]) -> str:
+    return canonical_digest(
+        [
+            {"path": item.path, "sha256": item.content_sha256, "size": item.size}
+            for item in sorted(files, key=lambda value: value.path)
+        ]
+    )
+
+
+def _draft_file_public(value: SkillDraftFile) -> dict[str, Any]:
+    return {
+        "id": value.id,
+        "path": value.path,
+        "mime_type": value.mime_type,
+        "size": value.size,
+        "content_sha256": value.content_sha256,
+        "is_text": value.is_text,
+        "updated_at": value.updated_at,
+    }
+
+
+def _draft_public(session: SessionDep, value: SkillDraft) -> dict[str, Any]:
+    files = session.exec(
+        select(SkillDraftFile)
+        .where(SkillDraftFile.draft_id == value.id)
+        .order_by(col(SkillDraftFile.path))
+    ).all()
+    return {
+        "id": value.id,
+        "skill_id": value.skill_id,
+        "revision": value.revision,
+        "base_version_id": value.base_version_id,
+        "content_sha256": value.content_sha256,
+        "validated_revision": value.validated_revision,
+        "validation_digest": value.validation_digest,
+        "validation_result": value.validation_result,
+        "dirty": value.base_version_id is None
+        or value.validated_revision != value.revision,
+        "files": [_draft_file_public(item) for item in files],
+        "updated_at": value.updated_at,
+    }
+
+
+def _sign_skill_version(skill: SkillDefinition, version: SkillVersion) -> None:
+    ensure_skill_version_signature(skill, version)
+
+
+def _ensure_skill_draft(
+    session: SessionDep, skill: SkillDefinition, user_id: uuid.UUID | None
+) -> SkillDraft:
+    draft = (
+        session.get(SkillDraft, skill.draft_id)
+        if skill.draft_id is not None
+        else session.exec(
+            select(SkillDraft).where(SkillDraft.skill_id == skill.id)
+        ).first()
+    )
+    if draft is not None:
+        if skill.draft_id != draft.id:
+            skill.draft_id = draft.id
+            session.add(skill)
+        return draft
+    if skill.current_version_id is None:
+        raise HTTPException(409, "Skill has no current version")
+    version = session.get(SkillVersion, skill.current_version_id)
+    if version is None or version.skill_id != skill.id:
+        raise HTTPException(409, "Skill current version is invalid")
+    archive_bytes = _read_storage_bytes(version.storage_key)
+    if hashlib.sha256(archive_bytes).hexdigest() != version.content_sha256:
+        raise HTTPException(409, "Skill current version digest mismatch")
+    draft = SkillDraft(
+        skill_id=skill.id,
+        base_version_id=version.id,
+        updated_by=user_id,
+        validated_revision=1,
+        validation_result=version.validation_result,
+    )
+    session.add(draft)
+    session.flush()
+    with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+        for entry in version.manifest.get("files", []):
+            path = _validate_skill_file_path(str(entry["path"]))
+            raw = archive.read(path)
+            digest = hashlib.sha256(raw).hexdigest()
+            if digest != entry["sha256"]:
+                raise HTTPException(409, f"Stored Skill file digest changed: {path}")
+            key = f"skill-files/sha256/{digest[:2]}/{digest}"
+            _put_storage_bytes(key, raw)
+            mime_type = mimetypes.guess_type(path)[0] or "application/octet-stream"
+            suffix = PurePosixPath(path).suffix.lower()
+            session.add(
+                SkillDraftFile(
+                    draft_id=draft.id,
+                    path=path,
+                    mime_type=mime_type,
+                    size=len(raw),
+                    content_sha256=digest,
+                    storage_key=key,
+                    is_text=suffix in {".md", ".txt", ".json", ".yaml", ".yml", ".svg"},
+                )
+            )
+    session.flush()
+    files = session.exec(
+        select(SkillDraftFile).where(SkillDraftFile.draft_id == draft.id)
+    ).all()
+    draft.content_sha256 = _draft_digest(files)
+    draft.validation_digest = draft.content_sha256
+    skill.draft_id = draft.id
+    session.add(draft)
+    session.add(skill)
+    return draft
+
+
+def _advance_skill_draft(
+    session: SessionDep,
+    draft: SkillDraft,
+    expected_revision: int,
+    user_id: uuid.UUID | None,
+) -> None:
+    if draft.revision != expected_revision:
+        raise HTTPException(
+            409,
+            {
+                "code": "skill_draft_revision_conflict",
+                "current_revision": draft.revision,
+            },
+        )
+    draft.revision += 1
+    draft.validated_revision = None
+    draft.validation_digest = None
+    draft.validation_result = None
+    draft.updated_by = user_id
+    draft.updated_at = datetime.now(timezone.utc)
+    session.add(draft)
+
+
 @router.get("/skills")
 def list_skills(
     session: SessionDep,
     _: CurrentUser,
+    q: str | None = None,
+    archived: bool | None = None,
+    draft_dirty: bool | None = None,
+    offset: int = 0,
+    limit: int = 100,
     namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
 ) -> dict[str, Any]:
+    if offset < 0 or limit < 1 or limit > 200:
+        raise HTTPException(422, "Invalid Skill pagination")
+    query = select(SkillDefinition).where(SkillDefinition.namespace_id == namespace_id)
+    if q:
+        pattern = f"%{q.strip()}%"
+        query = query.where(
+            or_(
+                col(SkillDefinition.name).ilike(pattern),
+                col(SkillDefinition.slug).ilike(pattern),
+                col(SkillDefinition.description).ilike(pattern),
+            )
+        )
+    if archived is not None:
+        query = query.where(SkillDefinition.archived == archived)
+    if draft_dirty is not None:
+        query = query.join(SkillDraft, SkillDraft.skill_id == SkillDefinition.id)
+        dirty_condition = or_(
+            col(SkillDraft.validated_revision).is_(None),
+            SkillDraft.validated_revision != SkillDraft.revision,
+        )
+        query = query.where(dirty_condition if draft_dirty else ~dirty_condition)
+    total = session.exec(
+        select(func.count()).select_from(query.order_by(None).subquery())
+    ).one()
     rows = session.exec(
-        select(SkillDefinition)
-        .where(SkillDefinition.namespace_id == namespace_id)
-        .order_by(col(SkillDefinition.created_at).desc())
+        query.order_by(col(SkillDefinition.updated_at).desc())
+        .offset(offset)
+        .limit(limit)
     ).all()
-    return {"data": [_identity_public(row) for row in rows], "count": len(rows)}
+    skill_ids = [row.id for row in rows]
+    versions = {
+        row.id: row
+        for row in session.exec(
+            select(SkillVersion).where(
+                col(SkillVersion.id).in_(
+                    [row.current_version_id for row in rows if row.current_version_id]
+                )
+            )
+        ).all()
+    }
+    drafts = {
+        row.skill_id: row
+        for row in session.exec(
+            select(SkillDraft).where(col(SkillDraft.skill_id).in_(skill_ids))
+        ).all()
+    }
+    version_counts = dict(
+        session.exec(
+            select(SkillVersion.skill_id, func.count(SkillVersion.id))
+            .where(col(SkillVersion.skill_id).in_(skill_ids))
+            .group_by(SkillVersion.skill_id)
+        ).all()
+    )
+    reference_counts = dict(
+        session.exec(
+            select(AgentDraftSkill.skill_id, func.count(AgentDraftSkill.id))
+            .where(col(AgentDraftSkill.skill_id).in_(skill_ids))
+            .group_by(AgentDraftSkill.skill_id)
+        ).all()
+    )
+    sync_counts: dict[uuid.UUID, dict[str, int]] = {}
+    for skill_id, status, count in session.exec(
+        select(
+            RuntimeSkillState.skill_id,
+            RuntimeSkillState.status,
+            func.count(RuntimeSkillState.id),
+        )
+        .where(col(RuntimeSkillState.skill_id).in_(skill_ids))
+        .group_by(RuntimeSkillState.skill_id, RuntimeSkillState.status)
+    ).all():
+        sync_counts.setdefault(skill_id, {})[status] = count
+    data: list[dict[str, Any]] = []
+    for row in rows:
+        current = versions.get(row.current_version_id)
+        draft = drafts.get(row.id)
+        data.append(
+            {
+                **_identity_public(row),
+                "current_version": (
+                    _skill_version_public(current) if current is not None else None
+                ),
+                "version_count": version_counts.get(row.id, 0),
+                "reference_count": reference_counts.get(row.id, 0),
+                "file_count": len(current.manifest.get("files", [])) if current else 0,
+                "total_size": current.size if current else 0,
+                "sync_summary": sync_counts.get(row.id, {}),
+                "draft_revision": draft.revision if draft else None,
+                "draft_dirty": (
+                    draft is not None and (draft.validated_revision != draft.revision)
+                ),
+            }
+        )
+    return {"data": data, "count": total, "offset": offset, "limit": limit}
+
+
+@router.get("/skill-catalog")
+def skill_catalog(
+    session: SessionDep,
+    current_user: CurrentUser,
+    q: str | None = None,
+    offset: int = 0,
+    limit: int = 100,
+    namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
+) -> dict[str, Any]:
+    return list_skills(
+        session=session,
+        _=current_user,
+        q=q,
+        archived=False,
+        draft_dirty=None,
+        offset=offset,
+        limit=limit,
+        namespace_id=namespace_id,
+    )
 
 
 @router.post("/skills", status_code=201)
@@ -343,16 +721,10 @@ def create_skill(
     current_user: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_admin),
 ) -> dict[str, Any]:
-    row = SkillDefinition(
-        namespace_id=namespace_id, created_by=current_user.id, **body.model_dump()
+    del body, session, current_user, namespace_id
+    raise HTTPException(
+        410, "Use /skills/complete so a Skill is created with a valid first version"
     )
-    session.add(row)
-    try:
-        session.commit()
-    except IntegrityError as exc:
-        session.rollback()
-        raise HTTPException(409, "Skill slug already exists") from exc
-    return _identity_public(row)
 
 
 @router.post("/skills/complete", status_code=201)
@@ -422,9 +794,26 @@ async def create_skill_complete(
             content_types=scan.manifest["content_types"],
             validation_result={"status": "validated", "diagnostics": []},
             created_by=current_user.id,
+            published_at=datetime.now(timezone.utc),
         )
+        _sign_skill_version(skill, skill_version)
         session.add(skill)
+        session.flush()
         session.add(skill_version)
+        session.flush()
+        skill.current_version_id = skill_version.id
+        session.add(skill)
+        session.add(
+            SkillCurrentVersionChange(
+                skill_id=skill.id,
+                to_version_id=skill_version.id,
+                action="publish",
+                idempotency_key=f"initial:{skill_version.id}",
+                changed_by=current_user.id,
+            )
+        )
+        session.flush()
+        _ensure_skill_draft(session, skill, current_user.id)
         try:
             session.commit()
         except IntegrityError as exc:
@@ -441,6 +830,129 @@ async def create_skill_complete(
         await file.close()
 
 
+@router.post("/skills/complete/editor", status_code=201)
+def create_skill_complete_from_editor(
+    body: SkillCompleteEditor,
+    session: SessionDep,
+    current_user: CurrentUser,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    namespace_id: uuid.UUID = Depends(require_namespace_admin),
+) -> dict[str, Any]:
+    if not idempotency_key:
+        raise HTTPException(400, "Idempotency-Key is required")
+    existing_change = session.exec(
+        select(SkillCurrentVersionChange).where(
+            SkillCurrentVersionChange.idempotency_key == idempotency_key,
+            SkillCurrentVersionChange.action == "publish",
+        )
+    ).first()
+    if existing_change is not None:
+        existing_skill = session.get(SkillDefinition, existing_change.skill_id)
+        existing_version = session.get(SkillVersion, existing_change.to_version_id)
+        if (
+            existing_skill is None
+            or existing_skill.namespace_id != namespace_id
+            or existing_version is None
+            or existing_skill.slug != body.slug
+            or existing_version.version != body.version
+        ):
+            raise HTTPException(409, "Idempotency-Key was used for another creation")
+        return {
+            "skill": _identity_public(existing_skill),
+            "version": _skill_version_public(existing_version),
+        }
+    if not validate_semver(body.version):
+        raise HTTPException(422, "version must be canonical SemVer")
+    temp_root = Path(settings.ARTIFACT_TEMP_DIR or tempfile.gettempdir())
+    temp_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    descriptor, name = tempfile.mkstemp(
+        prefix="neomua-skill-editor-", suffix=".zip", dir=temp_root
+    )
+    os.close(descriptor)
+    temporary = Path(name)
+    try:
+        with zipfile.ZipFile(
+            temporary, "w", compression=zipfile.ZIP_DEFLATED
+        ) as archive:
+            info = zipfile.ZipInfo("SKILL.md", date_time=(1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o100600 << 16
+            archive.writestr(info, body.skill_md.encode("utf-8"))
+        try:
+            scan = scan_skill_archive(temporary, slug=body.slug, version=body.version)
+        except ValueError as exc:
+            raise HTTPException(
+                422, {"code": "invalid_skill_archive", "message": str(exc)}
+            ) from exc
+        storage_key = f"skills/sha256/{scan.content_sha256[:2]}/{scan.content_sha256}"
+        try:
+            _artifact_storage().put_once(storage_key, temporary)
+        except OSError as exc:
+            if exc.errno == 28:
+                raise HTTPException(
+                    507, "Skill storage capacity is insufficient"
+                ) from exc
+            raise
+        skill = SkillDefinition(
+            namespace_id=namespace_id,
+            slug=body.slug,
+            name=body.name,
+            description=body.description,
+            created_by=current_user.id,
+        )
+        manifest = {**scan.manifest, "files": scan.files}
+        version = SkillVersion(
+            skill_id=skill.id,
+            version=body.version,
+            content_sha256=scan.content_sha256,
+            storage_key=storage_key,
+            size=scan.size,
+            manifest=manifest,
+            invocation_mode=scan.manifest["invocation_mode"],
+            platforms=scan.manifest["platforms"],
+            required_capabilities={
+                "tools": scan.manifest["required_tools"],
+                "mcp_tools": scan.manifest["required_mcp_tools"],
+                "config_schema": scan.manifest["config_schema"],
+            },
+            content_types=scan.manifest["content_types"],
+            validation_result={"status": "validated", "diagnostics": []},
+            created_by=current_user.id,
+            published_at=datetime.now(timezone.utc),
+        )
+        _sign_skill_version(skill, version)
+        session.add(skill)
+        session.flush()
+        session.add(version)
+        session.flush()
+        skill.current_version_id = version.id
+        session.add(skill)
+        session.add(
+            SkillCurrentVersionChange(
+                skill_id=skill.id,
+                to_version_id=version.id,
+                action="publish",
+                idempotency_key=idempotency_key,
+                changed_by=current_user.id,
+            )
+        )
+        session.flush()
+        _ensure_skill_draft(session, skill, current_user.id)
+        try:
+            session.commit()
+        except IntegrityError as exc:
+            session.rollback()
+            raise HTTPException(
+                409, "Skill identifier, version, or content already exists"
+            ) from exc
+        return {
+            "skill": _identity_public(skill),
+            "version": _skill_version_public(version),
+        }
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def _get_skill(
     session: SessionDep, skill_id: uuid.UUID, namespace_id: uuid.UUID
 ) -> SkillDefinition:
@@ -450,11 +962,83 @@ def _get_skill(
     return value
 
 
+def _get_skill_draft(
+    session: SessionDep,
+    skill: SkillDefinition,
+    user_id: uuid.UUID | None,
+    *,
+    for_update: bool = False,
+) -> SkillDraft:
+    draft = _ensure_skill_draft(session, skill, user_id)
+    if for_update:
+        locked = session.exec(
+            select(SkillDraft).where(SkillDraft.id == draft.id).with_for_update()
+        ).first()
+        if locked is None:
+            raise HTTPException(404, "Skill draft not found")
+        return locked
+    return draft
+
+
+def _refresh_draft_digest(session: SessionDep, draft: SkillDraft) -> None:
+    session.flush()
+    files = session.exec(
+        select(SkillDraftFile).where(SkillDraftFile.draft_id == draft.id)
+    ).all()
+    if len(files) > MAX_SKILL_FILES:
+        raise HTTPException(413, "Skill draft contains too many files")
+    if sum(item.size for item in files) > MAX_SKILL_EXPANDED_BYTES:
+        raise HTTPException(413, "Skill draft expanded size exceeds limit")
+    folded: set[str] = set()
+    for item in files:
+        key = item.path.casefold()
+        if key in folded:
+            raise HTTPException(422, f"Skill paths conflict by case: {item.path}")
+        folded.add(key)
+    draft.content_sha256 = _draft_digest(files)
+    session.add(draft)
+
+
+def _build_draft_archive(session: SessionDep, draft: SkillDraft) -> Path:
+    files = session.exec(
+        select(SkillDraftFile)
+        .where(SkillDraftFile.draft_id == draft.id)
+        .order_by(col(SkillDraftFile.path))
+    ).all()
+    if not any(item.path == "SKILL.md" for item in files):
+        raise HTTPException(422, "Skill draft must contain SKILL.md")
+    temp_root = Path(settings.ARTIFACT_TEMP_DIR or tempfile.gettempdir())
+    temp_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    descriptor, name = tempfile.mkstemp(
+        prefix="neomua-skill-draft-", suffix=".zip", dir=temp_root
+    )
+    os.close(descriptor)
+    archive_path = Path(name)
+    try:
+        with zipfile.ZipFile(
+            archive_path, "w", compression=zipfile.ZIP_DEFLATED
+        ) as archive:
+            for item in files:
+                raw = _read_storage_bytes(item.storage_key)
+                if hashlib.sha256(raw).hexdigest() != item.content_sha256:
+                    raise HTTPException(
+                        409, f"Skill draft file digest mismatch: {item.path}"
+                    )
+                info = zipfile.ZipInfo(item.path, date_time=(1980, 1, 1, 0, 0, 0))
+                info.compress_type = zipfile.ZIP_DEFLATED
+                info.external_attr = 0o100600 << 16
+                archive.writestr(info, raw)
+        return archive_path
+    except Exception:
+        archive_path.unlink(missing_ok=True)
+        raise
+
+
 @router.get("/skills/{skill_id}")
 def get_skill(
     skill_id: uuid.UUID,
     session: SessionDep,
-    _: CurrentUser,
+    current_user: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
 ) -> dict[str, Any]:
     value = _get_skill(session, skill_id, namespace_id)
@@ -463,10 +1047,419 @@ def get_skill(
         .where(SkillVersion.skill_id == value.id)
         .order_by(col(SkillVersion.created_at).desc())
     ).all()
+    draft = _ensure_skill_draft(session, value, current_user.id)
+    session.commit()
+    current = (
+        session.get(SkillVersion, value.current_version_id)
+        if value.current_version_id
+        else None
+    )
     return {
         **_identity_public(value),
+        "current_version": _skill_version_public(current) if current else None,
+        "draft": _draft_public(session, draft),
         "versions": [_skill_version_public(item) for item in versions],
     }
+
+
+@router.get("/skills/{skill_id}/draft")
+def get_skill_draft(
+    skill_id: uuid.UUID,
+    session: SessionDep,
+    current_user: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
+) -> dict[str, Any]:
+    skill = _get_skill(session, skill_id, namespace_id)
+    draft = _get_skill_draft(session, skill, current_user.id)
+    session.commit()
+    return _draft_public(session, draft)
+
+
+@router.post("/skills/{skill_id}/draft/files", status_code=201)
+def create_skill_draft_file(
+    skill_id: uuid.UUID,
+    body: SkillDraftFileCreate,
+    session: SessionDep,
+    current_user: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_admin),
+) -> dict[str, Any]:
+    skill = _get_skill(session, skill_id, namespace_id)
+    if skill.archived:
+        raise HTTPException(409, "Archived Skill cannot be edited")
+    draft = _get_skill_draft(session, skill, current_user.id, for_update=True)
+    _advance_skill_draft(session, draft, body.expected_revision, current_user.id)
+    path = _validate_skill_file_path(body.path)
+    existing = session.exec(
+        select(SkillDraftFile).where(
+            SkillDraftFile.draft_id == draft.id,
+            SkillDraftFile.path == path,
+        )
+    ).first()
+    if existing is not None:
+        raise HTTPException(409, "Skill draft file already exists")
+    case_conflict = session.exec(
+        select(SkillDraftFile).where(SkillDraftFile.draft_id == draft.id)
+    ).all()
+    if any(item.path.casefold() == path.casefold() for item in case_conflict):
+        raise HTTPException(409, "Skill draft file conflicts by case")
+    raw, is_text = _decode_draft_content(
+        content=body.content, content_base64=body.content_base64
+    )
+    digest = hashlib.sha256(raw).hexdigest()
+    storage_key = f"skill-files/sha256/{digest[:2]}/{digest}"
+    _put_storage_bytes(storage_key, raw)
+    row = SkillDraftFile(
+        draft_id=draft.id,
+        path=path,
+        mime_type=body.mime_type
+        or mimetypes.guess_type(path)[0]
+        or "application/octet-stream",
+        size=len(raw),
+        content_sha256=digest,
+        storage_key=storage_key,
+        is_text=is_text,
+    )
+    session.add(row)
+    _refresh_draft_digest(session, draft)
+    session.commit()
+    return {"revision": draft.revision, "file": _draft_file_public(row)}
+
+
+def _get_draft_file(
+    session: SessionDep,
+    draft: SkillDraft,
+    file_id: uuid.UUID,
+) -> SkillDraftFile:
+    row = session.get(SkillDraftFile, file_id)
+    if row is None or row.draft_id != draft.id:
+        raise HTTPException(404, "Skill draft file not found")
+    return row
+
+
+@router.get("/skills/{skill_id}/draft/files/{file_id}")
+def get_skill_draft_file(
+    skill_id: uuid.UUID,
+    file_id: uuid.UUID,
+    session: SessionDep,
+    current_user: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
+) -> dict[str, Any]:
+    skill = _get_skill(session, skill_id, namespace_id)
+    draft = _get_skill_draft(session, skill, current_user.id)
+    row = _get_draft_file(session, draft, file_id)
+    raw = _read_storage_bytes(row.storage_key)
+    if hashlib.sha256(raw).hexdigest() != row.content_sha256:
+        raise HTTPException(409, "Skill draft file digest mismatch")
+    return {
+        "file": _draft_file_public(row),
+        "content": raw.decode("utf-8") if row.is_text else None,
+        "content_base64": None if row.is_text else base64.b64encode(raw).decode(),
+    }
+
+
+@router.put("/skills/{skill_id}/draft/files/{file_id}")
+def update_skill_draft_file(
+    skill_id: uuid.UUID,
+    file_id: uuid.UUID,
+    body: SkillDraftFileUpdate,
+    session: SessionDep,
+    current_user: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_admin),
+) -> dict[str, Any]:
+    skill = _get_skill(session, skill_id, namespace_id)
+    if skill.archived:
+        raise HTTPException(409, "Archived Skill cannot be edited")
+    draft = _get_skill_draft(session, skill, current_user.id, for_update=True)
+    row = _get_draft_file(session, draft, file_id)
+    _advance_skill_draft(session, draft, body.expected_revision, current_user.id)
+    raw, is_text = _decode_draft_content(
+        content=body.content, content_base64=body.content_base64
+    )
+    digest = hashlib.sha256(raw).hexdigest()
+    storage_key = f"skill-files/sha256/{digest[:2]}/{digest}"
+    _put_storage_bytes(storage_key, raw)
+    row.size = len(raw)
+    row.content_sha256 = digest
+    row.storage_key = storage_key
+    row.is_text = is_text
+    if body.mime_type:
+        row.mime_type = body.mime_type
+    row.updated_at = datetime.now(timezone.utc)
+    session.add(row)
+    _refresh_draft_digest(session, draft)
+    session.commit()
+    return {"revision": draft.revision, "file": _draft_file_public(row)}
+
+
+@router.post("/skills/{skill_id}/draft/files/{file_id}/move")
+def move_skill_draft_file(
+    skill_id: uuid.UUID,
+    file_id: uuid.UUID,
+    body: SkillDraftFileMove,
+    session: SessionDep,
+    current_user: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_admin),
+) -> dict[str, Any]:
+    skill = _get_skill(session, skill_id, namespace_id)
+    draft = _get_skill_draft(session, skill, current_user.id, for_update=True)
+    row = _get_draft_file(session, draft, file_id)
+    if row.path == "SKILL.md":
+        raise HTTPException(422, "SKILL.md cannot be moved or renamed")
+    _advance_skill_draft(session, draft, body.expected_revision, current_user.id)
+    path = _validate_skill_file_path(body.path, allow_skill_md=False)
+    peers = session.exec(
+        select(SkillDraftFile).where(SkillDraftFile.draft_id == draft.id)
+    ).all()
+    if any(
+        item.id != row.id and item.path.casefold() == path.casefold() for item in peers
+    ):
+        raise HTTPException(409, "Skill draft file path already exists")
+    row.path = path
+    row.mime_type = mimetypes.guess_type(path)[0] or row.mime_type
+    row.updated_at = datetime.now(timezone.utc)
+    session.add(row)
+    _refresh_draft_digest(session, draft)
+    session.commit()
+    return {"revision": draft.revision, "file": _draft_file_public(row)}
+
+
+@router.delete("/skills/{skill_id}/draft/files/{file_id}", status_code=200)
+def delete_skill_draft_file(
+    skill_id: uuid.UUID,
+    file_id: uuid.UUID,
+    body: SkillDraftMutation,
+    session: SessionDep,
+    current_user: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_admin),
+) -> dict[str, Any]:
+    skill = _get_skill(session, skill_id, namespace_id)
+    draft = _get_skill_draft(session, skill, current_user.id, for_update=True)
+    row = _get_draft_file(session, draft, file_id)
+    if row.path == "SKILL.md":
+        raise HTTPException(422, "SKILL.md cannot be deleted")
+    _advance_skill_draft(session, draft, body.expected_revision, current_user.id)
+    session.delete(row)
+    _refresh_draft_digest(session, draft)
+    session.commit()
+    return {"revision": draft.revision}
+
+
+@router.post("/skills/{skill_id}/draft/validate")
+def validate_skill_draft(
+    skill_id: uuid.UUID,
+    body: SkillDraftMutation,
+    session: SessionDep,
+    current_user: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_admin),
+) -> dict[str, Any]:
+    skill = _get_skill(session, skill_id, namespace_id)
+    draft = _get_skill_draft(session, skill, current_user.id, for_update=True)
+    if draft.revision != body.expected_revision:
+        raise HTTPException(409, "Skill draft revision changed")
+    archive = _build_draft_archive(session, draft)
+    try:
+        skill_file = session.exec(
+            select(SkillDraftFile).where(
+                SkillDraftFile.draft_id == draft.id,
+                SkillDraftFile.path == "SKILL.md",
+            )
+        ).first()
+        if skill_file is None:
+            raise ValueError("Skill draft must contain SKILL.md")
+        manifest = parse_skill_frontmatter(
+            _read_storage_bytes(skill_file.storage_key).decode("utf-8")
+        )
+        version = str(manifest.get("version", ""))
+        scan = scan_skill_archive(archive, slug=skill.slug, version=version)
+        draft.validated_revision = draft.revision
+        draft.validation_digest = draft.content_sha256
+        draft.validation_result = {
+            "status": "validated",
+            "diagnostics": [],
+            "manifest": scan.manifest,
+        }
+        session.add(draft)
+        session.commit()
+        return {
+            "revision": draft.revision,
+            "content_sha256": draft.content_sha256,
+            "validation_result": draft.validation_result,
+        }
+    except (ValueError, UnicodeDecodeError) as exc:
+        draft.validation_result = {
+            "status": "failed",
+            "diagnostics": [{"code": "invalid_skill_draft", "message": str(exc)}],
+        }
+        session.add(draft)
+        session.commit()
+        raise HTTPException(422, draft.validation_result) from exc
+    finally:
+        archive.unlink(missing_ok=True)
+
+
+@router.post("/skills/{skill_id}/draft/publish", status_code=201)
+def publish_skill_draft(
+    skill_id: uuid.UUID,
+    body: SkillDraftPublish,
+    session: SessionDep,
+    current_user: CurrentUser,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    namespace_id: uuid.UUID = Depends(require_namespace_admin),
+) -> dict[str, Any]:
+    if not idempotency_key:
+        raise HTTPException(400, "Idempotency-Key is required")
+    if not validate_semver(body.version):
+        raise HTTPException(422, "version must be canonical SemVer")
+    skill = _get_skill(session, skill_id, namespace_id)
+    if skill.archived:
+        raise HTTPException(409, "Archived Skill cannot be published")
+    draft = _get_skill_draft(session, skill, current_user.id, for_update=True)
+    if draft.revision != body.expected_revision:
+        raise HTTPException(409, "Skill draft revision changed")
+    if (
+        draft.validated_revision != draft.revision
+        or draft.validation_digest != draft.content_sha256
+    ):
+        raise HTTPException(409, "Skill draft must be validated before publishing")
+    existing_change = session.exec(
+        select(SkillCurrentVersionChange).where(
+            SkillCurrentVersionChange.skill_id == skill.id,
+            SkillCurrentVersionChange.idempotency_key == idempotency_key,
+        )
+    ).first()
+    if existing_change:
+        version = session.get(SkillVersion, existing_change.to_version_id)
+        if version is None or version.version != body.version:
+            raise HTTPException(409, "Idempotency-Key was used for another publish")
+        return _skill_version_public(version)
+    archive = _build_draft_archive(session, draft)
+    try:
+        scan = scan_skill_archive(archive, slug=skill.slug, version=body.version)
+        existing = session.exec(
+            select(SkillVersion).where(
+                SkillVersion.skill_id == skill.id,
+                SkillVersion.version == body.version,
+            )
+        ).first()
+        if existing:
+            if existing.content_sha256 != scan.content_sha256:
+                raise HTTPException(409, "Skill version exists with different content")
+            return _skill_version_public(existing)
+        storage_key = f"skills/sha256/{scan.content_sha256[:2]}/{scan.content_sha256}"
+        _artifact_storage().put_once(storage_key, archive)
+        now = datetime.now(timezone.utc)
+        manifest = {**scan.manifest, "files": scan.files}
+        row = SkillVersion(
+            skill_id=skill.id,
+            version=body.version,
+            content_sha256=scan.content_sha256,
+            storage_key=storage_key,
+            size=scan.size,
+            manifest=manifest,
+            invocation_mode=scan.manifest["invocation_mode"],
+            platforms=scan.manifest["platforms"],
+            required_capabilities={
+                "tools": scan.manifest["required_tools"],
+                "mcp_tools": scan.manifest["required_mcp_tools"],
+                "config_schema": scan.manifest["config_schema"],
+            },
+            content_types=scan.manifest["content_types"],
+            validation_result={"status": "validated", "diagnostics": []},
+            created_by=current_user.id,
+            published_at=now,
+        )
+        _sign_skill_version(skill, row)
+        previous = skill.current_version_id
+        session.add(row)
+        session.flush()
+        skill.current_version_id = row.id
+        skill.updated_at = now
+        draft.base_version_id = row.id
+        draft.validated_revision = draft.revision
+        draft.validation_digest = draft.content_sha256
+        session.add(skill)
+        mark_skill_current_changed(session, skill)
+        session.add(draft)
+        session.add(
+            SkillCurrentVersionChange(
+                skill_id=skill.id,
+                from_version_id=previous,
+                to_version_id=row.id,
+                action="publish",
+                idempotency_key=idempotency_key,
+                changed_by=current_user.id,
+            )
+        )
+        session.commit()
+        return _skill_version_public(row)
+    except ValueError as exc:
+        raise HTTPException(
+            422, {"code": "invalid_skill_archive", "message": str(exc)}
+        ) from exc
+    finally:
+        archive.unlink(missing_ok=True)
+
+
+@router.post("/skills/{skill_id}/current-version")
+def set_skill_current_version(
+    skill_id: uuid.UUID,
+    body: SkillCurrentVersionUpdate,
+    session: SessionDep,
+    current_user: CurrentUser,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    namespace_id: uuid.UUID = Depends(require_namespace_admin),
+) -> dict[str, Any]:
+    if not idempotency_key:
+        raise HTTPException(400, "Idempotency-Key is required")
+    skill = session.exec(
+        select(SkillDefinition)
+        .where(
+            SkillDefinition.id == skill_id,
+            SkillDefinition.namespace_id == namespace_id,
+        )
+        .with_for_update()
+    ).first()
+    if skill is None:
+        raise HTTPException(404, "Skill not found")
+    version = session.get(SkillVersion, body.version_id)
+    if version is None or version.skill_id != skill.id:
+        raise HTTPException(404, "Skill version not found")
+    if version.deprecated:
+        raise HTTPException(422, "Deprecated Skill version cannot become current")
+    try:
+        archive_bytes = _read_storage_bytes(version.storage_key)
+    except OSError as exc:
+        raise HTTPException(409, "Skill version Bundle is unavailable") from exc
+    if hashlib.sha256(archive_bytes).hexdigest() != version.content_sha256:
+        raise HTTPException(409, "Skill version Bundle digest mismatch")
+    ensure_skill_version_signature(skill, version)
+    existing = session.exec(
+        select(SkillCurrentVersionChange).where(
+            SkillCurrentVersionChange.skill_id == skill.id,
+            SkillCurrentVersionChange.idempotency_key == idempotency_key,
+        )
+    ).first()
+    if existing:
+        if existing.to_version_id != version.id:
+            raise HTTPException(409, "Idempotency-Key was used for another rollback")
+        return _skill_version_public(version)
+    previous = skill.current_version_id
+    skill.current_version_id = version.id
+    skill.updated_at = datetime.now(timezone.utc)
+    session.add(skill)
+    mark_skill_current_changed(session, skill)
+    session.add(
+        SkillCurrentVersionChange(
+            skill_id=skill.id,
+            from_version_id=previous,
+            to_version_id=version.id,
+            action="rollback",
+            idempotency_key=idempotency_key,
+            changed_by=current_user.id,
+        )
+    )
+    session.commit()
+    return _skill_version_public(version)
 
 
 @router.patch("/skills/{skill_id}")
@@ -494,30 +1487,22 @@ def delete_skill(
     namespace_id: uuid.UUID = Depends(require_namespace_admin),
 ) -> None:
     value = _get_skill(session, skill_id, namespace_id)
-    version_ids = session.exec(
-        select(SkillVersion.id).where(SkillVersion.skill_id == value.id)
-    ).all()
-    referenced = (
-        session.exec(
-            select(AgentDraftSkill).where(
-                col(AgentDraftSkill.skill_version_id).in_(version_ids)
-            )
-        ).first()
-        if version_ids
-        else None
-    )
+    referenced = session.exec(
+        select(AgentDraftSkill).where(AgentDraftSkill.skill_id == value.id)
+    ).first()
     if referenced:
         raise HTTPException(409, "Referenced Skill can only be archived")
     session.delete(value)
     session.commit()
 
 
-@router.post("/skills/{skill_id}/versions", status_code=201)
-async def upload_skill_version(
+@router.post("/skills/{skill_id}/draft/import", status_code=200)
+async def import_skill_draft(
     skill_id: uuid.UUID,
     session: SessionDep,
     current_user: CurrentUser,
     version: str = Form(),
+    expected_revision: int = Form(),
     file: UploadFile = File(),
     namespace_id: uuid.UUID = Depends(require_namespace_admin),
 ) -> dict[str, Any]:
@@ -546,51 +1531,63 @@ async def upload_skill_version(
             raise HTTPException(
                 422, {"code": "invalid_skill_archive", "message": str(exc)}
             ) from exc
-        existing = session.exec(
-            select(SkillVersion).where(
-                SkillVersion.skill_id == skill.id, SkillVersion.version == version
-            )
-        ).first()
-        if existing:
-            if existing.content_sha256 != scan.content_sha256:
-                raise HTTPException(
-                    409, "Skill version already exists with different content"
+        draft = _get_skill_draft(session, skill, current_user.id, for_update=True)
+        _advance_skill_draft(session, draft, expected_revision, current_user.id)
+        existing_files = session.exec(
+            select(SkillDraftFile).where(SkillDraftFile.draft_id == draft.id)
+        ).all()
+        for existing_file in existing_files:
+            session.delete(existing_file)
+        with zipfile.ZipFile(temporary) as archive:
+            for entry in scan.files:
+                path = _validate_skill_file_path(str(entry["path"]))
+                raw = archive.read(path)
+                digest = hashlib.sha256(raw).hexdigest()
+                storage_key = f"skill-files/sha256/{digest[:2]}/{digest}"
+                _put_storage_bytes(storage_key, raw)
+                suffix = PurePosixPath(path).suffix.lower()
+                session.add(
+                    SkillDraftFile(
+                        draft_id=draft.id,
+                        path=path,
+                        mime_type=mimetypes.guess_type(path)[0]
+                        or "application/octet-stream",
+                        size=len(raw),
+                        content_sha256=digest,
+                        storage_key=storage_key,
+                        is_text=suffix
+                        in {".md", ".txt", ".json", ".yaml", ".yml", ".svg"},
+                    )
                 )
-            return _skill_version_public(existing)
-        storage_key = f"skills/sha256/{scan.content_sha256[:2]}/{scan.content_sha256}"
-        try:
-            _artifact_storage().put_once(storage_key, temporary)
-        except OSError as exc:
-            if exc.errno == 28:
-                raise HTTPException(
-                    507, "Skill storage capacity is insufficient"
-                ) from exc
-            raise
-        manifest = {**scan.manifest, "files": scan.files}
-        row = SkillVersion(
-            skill_id=skill.id,
-            version=version,
-            content_sha256=scan.content_sha256,
-            storage_key=storage_key,
-            size=scan.size,
-            manifest=manifest,
-            invocation_mode=scan.manifest["invocation_mode"],
-            platforms=scan.manifest["platforms"],
-            required_capabilities={
-                "tools": scan.manifest["required_tools"],
-                "mcp_tools": scan.manifest["required_mcp_tools"],
-                "config_schema": scan.manifest["config_schema"],
-            },
-            content_types=scan.manifest["content_types"],
-            validation_result={"status": "validated", "diagnostics": []},
-            created_by=current_user.id,
-        )
-        session.add(row)
+        session.flush()
+        _refresh_draft_digest(session, draft)
+        draft.validated_revision = draft.revision
+        draft.validation_digest = draft.content_sha256
+        draft.validation_result = {
+            "status": "validated",
+            "diagnostics": [],
+            "manifest": scan.manifest,
+        }
+        session.add(draft)
         session.commit()
-        return _skill_version_public(row)
+        return _draft_public(session, draft)
     finally:
         temporary.unlink(missing_ok=True)
         await file.close()
+
+
+@router.post("/skills/{skill_id}/versions", status_code=410)
+def reject_direct_skill_version_upload(
+    skill_id: uuid.UUID,
+    session: SessionDep,
+    _: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_admin),
+) -> None:
+    _get_skill(session, skill_id, namespace_id)
+    raise HTTPException(
+        410,
+        "Direct version upload was removed; import ZIP into /draft/import, review, then publish",
+    )
 
 
 @router.get("/skills/{skill_id}/versions")
@@ -628,6 +1625,72 @@ def get_skill_version(
     return _skill_version_public(row)
 
 
+@router.get("/skills/{skill_id}/versions/{version}/files")
+def list_skill_version_files(
+    skill_id: uuid.UUID,
+    version: str,
+    session: SessionDep,
+    _: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
+) -> dict[str, Any]:
+    skill = _get_skill(session, skill_id, namespace_id)
+    row = session.exec(
+        select(SkillVersion).where(
+            SkillVersion.skill_id == skill.id,
+            SkillVersion.version == version,
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(404, "Skill version not found")
+    return {
+        "data": row.manifest.get("files", []),
+        "count": len(row.manifest.get("files", [])),
+    }
+
+
+@router.get("/skills/{skill_id}/versions/{version}/files/{file_path:path}")
+def get_skill_version_file(
+    skill_id: uuid.UUID,
+    version: str,
+    file_path: str,
+    session: SessionDep,
+    _: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
+) -> dict[str, Any]:
+    skill = _get_skill(session, skill_id, namespace_id)
+    row = session.exec(
+        select(SkillVersion).where(
+            SkillVersion.skill_id == skill.id,
+            SkillVersion.version == version,
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(404, "Skill version not found")
+    path = _validate_skill_file_path(file_path)
+    entry = next(
+        (item for item in row.manifest.get("files", []) if item.get("path") == path),
+        None,
+    )
+    if entry is None:
+        raise HTTPException(404, "Skill version file not found")
+    archive_bytes = _read_storage_bytes(row.storage_key)
+    if hashlib.sha256(archive_bytes).hexdigest() != row.content_sha256:
+        raise HTTPException(409, "Skill version digest mismatch")
+    with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+        raw = archive.read(path)
+    if hashlib.sha256(raw).hexdigest() != entry["sha256"]:
+        raise HTTPException(409, "Skill version file digest mismatch")
+    suffix = PurePosixPath(path).suffix.lower()
+    is_text = suffix in {".md", ".txt", ".json", ".yaml", ".yml", ".svg"}
+    return {
+        "file": entry,
+        "mime_type": mimetypes.guess_type(path)[0] or "application/octet-stream",
+        "is_text": is_text,
+        "content": raw.decode("utf-8") if is_text else None,
+        "content_base64": None if is_text else base64.b64encode(raw).decode(),
+    }
+
+
 @router.post("/skills/{skill_id}/versions/{version}/deprecate")
 def deprecate_skill_version(
     skill_id: uuid.UUID,
@@ -644,6 +1707,10 @@ def deprecate_skill_version(
     ).first()
     if row is None:
         raise HTTPException(404, "Skill version not found")
+    if skill.current_version_id == row.id:
+        raise HTTPException(
+            409, "Current Skill version cannot be deprecated; switch versions first"
+        )
     row.deprecated = True
     session.add(row)
     session.commit()
@@ -790,31 +1857,36 @@ def set_agent_skills(
 ) -> dict[str, Any]:
     _agent, draft = _get_agent_draft(session, namespace_id, agent_id)
     _advance_draft(draft, body.expected_revision)
-    resolved: list[tuple[SkillDefinition, SkillVersion]] = []
+    resolved: list[tuple[SkillDefinition, bool]] = []
     seen: set[uuid.UUID] = set()
     for requested in body.skills:
-        version = session.get(SkillVersion, requested.skill_version_id)
-        identity = session.get(SkillDefinition, version.skill_id) if version else None
-        if version is None or identity is None or identity.namespace_id != namespace_id:
-            raise HTTPException(404, "Skill version not found")
-        if version.deprecated or identity.archived:
+        identity = session.get(SkillDefinition, requested.skill_id)
+        if identity is None or identity.namespace_id != namespace_id:
+            raise HTTPException(404, "Skill not found")
+        version = (
+            session.get(SkillVersion, identity.current_version_id)
+            if identity.current_version_id
+            else None
+        )
+        if identity.archived or version is None or version.deprecated:
             raise HTTPException(
-                422, "Deprecated or archived Skill cannot be newly bound"
+                422, "Archived or unpublished Skill cannot be newly bound"
             )
         if identity.id in seen:
-            raise HTTPException(422, "A Skill may only be bound at one exact version")
+            raise HTTPException(422, "A Skill identity may only be bound once")
         seen.add(identity.id)
-        resolved.append((identity, version))
+        resolved.append((identity, requested.enabled))
     for row in session.exec(
         select(AgentDraftSkill).where(AgentDraftSkill.agent_draft_id == draft.id)
     ).all():
         session.delete(row)
-    for identity, version in resolved:
+    for identity, enabled in resolved:
         session.add(
             AgentDraftSkill(
                 agent_draft_id=draft.id,
                 skill_id=identity.id,
-                skill_version_id=version.id,
+                skill_version_id=None,
+                enabled=enabled,
             )
         )
     session.add(draft)
@@ -824,10 +1896,9 @@ def set_agent_skills(
         "skills": [
             {
                 "skill_id": identity.id,
-                "skill_version_id": version.id,
-                "version": version.version,
+                "enabled": enabled,
             }
-            for identity, version in resolved
+            for identity, enabled in resolved
         ],
     }
 
@@ -1011,9 +2082,7 @@ def create_mcp_server_complete(
         target.secret_fingerprint = fingerprint
         target.status = McpTargetStatus.STALE
         session.add(
-            McpPlatformSecret(
-                target_binding_id=target.id, secret_ciphertext=ciphertext
-            )
+            McpPlatformSecret(target_binding_id=target.id, secret_ciphertext=ciphertext)
         )
     try:
         session.commit()
@@ -1961,7 +3030,10 @@ def create_plugin_complete(
     except IntegrityError as exc:
         session.rollback()
         raise HTTPException(409, "Plugin identifier already exists") from exc
-    return {"plugin": _identity_public(plugin), "draft": _plugin_draft_public(plugin, draft)}
+    return {
+        "plugin": _identity_public(plugin),
+        "draft": _plugin_draft_public(plugin, draft),
+    }
 
 
 def _get_plugin(
@@ -2061,19 +3133,22 @@ def _validate_plugin_components(
             continue
         item = dict(component)
         if kind == "skill":
-            version_id = item.get("skill_version_id")
+            skill_id = item.get("skill_id")
             try:
-                version = session.get(SkillVersion, uuid.UUID(str(version_id)))
-            except ValueError:
-                version = None
-            identity = (
-                session.get(SkillDefinition, version.skill_id) if version else None
+                identity = session.get(SkillDefinition, uuid.UUID(str(skill_id)))
+            except (TypeError, ValueError):
+                identity = None
+            current = (
+                session.get(SkillVersion, identity.current_version_id)
+                if identity and identity.current_version_id
+                else None
             )
             if (
-                version is None
-                or identity is None
+                identity is None
                 or identity.namespace_id != namespace_id
-                or version.deprecated
+                or current is None
+                or current.skill_id != identity.id
+                or current.deprecated
             ):
                 errors.append(
                     {
@@ -2083,14 +3158,12 @@ def _validate_plugin_components(
                     }
                 )
                 continue
-            item.update(
-                {
-                    "skill_id": str(identity.id),
-                    "slug": identity.slug,
-                    "version": version.version,
-                    "digest": version.content_sha256,
-                }
-            )
+            item = {
+                key: value
+                for key, value in item.items()
+                if key not in {"skill_version_id", "version", "digest"}
+            }
+            item.update({"skill_id": str(identity.id), "slug": identity.slug})
             identity_key = (kind, str(identity.id))
         elif kind == "mcp_server":
             revision_id = item.get("revision_id")

@@ -217,6 +217,7 @@ export interface RuntimeTask {
   retry_of_task_id: string | null
   created_at: string
   updated_at: string
+  skill_usage: Array<Record<string, unknown>>
 }
 
 export interface RuntimeArtifact {
@@ -540,6 +541,12 @@ export const tenantApi = {
     )
     return data
   },
+  readRuntimeSkills: async (runtimeId: string) =>
+    (
+      await api.get<{ data: Record<string, unknown>[]; count: number }>(
+        `/api/v1/runtimes/${runtimeId}/skills`,
+      )
+    ).data,
   readRuntimeTask: async (taskId: string) => {
     const { data } = await api.get<RuntimeTask>(
       `/api/v1/runtime-tasks/${taskId}`,
@@ -799,14 +806,12 @@ export const agentsApi = {
   setSkills: async (
     agentId: string,
     expectedRevision: number,
-    skillVersionIds: string[],
+    skills: Array<{ skill_id: string; enabled: boolean }>,
   ) =>
     (
       await api.put(`/api/v1/agents/${agentId}/draft/skills`, {
         expected_revision: expectedRevision,
-        skills: skillVersionIds.map((skill_version_id) => ({
-          skill_version_id,
-        })),
+        skills,
       })
     ).data,
   setTools: async (
@@ -906,6 +911,19 @@ export interface ManagedIdentity {
   updated_at: string
 }
 
+export interface SkillIdentity extends ManagedIdentity {
+  current_version_id: string
+  draft_id: string | null
+  current_version: SkillVersion
+  version_count: number
+  reference_count: number
+  file_count: number
+  total_size: number
+  sync_summary: Record<string, number>
+  draft_revision: number | null
+  draft_dirty: boolean
+}
+
 export interface SkillVersion {
   id: string
   skill_id: string
@@ -913,6 +931,29 @@ export interface SkillVersion {
   content_sha256: string
   manifest: Record<string, unknown>
   deprecated: boolean
+}
+
+export interface SkillDraftFile {
+  id: string
+  path: string
+  mime_type: string
+  size: number
+  content_sha256: string
+  is_text: boolean
+  updated_at: string
+}
+
+export interface SkillDraft {
+  id: string
+  skill_id: string
+  revision: number
+  base_version_id: string | null
+  content_sha256: string | null
+  validated_revision: number | null
+  validation_result: Record<string, unknown> | null
+  dirty: boolean
+  files: SkillDraftFile[]
+  updated_at: string
 }
 
 export interface PluginVersion {
@@ -948,6 +989,21 @@ const identityApi = (path: string) => ({
 
 export const skillsApi = {
   ...identityApi("/api/v1/skills"),
+  list: async (params?: { q?: string; archived?: boolean; draft_dirty?: boolean }) =>
+    (
+      await api.get<{ data: SkillIdentity[]; count: number }>("/api/v1/skills", {
+        params,
+      })
+    ).data,
+  get: async (skillId: string) =>
+    (
+      await api.get<
+        SkillIdentity & {
+          draft: SkillDraft
+          versions: SkillVersion[]
+        }
+      >(`/api/v1/skills/${skillId}`)
+    ).data,
   createComplete: async (body: {
     slug: string
     name: string
@@ -968,18 +1024,143 @@ export const skillsApi = {
       )
     ).data
   },
-  upload: async (skillId: string, version: string, file: File) => {
+  createFromEditor: async (body: {
+    slug: string
+    name: string
+    description?: string
+    version: string
+    skill_md: string
+  }) =>
+    (
+      await api.post<{ skill: ManagedIdentity; version: SkillVersion }>(
+        "/api/v1/skills/complete/editor",
+        body,
+        { headers: { "Idempotency-Key": crypto.randomUUID() } },
+      )
+    ).data,
+  importDraft: async (
+    skillId: string,
+    version: string,
+    expectedRevision: number,
+    file: File,
+  ) => {
     const form = new FormData()
     form.append("version", version)
+    form.append("expected_revision", String(expectedRevision))
     form.append("file", file)
     return (
-      await api.post<SkillVersion>(`/api/v1/skills/${skillId}/versions`, form)
+      await api.post<SkillDraft>(`/api/v1/skills/${skillId}/draft/import`, form)
     ).data
   },
   versions: async (skillId: string) =>
     (
       await api.get<{ data: SkillVersion[]; count: number }>(
         `/api/v1/skills/${skillId}/versions`,
+      )
+    ).data,
+  versionFiles: async (skillId: string, version: string) =>
+    (
+      await api.get<{ data: Array<{ path: string; size: number; sha256: string }>; count: number }>(
+        `/api/v1/skills/${skillId}/versions/${encodeURIComponent(version)}/files`,
+      )
+    ).data,
+  versionFile: async (skillId: string, version: string, path: string) =>
+    (
+      await api.get<{ is_text: boolean; content: string | null }>(
+        `/api/v1/skills/${skillId}/versions/${encodeURIComponent(version)}/files/${path
+          .split("/")
+          .map(encodeURIComponent)
+          .join("/")}`,
+      )
+    ).data,
+  draft: async (skillId: string) =>
+    (await api.get<SkillDraft>(`/api/v1/skills/${skillId}/draft`)).data,
+  draftFile: async (skillId: string, fileId: string) =>
+    (
+      await api.get<{
+        file: SkillDraftFile
+        content: string | null
+        content_base64: string | null
+      }>(`/api/v1/skills/${skillId}/draft/files/${fileId}`)
+    ).data,
+  saveDraftFile: async (
+    skillId: string,
+    fileId: string,
+    body: { expected_revision: number; content: string },
+  ) =>
+    (
+      await api.put<{ revision: number; file: SkillDraftFile }>(
+        `/api/v1/skills/${skillId}/draft/files/${fileId}`,
+        body,
+      )
+    ).data,
+  createDraftFile: async (
+    skillId: string,
+    body: { expected_revision: number; path: string; content: string },
+  ) =>
+    (
+      await api.post<{ revision: number; file: SkillDraftFile }>(
+        `/api/v1/skills/${skillId}/draft/files`,
+        body,
+      )
+    ).data,
+  moveDraftFile: async (
+    skillId: string,
+    fileId: string,
+    body: { expected_revision: number; path: string },
+  ) =>
+    (
+      await api.post<{ revision: number; file: SkillDraftFile }>(
+        `/api/v1/skills/${skillId}/draft/files/${fileId}/move`,
+        body,
+      )
+    ).data,
+  deleteDraftFile: async (
+    skillId: string,
+    fileId: string,
+    expectedRevision: number,
+  ) =>
+    (
+      await api.delete<{ revision: number }>(
+        `/api/v1/skills/${skillId}/draft/files/${fileId}`,
+        { data: { expected_revision: expectedRevision } },
+      )
+    ).data,
+  validateDraft: async (skillId: string, expectedRevision: number) =>
+    (
+      await api.post(`/api/v1/skills/${skillId}/draft/validate`, {
+        expected_revision: expectedRevision,
+      })
+    ).data,
+  publishDraft: async (
+    skillId: string,
+    body: { expected_revision: number; version: string },
+  ) =>
+    (
+      await api.post<SkillVersion>(
+        `/api/v1/skills/${skillId}/draft/publish`,
+        body,
+        { headers: { "Idempotency-Key": crypto.randomUUID() } },
+      )
+    ).data,
+  setCurrentVersion: async (skillId: string, versionId: string) =>
+    (
+      await api.post<SkillVersion>(
+        `/api/v1/skills/${skillId}/current-version`,
+        { version_id: versionId },
+        { headers: { "Idempotency-Key": crypto.randomUUID() } },
+      )
+    ).data,
+  runtimeSync: async (skillId: string) =>
+    (
+      await api.get<{ data: Record<string, unknown>[]; count: number }>(
+        `/api/v1/skills/${skillId}/runtime-sync`,
+      )
+    ).data,
+  retryRuntimeSync: async (skillId: string, runtimeId: string) =>
+    (
+      await api.post(
+        `/api/v1/skills/${skillId}/runtime-sync/${runtimeId}/retry`,
       )
     ).data,
   deprecate: async (skillId: string, version: string) =>

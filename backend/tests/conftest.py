@@ -27,7 +27,10 @@ from app.agent_management.capability_models import (
     PluginDraft,
     PluginVersion,
     RuntimeAgentRelease,
+    SkillCurrentVersionChange,
     SkillDefinition,
+    SkillDraft,
+    SkillDraftFile,
     SkillVersion,
     ToolApprovalRequest,
     ToolDefinition,
@@ -64,6 +67,7 @@ from app.runtime.models import (
     AgentEvent,
     AgentSession,
     AgentTask,
+    AgentTaskSkillUsage,
     ArtifactDeployment,
     ArtifactRelease,
     NodeCredential,
@@ -75,6 +79,8 @@ from app.runtime.models import (
     RuntimeNodeArtifact,
     RuntimeProfile,
     RuntimeSecret,
+    RuntimeSkillState,
+    RuntimeSkillSyncAttempt,
 )
 from app.workflow_management.models import (
     NamespaceWorkflowConfiguration,
@@ -171,6 +177,15 @@ def isolate_runtime_data(db: Session) -> Generator[None, None, None]:
         db.execute(delete(Plugin))
         db.execute(delete(McpServerRevision))
         db.execute(delete(McpServer))
+        db.execute(delete(AgentTaskSkillUsage))
+        db.execute(delete(RuntimeSkillSyncAttempt))
+        db.execute(delete(RuntimeSkillState))
+        db.execute(delete(SkillCurrentVersionChange))
+        db.execute(delete(SkillDraftFile))
+        db.execute(
+            update(SkillDefinition).values(current_version_id=None, draft_id=None)
+        )
+        db.execute(delete(SkillDraft))
         db.execute(delete(SkillVersion))
         db.execute(delete(SkillDefinition))
         db.execute(delete(NamespaceToolPolicy))
