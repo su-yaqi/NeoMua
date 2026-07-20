@@ -41,7 +41,7 @@ backend routes --> deps / crud --> models --> db
 - `items` 只管理归属到 `owner_id` 的个人条目，不感知空间维度。
 - `namespaces` 负责空间实体、用户-空间关联关系和空间管理员权限校验。
 - `llm_configs` 负责空间级供应商接入配置；`runtime_management` 只通过同空间、已启用的配置引用模型。
-- `runtime_management` 的控制面仍位于 FastAPI；机器身份由 Runtime Node 表示，一个 Node 可承载多个 Runtime Instance。每个 Instance 固定引擎类型、配置修订、能力报告和模型绑定；`runtime-worker` 与 `node_runtime` 分别执行平台和节点实例，`model-gateway` 提供任务范围的供应商路由转换。
+- `runtime_management` 的控制面仍位于 FastAPI，并明确区分三种管理来源：每个 namespace 自动拥有平台内置 Claude Agent SDK Runtime；service Node 由管理员在目标 Linux/systemd 主机执行 bootstrap 命令后安装受管 SDK；client Node 只安装 NeoMua 管理端并发现本机 Claude Code、Codex。每个 Instance 固定管理来源、引擎类型、系统配置来源、能力报告和模型绑定。
 - `agent_management` 拥有引擎中立 Agent 草稿、稳定模型偏好、Skill 文件草稿与不可变发布版本、Tool/MCP/Plugin、canonical Resolver、Release/Runtime Activation 和 Tool Approval。Harness 仅保留只读历史语义；Agent 不再选择 Harness 或供应商路由。
 - `project_management` 拥有项目、成员、多仓库、Spec 位置和不可变标准版本绑定；仓库可用性必须来自目标 Runtime 的显式工作区证明。
 - `conversation_management` 固定会话创建时的项目与 Runtime Instance；模型或 Agent 参与者/组织 Agent 通过追加式配置修订调整，并以 exact binding 或唯一可解析的 Agent 偏好冻结到后续消息。项目上下文按 commit、Spec 版本和摘要追加快照，历史消息与其配置修订不被改写；消息和委派事件通过数据库游标及可恢复 SSE 交付。
@@ -61,6 +61,7 @@ backend routes --> deps / crud --> models --> db
 - 能力不可变与目标显式性：Skill/Plugin Version、MCP Revision、Agent Release 内容本身均不可变；Plugin、MCP 与 Agent Release 继续精确锁定自身版本，但 Agent/Plugin/Release 对 Skill 只锁定身份。Skill 当前版本由控制面指针显式决定，Runtime 按目标独立同步，不按 SemVer 猜测，也不做模型、Harness、Tool 或权限降级。
 - v0.9 执行绑定以 Runtime Instance 为边界：Agent Release 只保存稳定模型偏好；Conversation、Workflow 和 Task 保存 exact binding 或严格的偏好解析结果。Runtime 配置摘要、能力指纹、模型目录指纹和 effective spec digest 进入不可变执行快照。
 - v0.9 的 Runtime 模型证明来自本地持久化 applied 配置、实际 Adapter、能力缓存和已验证模型路由，控制面精确核对后才允许首次模型调用。配置环境按运维与 Runtime 双重 allowlist 清洗；目录、权限、Tool/MCP、能力和超时在执行边界复核，当前无法可靠执行的隔离、网络、CPU、内存或并发策略明确阻断。Node 离线、能力过期或依赖变化会统一使旧 Binding 失效。
+- v0.10 平台 Runtime 生命周期和配置由系统拥有，用户不能创建或修改；已启用的 LLM 配置通过具体模型最小调用和 Runtime 能力指纹自动形成 Binding。service/client bootstrap 绑定模式、设备 Ed25519 公钥和签名发行清单，安装状态成对原子落盘；响应丢失只允许同一设备密钥证明恢复，不以其他 Runtime 或凭证降级。
 - Skill 发布、同步和使用解耦：发布阶段完成文件安全检查、Manifest 解析、完整校验、摘要和签名；同步阶段由通知与周期轮询驱动，按摘要下载、验签、缓存并原子切换 desired/applied；任务阶段只绑定 Runtime 本地已应用的不可变目录并写入版本证据，不访问控制面、不下载、不解包、不再次解析。
 - Skill 同步采用两阶段提交和保守失败语义：验证成功后再提交 applied 指针；同步失败保留上一已应用版本。首次尚无可用版本时阻断依赖该 Skill 的激活或任务，已有版本时继续使用旧 applied 并明确展示差异，绝不静默移除能力。
 - MCP secret 分域：平台 target 使用 AES-GCM 密文；节点 target 只保存 `secret_ref`，本地 Keychain 指纹通过心跳上报，变化或移除使 target `stale`。
@@ -87,8 +88,9 @@ prestart 容器负责迁移前准备与初始化检查。
 
 ```text
 browser -> backend(control plane) -> PostgreSQL
-                         |-> runtime-worker -> Claude Code/Codex adapter
-Runtime adapter / node ->|-> model-gateway -> Anthropic / OpenAI-compatible API
+                         |-> runtime-worker -> platform Claude Agent SDK
+service Node (managed SDK) / client Node (signed Claude Code/Codex Adapter)
+                         |-> model-gateway -> Anthropic / OpenAI-compatible API
 node daemon -- outbound WSS --> backend
 backend <-> local volume or S3-compatible immutable artifact storage
 operator CLI -> HTTPS/Bearer API；refresh token -> OS Keychain
@@ -97,6 +99,8 @@ operator CLI -> HTTPS/Bearer API；refresh token -> OS Keychain
 Skill 数据面独立于任务数据面：控制面保存 current/desired/applied 与同步 attempt；平台 Worker 或节点守护进程将签名 Bundle 放入按内容摘要寻址的本地缓存，再原子更新 Runtime 指针。每个任务创建独立的只读绑定并上报 `agent_task_skill_usage`，因此同一 Session 的后续任务可使用新同步版本，而已开始任务不被热替换。
 
 FastAPI 多 worker 不共享内存连接表：节点每次连接写入 PostgreSQL `connection_id`。每次查询和发送前都重验代次；任务和发布先持久化短 reservation，再由当前 generation 下发。独立 maintenance loop 使用 PostgreSQL advisory lock 处理过期 reservation、租约、轮换宽限和发布。
+
+Node 发行和 client Adapter 是两层独立不可变签名对象。service 发行固定 Node Manager、Claude Agent SDK 与 systemd 单元；client 发行只固定 Node Manager、systemd 单元和签名 Registry。client 的绝对执行路径只保存在节点权限受限的本地状态中，控制面仅保存稳定 installation UUID、不可逆文件指纹、Adapter release 和脱敏探测摘要。
 
 ## 非功能性约束
 | 类型 | 要求 |

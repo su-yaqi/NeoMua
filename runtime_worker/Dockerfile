@@ -9,12 +9,12 @@ COPY pyproject.toml uv.lock ./
 COPY workflow_runtime/pyproject.toml ./workflow_runtime/
 COPY runtime_worker/pyproject.toml ./runtime_worker/
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --package neomua-runtime-worker --no-install-workspace
+    uv sync --frozen --package neomua-runtime-worker --extra claude --no-install-workspace
 COPY runtime_worker/runtime_worker ./runtime_worker/runtime_worker
 COPY workflow_runtime/workflow_runtime ./workflow_runtime/workflow_runtime
 COPY workflow_apps ./workflow_apps
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --package neomua-runtime-worker
+    uv sync --frozen --package neomua-runtime-worker --extra claude
 
 HEALTHCHECK --interval=15s --timeout=3s --retries=3 \
   CMD python -c "import os; os.kill(1, 0)"

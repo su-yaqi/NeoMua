@@ -1,7 +1,5 @@
 from typing import Literal, cast
 
-from claude_agent_sdk.types import PermissionMode as SDKPermissionMode
-
 PermissionMode = Literal["default", "acceptEdits", "plan", "dontAsk"]
 SUPPORTED_PERMISSION_MODES: frozenset[str] = frozenset(
     {"default", "acceptEdits", "plan", "dontAsk"}
@@ -14,7 +12,7 @@ def validate_permission_mode(value: str) -> PermissionMode:
     return cast(PermissionMode, value)
 
 
-def permission_mode_for_sdk(value: str) -> SDKPermissionMode:
+def permission_mode_for_sdk(value: str) -> PermissionMode:
     """Return the SDK's annotated literal after the shared allowlist check."""
     validate_permission_mode(value)
-    return cast(SDKPermissionMode, value)
+    return cast(PermissionMode, value)

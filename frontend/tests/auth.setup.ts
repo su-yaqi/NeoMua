@@ -8,19 +8,16 @@ setup("authenticate", async ({ page, request }) => {
   const email = randomEmail()
   const password = randomPassword()
 
-  const createResponse = await request.post(
-    `${apiUrl}/api/v1/private/users/`,
-    {
-      data: {
-        email,
-        password,
-        full_name: "Playwright Admin",
-        is_verified: true,
-        is_superuser: true,
-        is_active: true,
-      },
+  const createResponse = await request.post(`${apiUrl}/api/v1/private/users/`, {
+    data: {
+      email,
+      password,
+      full_name: "Playwright Admin",
+      is_verified: true,
+      is_superuser: true,
+      is_active: true,
     },
-  )
+  })
 
   if (!createResponse.ok()) {
     throw new Error(

@@ -8,7 +8,12 @@ import jwt
 from sqlmodel import Session, select
 
 from app.core.config import settings
-from app.runtime.models import NodeCredential, NodeEnrollmentToken, RuntimeNode
+from app.runtime.models import (
+    NodeCredential,
+    NodeEnrollmentToken,
+    RuntimeNode,
+    RuntimeNodeMode,
+)
 
 
 class EnrollmentTokenInvalid(ValueError):
@@ -28,18 +33,35 @@ def create_enrollment_token(
     created_by: uuid.UUID,
     *,
     ttl: timedelta = timedelta(minutes=10),
+    management_mode: RuntimeNodeMode = RuntimeNodeMode.LEGACY_UNCLASSIFIED,
+    commit: bool = True,
 ) -> tuple[str, NodeEnrollmentToken]:
     raw = f"nmenr_{secrets.token_urlsafe(32)}"
     record = NodeEnrollmentToken(
         namespace_id=namespace_id,
         token_hash=_token_hash(raw),
+        requested_management_mode=management_mode,
         expires_at=datetime.now(timezone.utc) + ttl,
         created_by=created_by,
     )
     session.add(record)
-    session.commit()
-    session.refresh(record)
+    if commit:
+        session.commit()
+        session.refresh(record)
+    else:
+        session.flush()
     return raw, record
+
+
+def read_enrollment_token(session: Session, raw_token: str) -> NodeEnrollmentToken:
+    record = session.exec(
+        select(NodeEnrollmentToken)
+        .where(NodeEnrollmentToken.token_hash == _token_hash(raw_token))
+        .with_for_update()
+    ).first()
+    if record is None:
+        raise EnrollmentTokenInvalid("enrollment token is invalid or expired")
+    return record
 
 
 def consume_enrollment_token(session: Session, raw_token: str) -> NodeEnrollmentToken:

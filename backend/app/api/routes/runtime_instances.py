@@ -1,13 +1,13 @@
 """v0.9 Runtime instance, configuration, capability, and model catalog APIs."""
 
+import base64
 import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import PurePosixPath, PureWindowsPath
 from typing import Any
 
-import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, select
@@ -18,7 +18,6 @@ from app.api.deps import (
     require_namespace_admin,
     require_namespace_runtime_user,
 )
-from app.llm_provider_service import open_secret_payload, sanitize_error_text
 from app.models import (
     LlmModelDefinition,
     LlmProviderConfig,
@@ -29,24 +28,43 @@ from app.runtime.catalog import (
     canonical_digest,
     configuration_payload,
     current_runtime_evidence,
+    model_binding_is_current,
     model_catalog_fingerprint,
     validate_model_binding_route,
 )
-from app.runtime.gateway import UnsupportedGatewayProvider, gateway_provider_kind
+from app.runtime.connections import node_is_online
 from app.runtime.models import (
+    BootstrapStatus,
+    NodeBootstrapAttempt,
+    NodeBootstrapSession,
+    NodeInstallationReceipt,
+    RuntimeAdapterRelease,
     RuntimeCapabilityReport,
+    RuntimeConfigurationOrigin,
     RuntimeConfigurationRevision,
     RuntimeConfigurationStatus,
+    RuntimeControlAction,
+    RuntimeControlDecision,
+    RuntimeDiscoveryObservation,
     RuntimeEngineType,
     RuntimeInstance,
     RuntimeInstanceStatus,
     RuntimeLocationType,
+    RuntimeManagementType,
     RuntimeModelBinding,
+    RuntimeModelBindingOrigin,
     RuntimeModelBindingStatus,
     RuntimeModelRouteType,
     RuntimeModelValidationAttempt,
     RuntimeNode,
+    RuntimeNodeMode,
 )
+from app.runtime.platform_builtin import (
+    enqueue_platform_reconcile_job,
+    ensure_builtin_platform_runtime,
+    reconcile_platform_model_bindings,
+)
+from app.runtime.provider_validation import validate_provider_model_call
 from app.runtime.security import require_internal_runtime
 
 router = APIRouter(tags=["runtime-instances"])
@@ -186,13 +204,40 @@ class DiscoveryInstallation(StrictBody):
     adapter_version: str = Field(min_length=1, max_length=64)
     executable_fingerprint: str = Field(min_length=32, max_length=128)
     capabilities: dict[str, Any] = {}
-    discovered_models: list[dict[str, Any]] = []
+    discovered_models: list["DiscoveredNativeModel"] = []
+    installation_receipt_id: uuid.UUID | None = None
+    distribution_manifest_digest: str | None = Field(
+        default=None, min_length=64, max_length=64
+    )
+    adapter_release_id: uuid.UUID | None = None
+    adapter_release_digest: str | None = Field(
+        default=None, min_length=64, max_length=64
+    )
+
+
+class DiscoveredNativeModel(StrictBody):
+    model_id: str = Field(min_length=1, max_length=255)
+    route_key: str = Field(min_length=1, max_length=255)
+    login_evidence_digest: str = Field(min_length=64, max_length=64)
+
+
+class DiscoveryObservationInput(StrictBody):
+    adapter_release_id: uuid.UUID
+    candidate_ref: str = Field(min_length=64, max_length=64)
+    installation_key: str | None = Field(default=None, max_length=255)
+    status: str
+    error: dict[str, Any] | None = None
 
 
 class RuntimeDiscoveryReport(StrictBody):
     node_id: uuid.UUID
     generation: int = Field(ge=1)
     installations: list[DiscoveryInstallation]
+    observations: list[DiscoveryObservationInput] = Field(default_factory=list)
+    adapter_registry_digest: str | None = Field(
+        default=None, min_length=64, max_length=64
+    )
+    device_signature: str | None = None
 
 
 class ConfigurationApplyInput(StrictBody):
@@ -256,17 +301,49 @@ def _runtime_public(session: SessionDep, runtime: RuntimeInstance) -> dict[str, 
             RuntimeModelBinding.runtime_instance_id == runtime.id
         )
     ).all()
+    observation = (
+        session.get(
+            RuntimeDiscoveryObservation,
+            runtime.current_discovery_observation_id,
+        )
+        if runtime.current_discovery_observation_id is not None
+        else None
+    )
+    evidence_state = runtime.status.value
+    if runtime.management_type == RuntimeManagementType.CLIENT_DISCOVERED:
+        if observation is not None and observation.status != "available":
+            evidence_state = (
+                "installation_missing"
+                if observation.status == "missing"
+                else "blocked"
+            )
+        elif runtime.status == RuntimeInstanceStatus.AVAILABLE:
+            evidence_state = "available"
+        elif (
+            runtime.applied_configuration_revision_id is not None
+            and runtime.desired_configuration_revision_id
+            != runtime.applied_configuration_revision_id
+        ):
+            evidence_state = "change_detected"
+        elif any(
+            binding.status == RuntimeModelBindingStatus.DECLARED
+            for binding in bindings
+        ):
+            evidence_state = "validating"
     return {
         "id": runtime.id,
         "namespace_id": runtime.namespace_id,
         "runtime_node_id": runtime.runtime_node_id,
         "location_type": runtime.location_type.value,
+        "management_type": runtime.management_type.value,
+        "lifecycle_source_key": runtime.lifecycle_source_key,
         "name": runtime.name,
         "installation_key": runtime.installation_key,
         "engine_type": runtime.engine_type.value,
         "engine_version": runtime.engine_version,
         "adapter_version": runtime.adapter_version,
         "status": runtime.status.value,
+        "evidence_state": evidence_state,
         "enabled": runtime.enabled,
         "desired_configuration_revision_id": runtime.desired_configuration_revision_id,
         "applied_configuration_revision_id": runtime.applied_configuration_revision_id,
@@ -312,6 +389,9 @@ def list_runtime_instances(
     engine_type: RuntimeEngineType | None = None,
     status: RuntimeInstanceStatus | None = None,
 ) -> dict[str, Any]:
+    ensure_builtin_platform_runtime(session, namespace_id)
+    reconcile_platform_model_bindings(session, namespace_id)
+    session.commit()
     statement = select(RuntimeInstance).where(
         RuntimeInstance.namespace_id == namespace_id
     )
@@ -331,9 +411,11 @@ def runtime_catalog(
     engine_type: RuntimeEngineType | None = None,
     model_definition_id: uuid.UUID | None = None,
 ) -> dict[str, Any]:
+    reconcile_platform_model_bindings(session, namespace_id)
+    session.commit()
     statement = select(RuntimeInstance).where(
         RuntimeInstance.namespace_id == namespace_id,
-        RuntimeInstance.enabled.is_(True),
+        col(RuntimeInstance.enabled).is_(True),
         RuntimeInstance.status == RuntimeInstanceStatus.AVAILABLE,
     )
     if engine_type is not None:
@@ -392,12 +474,17 @@ def enable_node_runtime_instance(
     namespace_id: uuid.UUID = Depends(require_namespace_admin),
 ) -> dict[str, Any]:
     runtime = _runtime_or_404(session, runtime_id, namespace_id)
-    if runtime.runtime_node_id != node_id or runtime.location_type != RuntimeLocationType.NODE:
+    if (
+        runtime.runtime_node_id != node_id
+        or runtime.location_type != RuntimeLocationType.NODE
+    ):
         raise HTTPException(404, "Runtime does not belong to this Node")
     if runtime.status == RuntimeInstanceStatus.INCOMPATIBLE:
         raise HTTPException(409, "Incompatible Runtime cannot be enabled")
     if runtime.desired_configuration_revision_id is None:
-        raise HTTPException(409, "Runtime configuration must be created before enablement")
+        raise HTTPException(
+            409, "Runtime configuration must be created before enablement"
+        )
     runtime.enabled = True
     runtime.status = (
         RuntimeInstanceStatus.AVAILABLE
@@ -418,56 +505,12 @@ def enable_node_runtime_instance(
 )
 @router.post("/runtimes/platform", status_code=201)
 def create_platform_runtime_instance(
-    body: PlatformRuntimeCreate,
-    session: SessionDep,
-    current_user: CurrentUser,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-    namespace_id: uuid.UUID = Depends(require_namespace_admin),
+    _body: PlatformRuntimeCreate,
+    _session: SessionDep,
+    _current_user: CurrentUser,
+    _namespace_id: uuid.UUID = Depends(require_namespace_admin),
 ) -> dict[str, Any]:
-    if not idempotency_key:
-        raise HTTPException(400, "Idempotency-Key is required")
-    existing = session.exec(
-        select(RuntimeInstance).where(
-            RuntimeInstance.namespace_id == namespace_id,
-            RuntimeInstance.location_type == RuntimeLocationType.PLATFORM,
-            RuntimeInstance.installation_key == body.installation_key,
-        )
-    ).first()
-    if existing:
-        expected = existing.executable_fingerprint
-        fingerprint = canonical_digest(
-            {"idempotency_key": idempotency_key, "body": body.model_dump(mode="json")}
-        )
-        if expected != fingerprint:
-            raise HTTPException(409, "Platform Runtime installation_key already exists")
-        return _runtime_public(session, existing)
-    fingerprint = canonical_digest(
-        {"idempotency_key": idempotency_key, "body": body.model_dump(mode="json")}
-    )
-    runtime = RuntimeInstance(
-        namespace_id=namespace_id,
-        location_type=RuntimeLocationType.PLATFORM,
-        name=body.name,
-        installation_key=body.installation_key,
-        engine_type=body.engine_type,
-        engine_version=body.engine_version,
-        adapter_version=body.adapter_version,
-        executable_fingerprint=fingerprint,
-        status=RuntimeInstanceStatus.DISCOVERED,
-        enabled=True,
-        last_seen_at=datetime.now(timezone.utc),
-    )
-    session.add(runtime)
-    session.flush()
-    configuration = _configuration_from_input(
-        runtime.id, 1, body.configuration, current_user.id
-    )
-    session.add(configuration)
-    session.flush()
-    runtime.desired_configuration_revision_id = configuration.id
-    session.add(runtime)
-    session.commit()
-    return _runtime_public(session, runtime)
+    raise HTTPException(410, "platform_runtime_system_managed")
 
 
 @router.get("/runtimes/{runtime_id}")
@@ -494,6 +537,8 @@ def get_runtime_instance(
             {
                 "id": row.id,
                 "revision": row.revision,
+                "origin": row.origin.value,
+                "adapter_execution_ref": row.adapter_execution_ref,
                 **configuration_payload(row),
                 "configuration_digest": row.configuration_digest,
                 "status": row.status.value,
@@ -538,6 +583,12 @@ def create_runtime_configuration(
     ).first()
     if runtime is None:
         raise HTTPException(404, "Runtime not found")
+    if runtime.management_type in {
+        RuntimeManagementType.PLATFORM_BUILTIN,
+        RuntimeManagementType.SERVICE_MANAGED,
+        RuntimeManagementType.CLIENT_DISCOVERED,
+    }:
+        raise HTTPException(409, "runtime_configuration_system_managed")
     latest = session.exec(
         select(RuntimeConfigurationRevision)
         .where(RuntimeConfigurationRevision.runtime_instance_id == runtime.id)
@@ -545,7 +596,10 @@ def create_runtime_configuration(
     ).first()
     actual = latest.revision if latest else 0
     if body.expected_revision != actual:
-        raise HTTPException(409, {"expected_revision": body.expected_revision, "actual_revision": actual})
+        raise HTTPException(
+            409,
+            {"expected_revision": body.expected_revision, "actual_revision": actual},
+        )
     row = _configuration_from_input(runtime.id, actual + 1, body, current_user.id)
     session.add(row)
     try:
@@ -568,7 +622,12 @@ def create_runtime_configuration(
     runtime.updated_at = datetime.now(timezone.utc)
     session.add(runtime)
     session.commit()
-    return {"id": row.id, "revision": row.revision, "configuration_digest": row.configuration_digest, "status": row.status.value}
+    return {
+        "id": row.id,
+        "revision": row.revision,
+        "configuration_digest": row.configuration_digest,
+        "status": row.status.value,
+    }
 
 
 @router.post("/runtimes/{runtime_id}/configuration/apply", status_code=202)
@@ -580,6 +639,12 @@ def apply_runtime_configuration(
     namespace_id: uuid.UUID = Depends(require_namespace_admin),
 ) -> dict[str, Any]:
     runtime = _runtime_or_404(session, runtime_id, namespace_id)
+    if runtime.management_type in {
+        RuntimeManagementType.PLATFORM_BUILTIN,
+        RuntimeManagementType.SERVICE_MANAGED,
+        RuntimeManagementType.CLIENT_DISCOVERED,
+    }:
+        raise HTTPException(409, "runtime_configuration_system_managed")
     configuration = session.get(
         RuntimeConfigurationRevision, body.configuration_revision_id
     )
@@ -588,7 +653,9 @@ def apply_runtime_configuration(
         or configuration.runtime_instance_id != runtime.id
         or runtime.desired_configuration_revision_id != configuration.id
     ):
-        raise HTTPException(409, "Only the current desired configuration can be applied")
+        raise HTTPException(
+            409, "Only the current desired configuration can be applied"
+        )
     if configuration.status == RuntimeConfigurationStatus.FAILED:
         configuration.status = RuntimeConfigurationStatus.DESIRED
         configuration.error = None
@@ -612,7 +679,9 @@ def list_model_definitions(
     rows = session.exec(
         select(LlmModelDefinition)
         .where(LlmModelDefinition.namespace_id == namespace_id)
-        .order_by(col(LlmModelDefinition.provider_family), col(LlmModelDefinition.model_key))
+        .order_by(
+            col(LlmModelDefinition.provider_family), col(LlmModelDefinition.model_key)
+        )
     ).all()
     return {"data": [row.model_dump() for row in rows], "count": len(rows)}
 
@@ -653,6 +722,7 @@ def _binding_public(session: SessionDep, row: RuntimeModelBinding) -> dict[str, 
     return {
         "id": row.id,
         "runtime_instance_id": row.runtime_instance_id,
+        "origin": row.origin.value,
         "model_definition_id": row.model_definition_id,
         "model": definition.model_dump() if definition else None,
         "provider_config_id": row.provider_config_id,
@@ -667,72 +737,6 @@ def _binding_public(session: SessionDep, row: RuntimeModelBinding) -> dict[str, 
         "validation_expires_at": row.validation_expires_at,
         "last_error": row.last_error,
     }
-
-
-def _validate_provider_model_call(
-    provider: LlmProviderConfig, model_id: str
-) -> dict[str, Any]:
-    try:
-        kind = gateway_provider_kind(provider.provider_slug)
-        secrets = open_secret_payload(provider.secret_ciphertext)
-        api_key = secrets.get("api_key") or secrets.get("api_token") or secrets.get(
-            "token"
-        )
-        if not api_key:
-            raise RuntimeCatalogError(
-                "provider_credential_missing", "Provider credential is missing"
-            )
-        base_url = provider.base_url.rstrip("/")
-        if kind == "anthropic":
-            url = (
-                f"{base_url}/messages"
-                if base_url.endswith("/v1")
-                else f"{base_url}/v1/messages"
-            )
-            response = httpx.post(
-                url,
-                headers={
-                    "x-api-key": api_key,
-                    "anthropic-version": "2023-06-01",
-                },
-                json={
-                    "model": model_id,
-                    "max_tokens": 1,
-                    "messages": [{"role": "user", "content": "Reply OK"}],
-                },
-                timeout=30,
-            )
-        else:
-            url = (
-                f"{base_url}/chat/completions"
-                if base_url.endswith("/v1")
-                else f"{base_url}/v1/chat/completions"
-            )
-            response = httpx.post(
-                url,
-                headers={"Authorization": f"Bearer {api_key}"},
-                json={
-                    "model": model_id,
-                    "max_tokens": 1,
-                    "messages": [{"role": "user", "content": "Reply OK"}],
-                },
-                timeout=30,
-            )
-        response.raise_for_status()
-        return {
-            "provider_kind": kind,
-            "status_code": response.status_code,
-            "model_id": model_id,
-        }
-    except UnsupportedGatewayProvider as exc:
-        raise RuntimeCatalogError(
-            "provider_adapter_unsupported", str(exc)
-        ) from exc
-    except httpx.HTTPError as exc:
-        raise RuntimeCatalogError(
-            "provider_model_validation_failed",
-            sanitize_error_text(str(exc)),
-        ) from exc
 
 
 @router.get("/runtimes/{runtime_id}/model-bindings")
@@ -760,8 +764,14 @@ def create_runtime_model_binding(
     namespace_id: uuid.UUID = Depends(require_namespace_admin),
 ) -> dict[str, Any]:
     runtime = _runtime_or_404(session, runtime_id, namespace_id)
+    if runtime.management_type == RuntimeManagementType.PLATFORM_BUILTIN:
+        raise HTTPException(409, "platform_runtime_bindings_system_managed")
     definition = session.get(LlmModelDefinition, body.model_definition_id)
-    if definition is None or definition.namespace_id != namespace_id or not definition.enabled:
+    if (
+        definition is None
+        or definition.namespace_id != namespace_id
+        or not definition.enabled
+    ):
         raise HTTPException(422, "Enabled model definition is required")
     row = RuntimeModelBinding(
         namespace_id=namespace_id,
@@ -797,7 +807,11 @@ def validate_runtime_model_binding(
         .where(RuntimeModelBinding.id == binding_id)
         .with_for_update()
     ).first()
-    if row is None or row.runtime_instance_id != runtime_id or row.namespace_id != namespace_id:
+    if (
+        row is None
+        or row.runtime_instance_id != runtime_id
+        or row.namespace_id != namespace_id
+    ):
         raise HTTPException(404, "Runtime model binding not found")
     last_attempt = session.exec(
         select(RuntimeModelValidationAttempt)
@@ -806,18 +820,21 @@ def validate_runtime_model_binding(
     ).first()
     attempt_no = (last_attempt.attempt_no if last_attempt else 0) + 1
     try:
-        _, capability, _ = current_runtime_evidence(
+        _configuration_evidence, capability, _catalog_digest = current_runtime_evidence(
             session, runtime, include_catalog=False
         )
         validate_model_binding_route(session, row)
         if row.provider_config_id:
             provider = session.get(LlmProviderConfig, row.provider_config_id)
-            if provider is None or provider.validation_status != ProviderValidationStatus.SUCCESS:
+            if (
+                provider is None
+                or provider.validation_status != ProviderValidationStatus.SUCCESS
+            ):
                 raise RuntimeCatalogError(
                     "provider_not_validated",
                     "Provider Config must pass connection validation before binding validation",
                 )
-            evidence = _validate_provider_model_call(provider, row.engine_model_id)
+            evidence = validate_provider_model_call(provider, row.engine_model_id)
         else:
             attempt = RuntimeModelValidationAttempt(
                 runtime_model_binding_id=row.id,
@@ -886,13 +903,184 @@ def disable_runtime_model_binding(
 ) -> dict[str, Any]:
     _runtime_or_404(session, runtime_id, namespace_id)
     row = session.get(RuntimeModelBinding, binding_id)
-    if row is None or row.runtime_instance_id != runtime_id or row.namespace_id != namespace_id:
+    if (
+        row is None
+        or row.runtime_instance_id != runtime_id
+        or row.namespace_id != namespace_id
+    ):
         raise HTTPException(404, "Runtime model binding not found")
     row.status = RuntimeModelBindingStatus.DISABLED
     row.updated_at = datetime.now(timezone.utc)
     session.add(row)
     session.commit()
     return _binding_public(session, row)
+
+
+@router.post("/runtimes/{runtime_id}/pause")
+def pause_managed_node_runtime(
+    runtime_id: uuid.UUID,
+    session: SessionDep,
+    current_user: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_admin),
+) -> dict[str, Any]:
+    runtime = _runtime_or_404(session, runtime_id, namespace_id)
+    if runtime.management_type not in {
+        RuntimeManagementType.CLIENT_DISCOVERED,
+        RuntimeManagementType.SERVICE_MANAGED,
+    }:
+        raise HTTPException(409, "only managed Node Runtime scheduling can be paused")
+    runtime.enabled = False
+    runtime.updated_at = datetime.now(timezone.utc)
+    session.add(runtime)
+    session.add(
+        RuntimeControlDecision(
+            runtime_instance_id=runtime.id,
+            action=RuntimeControlAction.PAUSE,
+            actor_id=current_user.id,
+            evidence={
+                "capability_report_id": str(runtime.current_capability_report_id)
+                if runtime.current_capability_report_id
+                else None
+            },
+        )
+    )
+    session.commit()
+    return _runtime_public(session, runtime)
+
+
+@router.post("/runtimes/{runtime_id}/resume")
+def resume_managed_node_runtime(
+    runtime_id: uuid.UUID,
+    session: SessionDep,
+    current_user: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_admin),
+) -> dict[str, Any]:
+    runtime = _runtime_or_404(session, runtime_id, namespace_id)
+    if runtime.management_type not in {
+        RuntimeManagementType.CLIENT_DISCOVERED,
+        RuntimeManagementType.SERVICE_MANAGED,
+    }:
+        raise HTTPException(409, "only managed Node Runtime scheduling can be resumed")
+    observation = (
+        session.get(
+            RuntimeDiscoveryObservation,
+            runtime.current_discovery_observation_id,
+        )
+        if runtime.current_discovery_observation_id is not None
+        else None
+    )
+    configuration = (
+        session.get(
+            RuntimeConfigurationRevision,
+            runtime.applied_configuration_revision_id,
+        )
+        if runtime.applied_configuration_revision_id is not None
+        else None
+    )
+    capability = (
+        session.get(RuntimeCapabilityReport, runtime.current_capability_report_id)
+        if runtime.current_capability_report_id is not None
+        else None
+    )
+    node = (
+        session.get(RuntimeNode, runtime.runtime_node_id)
+        if runtime.runtime_node_id is not None
+        else None
+    )
+    bindings = session.exec(
+        select(RuntimeModelBinding).where(
+            RuntimeModelBinding.runtime_instance_id == runtime.id,
+            RuntimeModelBinding.status == RuntimeModelBindingStatus.AVAILABLE,
+        )
+    ).all()
+    ready = bool(
+        observation is not None
+        and observation.status == "available"
+        and configuration is not None
+        and capability is not None
+        and capability.configuration_digest == configuration.configuration_digest
+        and capability.reported_at >= datetime.now(timezone.utc) - timedelta(minutes=5)
+        and node is not None
+        and node_is_online(node)
+        and any(
+            model_binding_is_current(
+                session, binding, capability.capability_fingerprint
+            )
+            for binding in bindings
+        )
+    )
+    if not ready:
+        raise HTTPException(
+            409, "managed Node Runtime evidence must be revalidated before resume"
+        )
+    runtime.enabled = True
+    runtime.status = RuntimeInstanceStatus.AVAILABLE
+    runtime.updated_at = datetime.now(timezone.utc)
+    session.add(runtime)
+    session.add(
+        RuntimeControlDecision(
+            runtime_instance_id=runtime.id,
+            action=RuntimeControlAction.RESUME,
+            actor_id=current_user.id,
+            evidence={
+                "discovery_observation_id": str(observation.id),
+                "capability_report_id": str(capability.id),
+                "available_binding_ids": [str(binding.id) for binding in bindings],
+            },
+        )
+    )
+    session.commit()
+    return _runtime_public(session, runtime)
+
+
+@router.get("/runtime-nodes/{node_id}/discovery-observations")
+def list_discovery_observations(
+    node_id: uuid.UUID,
+    session: SessionDep,
+    _: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
+) -> dict[str, Any]:
+    node = session.get(RuntimeNode, node_id)
+    if node is None or node.namespace_id != namespace_id:
+        raise HTTPException(404, "Runtime Node not found")
+    observations = session.exec(
+        select(RuntimeDiscoveryObservation)
+        .where(RuntimeDiscoveryObservation.node_id == node.id)
+        .order_by(
+            col(RuntimeDiscoveryObservation.generation).desc(),
+            col(RuntimeDiscoveryObservation.installation_key),
+        )
+    ).all()
+    return {
+        "data": [observation.model_dump() for observation in observations],
+        "count": len(observations),
+    }
+
+
+@router.post("/runtime-nodes/{node_id}/discovery/refresh", status_code=202)
+def request_client_discovery_refresh(
+    node_id: uuid.UUID,
+    session: SessionDep,
+    _: CurrentUser,
+    namespace_id: uuid.UUID = Depends(require_namespace_admin),
+) -> dict[str, Any]:
+    node = session.exec(
+        select(RuntimeNode).where(RuntimeNode.id == node_id).with_for_update()
+    ).first()
+    if node is None or node.namespace_id != namespace_id:
+        raise HTTPException(404, "Runtime Node not found")
+    if node.management_mode != RuntimeNodeMode.CLIENT:
+        raise HTTPException(409, "discovery refresh is only available for client Nodes")
+    node.discovery_requested_generation = max(
+        node.discovery_requested_generation,
+        node.discovery_generation + 1,
+    )
+    session.add(node)
+    session.commit()
+    return {
+        "status": "requested",
+        "generation": node.discovery_requested_generation,
+    }
 
 
 @internal_router.post("/discovery")
@@ -903,7 +1091,101 @@ def report_runtime_discovery(
     node = session.get(RuntimeNode, body.node_id)
     if node is None or node.revoked_at is not None:
         raise HTTPException(404, "Active Runtime Node not found")
-    report_digest = canonical_digest(body.model_dump(mode="json", exclude={"node_id"}))
+    if node.management_mode in {RuntimeNodeMode.SERVICE, RuntimeNodeMode.CLIENT}:
+        if body.device_signature is None:
+            raise HTTPException(422, "Runtime discovery device signature is required")
+        from cryptography.exceptions import InvalidSignature
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+        signed_payload = body.model_dump(
+            mode="json",
+            exclude={"node_id", "device_signature"},
+            exclude_none=True,
+        )
+        discovery_digest = canonical_digest(signed_payload)
+        try:
+            Ed25519PublicKey.from_public_bytes(
+                base64.b64decode(node.public_key, validate=True)
+            ).verify(
+                base64.b64decode(body.device_signature, validate=True),
+                f"neomua-runtime-discovery-v1:{discovery_digest}".encode(),
+            )
+        except (ValueError, InvalidSignature) as exc:
+            raise HTTPException(
+                422, "Runtime discovery device signature is invalid"
+            ) from exc
+    if node.management_mode == RuntimeNodeMode.SERVICE:
+        if (
+            len(body.installations) != 1
+            or body.installations[0].engine_type != RuntimeEngineType.CLAUDE_AGENT_SDK
+        ):
+            raise HTTPException(
+                422,
+                "service Node must report exactly one managed Claude Agent SDK Runtime",
+            )
+        receipt = (
+            session.get(NodeInstallationReceipt, node.current_installation_receipt_id)
+            if node.current_installation_receipt_id is not None
+            else None
+        )
+        installation = body.installations[0]
+        if (
+            receipt is None
+            or installation.installation_receipt_id != receipt.id
+            or installation.distribution_manifest_digest != receipt.manifest_digest
+            or installation.installation_key != receipt.logical_installation_ref
+        ):
+            raise HTTPException(409, "service installation receipt mismatch")
+    if node.management_mode == RuntimeNodeMode.CLIENT and any(
+        item.engine_type == RuntimeEngineType.CLAUDE_AGENT_SDK
+        for item in body.installations
+    ):
+        raise HTTPException(422, "client Node cannot report a managed Claude Agent SDK")
+    if node.management_mode == RuntimeNodeMode.CLIENT:
+        if (
+            node.adapter_registry_digest is None
+            or body.adapter_registry_digest != node.adapter_registry_digest
+        ):
+            raise HTTPException(409, "client Adapter Registry digest mismatch")
+        for item in body.installations:
+            release = (
+                session.get(RuntimeAdapterRelease, item.adapter_release_id)
+                if item.adapter_release_id is not None
+                else None
+            )
+            if (
+                release is None
+                or release.engine_type != item.engine_type
+                or release.version != item.adapter_version
+                or release.release_digest != item.adapter_release_digest
+                or item.capabilities.get("adapter_release_digest")
+                != release.release_digest
+                or item.capabilities.get("native_login_ready") is not True
+            ):
+                raise HTTPException(409, "client Adapter release evidence mismatch")
+            installation_parts = item.installation_key.split(":", 2)
+            if len(installation_parts) != 3 or installation_parts[:2] != [
+                "client",
+                release.adapter_id,
+            ]:
+                raise HTTPException(422, "client installation key is invalid")
+            try:
+                installation_id = uuid.UUID(installation_parts[2])
+            except ValueError as exc:
+                raise HTTPException(422, "client installation UUID is invalid") from exc
+            expected_route_prefix = f"native:{installation_id}:"
+            if any(
+                not model.route_key.startswith(expected_route_prefix)
+                for model in item.discovered_models
+            ):
+                raise HTTPException(422, "client native model route is invalid")
+    report_digest = canonical_digest(
+        body.model_dump(
+            mode="json",
+            exclude={"node_id", "device_signature"},
+            exclude_none=True,
+        )
+    )
     if body.generation < node.discovery_generation:
         raise HTTPException(409, "Stale discovery generation")
     if body.generation == node.discovery_generation:
@@ -923,11 +1205,35 @@ def report_runtime_discovery(
                 RuntimeInstance.installation_key == item.installation_key,
             )
         ).first()
+        previous_capability = (
+            session.get(RuntimeCapabilityReport, runtime.current_capability_report_id)
+            if runtime is not None and runtime.current_capability_report_id is not None
+            else None
+        )
+        evidence_changed = bool(
+            runtime is not None
+            and (
+                runtime.engine_version != item.engine_version
+                or runtime.adapter_version != item.adapter_version
+                or runtime.executable_fingerprint != item.executable_fingerprint
+                or (
+                    previous_capability is not None
+                    and previous_capability.adapter_release_id
+                    != item.adapter_release_id
+                )
+            )
+        )
         if runtime is None:
+            management_type = {
+                RuntimeNodeMode.SERVICE: RuntimeManagementType.SERVICE_MANAGED,
+                RuntimeNodeMode.CLIENT: RuntimeManagementType.CLIENT_DISCOVERED,
+            }.get(node.management_mode, RuntimeManagementType.LEGACY_MANUAL)
             runtime = RuntimeInstance(
                 namespace_id=node.namespace_id,
                 runtime_node_id=node.id,
                 location_type=RuntimeLocationType.NODE,
+                management_type=management_type,
+                lifecycle_source_key=f"{node.id}:{item.installation_key}",
                 name=item.name,
                 installation_key=item.installation_key,
                 engine_type=item.engine_type,
@@ -935,46 +1241,138 @@ def report_runtime_discovery(
                 adapter_version=item.adapter_version,
                 executable_fingerprint=item.executable_fingerprint,
                 status=RuntimeInstanceStatus.DISCOVERED,
-                enabled=False,
+                enabled=node.management_mode
+                in {RuntimeNodeMode.SERVICE, RuntimeNodeMode.CLIENT},
             )
             session.add(runtime)
             session.flush()
-        elif runtime.engine_type != item.engine_type or (
-            runtime.executable_fingerprint
-            and runtime.executable_fingerprint != item.executable_fingerprint
-        ):
+            if management_type == RuntimeManagementType.CLIENT_DISCOVERED:
+                session.add(
+                    RuntimeControlDecision(
+                        runtime_instance_id=runtime.id,
+                        action=RuntimeControlAction.AUTO_ENABLE,
+                        evidence={
+                            "source": "client_bootstrap",
+                            "discovery_generation": body.generation,
+                        },
+                    )
+                )
+            if management_type != RuntimeManagementType.LEGACY_MANUAL:
+                executable = (
+                    "codex" if item.engine_type == RuntimeEngineType.CODEX else "claude"
+                )
+                configuration_payload_value = {
+                    "executable": executable,
+                    "arguments": [],
+                    "working_directory_policy": "workspace",
+                    "environment_allowlist": [],
+                    "security_policy": {
+                        "permission_modes": list(
+                            item.capabilities.get("permission_modes", ["default"])
+                        )
+                    },
+                    "resource_limits": {"max_timeout_seconds": 3600},
+                }
+                configuration = RuntimeConfigurationRevision(
+                    runtime_instance_id=runtime.id,
+                    revision=1,
+                    origin=(
+                        RuntimeConfigurationOrigin.SERVICE_MANIFEST
+                        if management_type == RuntimeManagementType.SERVICE_MANAGED
+                        else RuntimeConfigurationOrigin.CLIENT_ADAPTER
+                    ),
+                    adapter_execution_ref=item.installation_key,
+                    configuration_digest=canonical_digest(configuration_payload_value),
+                    status=RuntimeConfigurationStatus.DESIRED,
+                    created_by=None,
+                    **configuration_payload_value,
+                )
+                session.add(configuration)
+                session.flush()
+                runtime.desired_configuration_revision_id = configuration.id
+                session.add(runtime)
+        elif runtime.engine_type != item.engine_type:
             runtime.status = RuntimeInstanceStatus.INCOMPATIBLE
             session.add(runtime)
             continue
+        elif evidence_changed:
+            if runtime.management_type != RuntimeManagementType.CLIENT_DISCOVERED:
+                runtime.status = RuntimeInstanceStatus.INCOMPATIBLE
+                session.add(runtime)
+                continue
+            runtime.status = RuntimeInstanceStatus.UNAVAILABLE
+            runtime.applied_configuration_revision_id = None
+            runtime.current_capability_report_id = None
+            runtime.executable_fingerprint = item.executable_fingerprint
+            previous_revisions = session.exec(
+                select(RuntimeConfigurationRevision).where(
+                    RuntimeConfigurationRevision.runtime_instance_id == runtime.id
+                )
+            ).all()
+            configuration_payload_value = {
+                "executable": (
+                    "codex" if item.engine_type == RuntimeEngineType.CODEX else "claude"
+                ),
+                "arguments": [],
+                "working_directory_policy": "workspace",
+                "environment_allowlist": [],
+                "security_policy": {
+                    "permission_modes": list(
+                        item.capabilities.get("permission_modes", ["default"])
+                    )
+                },
+                "resource_limits": {"max_timeout_seconds": 3600},
+            }
+            configuration = RuntimeConfigurationRevision(
+                runtime_instance_id=runtime.id,
+                revision=len(previous_revisions) + 1,
+                origin=RuntimeConfigurationOrigin.CLIENT_ADAPTER,
+                adapter_execution_ref=item.installation_key,
+                configuration_digest=canonical_digest(configuration_payload_value),
+                status=RuntimeConfigurationStatus.DESIRED,
+                created_by=None,
+                **configuration_payload_value,
+            )
+            session.add(configuration)
+            session.flush()
+            runtime.desired_configuration_revision_id = configuration.id
         runtime.name = item.name
         runtime.engine_version = item.engine_version
         runtime.adapter_version = item.adapter_version
         runtime.last_seen_at = datetime.now(timezone.utc)
-        if runtime.enabled:
+        if (
+            runtime.enabled
+            and runtime.applied_configuration_revision_id is not None
+            and runtime.current_capability_report_id is not None
+        ):
             runtime.status = RuntimeInstanceStatus.AVAILABLE
         session.add(runtime)
         configuration_digest = "0" * 64
         if runtime.applied_configuration_revision_id:
-            configuration = session.get(
+            applied_configuration = session.get(
                 RuntimeConfigurationRevision, runtime.applied_configuration_revision_id
             )
-            if configuration:
-                configuration_digest = configuration.configuration_digest
-        generation = len(
-            session.exec(
-                select(RuntimeCapabilityReport).where(
-                    RuntimeCapabilityReport.runtime_instance_id == runtime.id
-                )
-            ).all()
-        ) + 1
+            if applied_configuration:
+                configuration_digest = applied_configuration.configuration_digest
+        generation = (
+            len(
+                session.exec(
+                    select(RuntimeCapabilityReport).where(
+                        RuntimeCapabilityReport.runtime_instance_id == runtime.id
+                    )
+                ).all()
+            )
+            + 1
+        )
         report = RuntimeCapabilityReport(
             runtime_instance_id=runtime.id,
             generation=generation,
             engine_version=item.engine_version,
             adapter_version=item.adapter_version,
+            adapter_release_id=item.adapter_release_id,
             configuration_digest=configuration_digest,
             capabilities=item.capabilities,
-            discovered_models=item.discovered_models,
+            discovered_models=[model.model_dump() for model in item.discovered_models],
             capability_fingerprint=canonical_digest(
                 {
                     "engine_type": item.engine_type.value,
@@ -982,14 +1380,154 @@ def report_runtime_discovery(
                     "adapter_version": item.adapter_version,
                     "configuration_digest": configuration_digest,
                     "capabilities": item.capabilities,
-                    "discovered_models": item.discovered_models,
+                    "discovered_models": [
+                        model.model_dump() for model in item.discovered_models
+                    ],
                 }
             ),
         )
         session.add(report)
         session.flush()
+        requires_client_revalidation = bool(
+            runtime.management_type == RuntimeManagementType.CLIENT_DISCOVERED
+            and (
+                previous_capability is None
+                or evidence_changed
+                or previous_capability.capability_fingerprint
+                != report.capability_fingerprint
+            )
+        )
+        if requires_client_revalidation:
+            runtime.status = RuntimeInstanceStatus.UNAVAILABLE
         runtime.current_capability_report_id = report.id
+        observation = RuntimeDiscoveryObservation(
+            node_id=node.id,
+            runtime_instance_id=runtime.id,
+            adapter_release_id=item.adapter_release_id,
+            generation=body.generation,
+            installation_key=item.installation_key,
+            status="available",
+            evidence={
+                "engine_type": item.engine_type.value,
+                "engine_version": item.engine_version,
+                "adapter_version": item.adapter_version,
+                "adapter_release_digest": item.adapter_release_digest,
+                "executable_fingerprint": item.executable_fingerprint,
+                "capability_digest": canonical_digest(item.capabilities),
+                "model_digest": canonical_digest(
+                    [model.model_dump() for model in item.discovered_models]
+                ),
+            },
+            evidence_digest=canonical_digest(
+                {
+                    "installation_key": item.installation_key,
+                    "executable_fingerprint": item.executable_fingerprint,
+                    "adapter_release_digest": item.adapter_release_digest,
+                    "capabilities": item.capabilities,
+                    "models": [model.model_dump() for model in item.discovered_models],
+                }
+            ),
+        )
+        session.add(observation)
+        session.flush()
+        runtime.current_discovery_observation_id = observation.id
         session.add(runtime)
+        if runtime.management_type == RuntimeManagementType.CLIENT_DISCOVERED:
+            active_route_keys: set[str] = set()
+            for native_model in item.discovered_models:
+                active_route_keys.add(native_model.route_key)
+                definition = session.exec(
+                    select(LlmModelDefinition).where(
+                        LlmModelDefinition.namespace_id == node.namespace_id,
+                        LlmModelDefinition.provider_family == item.engine_type.value,
+                        LlmModelDefinition.model_key == native_model.model_id,
+                    )
+                ).first()
+                if definition is None:
+                    definition = LlmModelDefinition(
+                        namespace_id=node.namespace_id,
+                        provider_family=item.engine_type.value,
+                        model_key=native_model.model_id,
+                        display_name=native_model.model_id,
+                    )
+                    session.add(definition)
+                    session.flush()
+                binding = session.exec(
+                    select(RuntimeModelBinding).where(
+                        RuntimeModelBinding.runtime_instance_id == runtime.id,
+                        RuntimeModelBinding.route_type
+                        == RuntimeModelRouteType.RUNTIME_NATIVE,
+                        RuntimeModelBinding.route_key == native_model.route_key,
+                    )
+                ).first()
+                if binding is None:
+                    binding = RuntimeModelBinding(
+                        namespace_id=node.namespace_id,
+                        runtime_instance_id=runtime.id,
+                        origin=RuntimeModelBindingOrigin.RUNTIME_NATIVE_DISCOVERED,
+                        model_definition_id=definition.id,
+                        route_type=RuntimeModelRouteType.RUNTIME_NATIVE,
+                        route_key=native_model.route_key,
+                        engine_model_id=native_model.model_id,
+                        status=RuntimeModelBindingStatus.DECLARED,
+                        last_error={"code": "native_model_validation_pending"},
+                    )
+                    session.add(binding)
+                    session.flush()
+                    session.add(
+                        RuntimeModelValidationAttempt(
+                            runtime_model_binding_id=binding.id,
+                            attempt_no=1,
+                            status="pending",
+                        )
+                    )
+                elif (
+                    binding.engine_model_id != native_model.model_id
+                    or binding.model_definition_id != definition.id
+                ):
+                    binding.status = RuntimeModelBindingStatus.FAILED
+                    binding.last_error = {"code": "native_model_identity_conflict"}
+                    session.add(binding)
+                elif requires_client_revalidation:
+                    binding.status = RuntimeModelBindingStatus.DECLARED
+                    binding.validation_fingerprint = None
+                    binding.validated_capability_fingerprint = None
+                    binding.last_validated_at = None
+                    binding.validation_expires_at = None
+                    binding.last_error = {"code": "native_model_revalidation_pending"}
+                    attempts = session.exec(
+                        select(RuntimeModelValidationAttempt).where(
+                            RuntimeModelValidationAttempt.runtime_model_binding_id
+                            == binding.id
+                        )
+                    ).all()
+                    if not any(
+                        attempt.status in {"pending", "running"} for attempt in attempts
+                    ):
+                        session.add(
+                            RuntimeModelValidationAttempt(
+                                runtime_model_binding_id=binding.id,
+                                attempt_no=max(
+                                    (attempt.attempt_no for attempt in attempts),
+                                    default=0,
+                                )
+                                + 1,
+                                status="pending",
+                            )
+                        )
+                    session.add(binding)
+            automatic_bindings = session.exec(
+                select(RuntimeModelBinding).where(
+                    RuntimeModelBinding.runtime_instance_id == runtime.id,
+                    RuntimeModelBinding.origin
+                    == RuntimeModelBindingOrigin.RUNTIME_NATIVE_DISCOVERED,
+                )
+            ).all()
+            for binding in automatic_bindings:
+                if binding.route_key not in active_route_keys:
+                    binding.status = RuntimeModelBindingStatus.DISABLED
+                    binding.last_error = {"code": "native_model_removed"}
+                    session.add(binding)
         accepted += 1
     known = session.exec(
         select(RuntimeInstance).where(RuntimeInstance.runtime_node_id == node.id)
@@ -997,7 +1535,49 @@ def report_runtime_discovery(
     for runtime in known:
         if runtime.installation_key not in seen_keys:
             runtime.status = RuntimeInstanceStatus.UNAVAILABLE
+            missing = RuntimeDiscoveryObservation(
+                node_id=node.id,
+                runtime_instance_id=runtime.id,
+                generation=body.generation,
+                installation_key=runtime.installation_key,
+                status="missing",
+                evidence={"error": {"code": "installation_missing"}},
+                evidence_digest=canonical_digest(
+                    {
+                        "installation_key": runtime.installation_key,
+                        "status": "missing",
+                    }
+                ),
+            )
+            session.add(missing)
+            session.flush()
+            runtime.current_discovery_observation_id = missing.id
             session.add(runtime)
+    for diagnostic in body.observations:
+        if diagnostic.status == "available":
+            continue
+        if diagnostic.status not in {"missing", "blocked"}:
+            raise HTTPException(422, "invalid discovery observation status")
+        release = session.get(RuntimeAdapterRelease, diagnostic.adapter_release_id)
+        if release is None:
+            raise HTTPException(409, "discovery observation Adapter is unavailable")
+        observation_key = (
+            diagnostic.installation_key or f"candidate:{diagnostic.candidate_ref}"
+        )
+        session.add(
+            RuntimeDiscoveryObservation(
+                node_id=node.id,
+                adapter_release_id=release.id,
+                generation=body.generation,
+                installation_key=observation_key,
+                status=diagnostic.status,
+                evidence={
+                    "candidate_ref": diagnostic.candidate_ref,
+                    "error": diagnostic.error,
+                },
+                evidence_digest=canonical_digest(diagnostic.model_dump(mode="json")),
+            )
+        )
     node.discovery_generation = body.generation
     node.discovery_digest = report_digest
     session.add(node)
@@ -1013,14 +1593,12 @@ def claim_runtime_configuration(
         select(RuntimeConfigurationRevision)
         .join(
             RuntimeInstance,
-            col(RuntimeConfigurationRevision.runtime_instance_id)
-            == RuntimeInstance.id,
+            col(RuntimeConfigurationRevision.runtime_instance_id) == RuntimeInstance.id,
         )
         .where(
-            RuntimeConfigurationRevision.status
-            == RuntimeConfigurationStatus.DESIRED,
+            RuntimeConfigurationRevision.status == RuntimeConfigurationStatus.DESIRED,
             RuntimeInstance.location_type == RuntimeLocationType.PLATFORM,
-            RuntimeInstance.enabled.is_(True),
+            col(RuntimeInstance.enabled).is_(True),
             RuntimeInstance.desired_configuration_revision_id
             == RuntimeConfigurationRevision.id,
         )
@@ -1099,9 +1677,7 @@ def report_runtime_configuration_result(
     runtime = session.get(RuntimeInstance, body.runtime_instance_id)
     configuration = session.exec(
         select(RuntimeConfigurationRevision)
-        .where(
-            RuntimeConfigurationRevision.id == body.configuration_revision_id
-        )
+        .where(RuntimeConfigurationRevision.id == body.configuration_revision_id)
         .with_for_update()
     ).first()
     if (
@@ -1125,13 +1701,83 @@ def report_runtime_configuration_result(
     if body.status != "applied" or body.error is not None:
         raise HTTPException(422, "Invalid Runtime configuration result")
     now = datetime.now(timezone.utc)
-    generation = len(
-        session.exec(
-            select(RuntimeCapabilityReport).where(
-                RuntimeCapabilityReport.runtime_instance_id == runtime.id
-            )
-        ).all()
-    ) + 1
+    service_bootstrap: NodeBootstrapSession | None = None
+    service_receipt: NodeInstallationReceipt | None = None
+    adapter_release_id: uuid.UUID | None = None
+    if runtime.management_type == RuntimeManagementType.SERVICE_MANAGED:
+        node = (
+            session.get(RuntimeNode, runtime.runtime_node_id)
+            if runtime.runtime_node_id is not None
+            else None
+        )
+        service_receipt = (
+            session.get(NodeInstallationReceipt, node.current_installation_receipt_id)
+            if node is not None and node.current_installation_receipt_id is not None
+            else None
+        )
+        component_versions = {
+            item.get("name"): item.get("version")
+            for item in (service_receipt.components if service_receipt else [])
+            if isinstance(item, dict)
+        }
+        if (
+            service_receipt is None
+            or body.capabilities.get("distribution_manifest_digest")
+            != service_receipt.manifest_digest
+            or body.capabilities.get("sdk_version")
+            != component_versions.get("claude-agent-sdk")
+            or body.adapter_version != component_versions.get("runtime-adapter")
+        ):
+            configuration.status = RuntimeConfigurationStatus.FAILED
+            configuration.error = {"code": "service_distribution_evidence_mismatch"}
+            runtime.status = RuntimeInstanceStatus.INCOMPATIBLE
+            session.add(configuration)
+            session.add(runtime)
+            session.commit()
+            raise HTTPException(409, "service distribution evidence mismatch")
+        service_bootstrap = (
+            session.get(NodeBootstrapSession, service_receipt.bootstrap_session_id)
+            if service_receipt.bootstrap_session_id is not None
+            else None
+        )
+    elif runtime.management_type == RuntimeManagementType.CLIENT_DISCOVERED:
+        discovered_capability = (
+            session.get(RuntimeCapabilityReport, runtime.current_capability_report_id)
+            if runtime.current_capability_report_id is not None
+            else None
+        )
+        adapter_release = (
+            session.get(RuntimeAdapterRelease, discovered_capability.adapter_release_id)
+            if discovered_capability is not None
+            and discovered_capability.adapter_release_id is not None
+            else None
+        )
+        if (
+            adapter_release is None
+            or adapter_release.engine_type != runtime.engine_type
+            or adapter_release.version != body.adapter_version
+            or body.capabilities.get("adapter_release_digest")
+            != adapter_release.release_digest
+            or body.capabilities.get("native_login_ready") is not True
+        ):
+            configuration.status = RuntimeConfigurationStatus.FAILED
+            configuration.error = {"code": "client_adapter_evidence_mismatch"}
+            runtime.status = RuntimeInstanceStatus.INCOMPATIBLE
+            session.add(configuration)
+            session.add(runtime)
+            session.commit()
+            raise HTTPException(409, "client Adapter evidence mismatch")
+        adapter_release_id = adapter_release.id
+    generation = (
+        len(
+            session.exec(
+                select(RuntimeCapabilityReport).where(
+                    RuntimeCapabilityReport.runtime_instance_id == runtime.id
+                )
+            ).all()
+        )
+        + 1
+    )
     capability_payload = {
         "engine_type": runtime.engine_type.value,
         "engine_version": body.engine_version,
@@ -1145,6 +1791,7 @@ def report_runtime_configuration_result(
         generation=generation,
         engine_version=body.engine_version,
         adapter_version=body.adapter_version,
+        adapter_release_id=adapter_release_id,
         configuration_digest=configuration.configuration_digest,
         capabilities=body.capabilities,
         discovered_models=body.discovered_models,
@@ -1159,11 +1806,50 @@ def report_runtime_configuration_result(
     runtime.current_capability_report_id = report.id
     runtime.engine_version = body.engine_version
     runtime.adapter_version = body.adapter_version
-    runtime.status = RuntimeInstanceStatus.AVAILABLE
+    runtime.status = (
+        RuntimeInstanceStatus.UNAVAILABLE
+        if runtime.management_type == RuntimeManagementType.CLIENT_DISCOVERED
+        else RuntimeInstanceStatus.AVAILABLE
+    )
     runtime.last_seen_at = now
     runtime.updated_at = now
     session.add(configuration)
     session.add(runtime)
+    if runtime.management_type == RuntimeManagementType.PLATFORM_BUILTIN:
+        enqueue_platform_reconcile_job(
+            session,
+            runtime.namespace_id,
+            trigger="platform_worker_evidence_updated",
+        )
+    elif (
+        runtime.management_type == RuntimeManagementType.SERVICE_MANAGED
+        and service_bootstrap is not None
+        and service_receipt is not None
+    ):
+        service_bootstrap.status = BootstrapStatus.RECONCILED
+        service_bootstrap.completed_at = now
+        attempt_no = (
+            len(
+                session.exec(
+                    select(NodeBootstrapAttempt).where(
+                        NodeBootstrapAttempt.bootstrap_session_id
+                        == service_bootstrap.id
+                    )
+                ).all()
+            )
+            + 1
+        )
+        session.add(
+            NodeBootstrapAttempt(
+                bootstrap_session_id=service_bootstrap.id,
+                attempt_no=attempt_no,
+                stage=BootstrapStatus.RECONCILED,
+                manifest_digest=service_receipt.manifest_digest,
+                host_facts={"runtime_instance_id": str(runtime.id)},
+            )
+        )
+        session.add(service_bootstrap)
+    reconcile_platform_model_bindings(session, runtime.namespace_id)
     session.commit()
     return {
         "status": configuration.status.value,
@@ -1180,7 +1866,8 @@ def report_native_model_validation_result(
     attempt = session.exec(
         select(RuntimeModelValidationAttempt)
         .where(
-            RuntimeModelValidationAttempt.runtime_model_binding_id == body.runtime_model_binding_id,
+            RuntimeModelValidationAttempt.runtime_model_binding_id
+            == body.runtime_model_binding_id,
             RuntimeModelValidationAttempt.attempt_no == body.attempt_no,
         )
         .with_for_update()
@@ -1202,9 +1889,27 @@ def report_native_model_validation_result(
         runtime = session.get(RuntimeInstance, binding.runtime_instance_id)
         if runtime is None:
             raise HTTPException(409, "Runtime model validation target is missing")
-        _, capability, _ = current_runtime_evidence(
-            session, runtime, include_catalog=False
+        configuration = (
+            session.get(
+                RuntimeConfigurationRevision,
+                runtime.applied_configuration_revision_id,
+            )
+            if runtime.applied_configuration_revision_id is not None
+            else None
         )
+        capability = (
+            session.get(RuntimeCapabilityReport, runtime.current_capability_report_id)
+            if runtime.current_capability_report_id is not None
+            else None
+        )
+        if (
+            configuration is None
+            or capability is None
+            or capability.configuration_digest != configuration.configuration_digest
+            or capability.reported_at
+            < datetime.now(timezone.utc) - timedelta(minutes=5)
+        ):
+            raise HTTPException(409, "Runtime evidence is not current")
         evidence = {
             "runtime_model_binding_id": str(binding.id),
             "engine_model_id": body.engine_model_id,
@@ -1220,6 +1925,56 @@ def report_native_model_validation_result(
         binding.validation_expires_at = attempt.completed_at + timedelta(hours=24)
         binding.validated_capability_fingerprint = capability.capability_fingerprint
         binding.last_error = None
+        runtime.status = RuntimeInstanceStatus.AVAILABLE
+        runtime.updated_at = datetime.now(timezone.utc)
+        session.add(runtime)
+        if (
+            runtime.management_type == RuntimeManagementType.CLIENT_DISCOVERED
+            and runtime.runtime_node_id is not None
+        ):
+            node = session.get(RuntimeNode, runtime.runtime_node_id)
+            receipt = (
+                session.get(
+                    NodeInstallationReceipt,
+                    node.current_installation_receipt_id,
+                )
+                if node is not None
+                and node.management_mode == RuntimeNodeMode.CLIENT
+                and node.current_installation_receipt_id is not None
+                else None
+            )
+            bootstrap = (
+                session.get(NodeBootstrapSession, receipt.bootstrap_session_id)
+                if receipt is not None and receipt.bootstrap_session_id is not None
+                else None
+            )
+            if bootstrap is not None and bootstrap.status == BootstrapStatus.STAGED:
+                bootstrap.status = BootstrapStatus.RECONCILED
+                bootstrap.completed_at = attempt.completed_at
+                attempt_no = (
+                    len(
+                        session.exec(
+                            select(NodeBootstrapAttempt).where(
+                                NodeBootstrapAttempt.bootstrap_session_id
+                                == bootstrap.id
+                            )
+                        ).all()
+                    )
+                    + 1
+                )
+                session.add(
+                    NodeBootstrapAttempt(
+                        bootstrap_session_id=bootstrap.id,
+                        attempt_no=attempt_no,
+                        stage=BootstrapStatus.RECONCILED,
+                        manifest_digest=receipt.manifest_digest,
+                        host_facts={
+                            "runtime_instance_id": str(runtime.id),
+                            "runtime_model_binding_id": str(binding.id),
+                        },
+                    )
+                )
+                session.add(bootstrap)
     elif body.status == "failed" and body.error is not None:
         attempt.status = "failed"
         attempt.error = body.error
@@ -1253,7 +2008,7 @@ def claim_native_model_validation(
             RuntimeModelValidationAttempt.status == "pending",
             RuntimeModelBinding.route_type == RuntimeModelRouteType.RUNTIME_NATIVE,
             RuntimeInstance.location_type == RuntimeLocationType.PLATFORM,
-            RuntimeInstance.enabled.is_(True),
+            col(RuntimeInstance.enabled).is_(True),
         )
         .order_by(col(RuntimeModelValidationAttempt.started_at))
         .with_for_update(skip_locked=True)

@@ -74,12 +74,23 @@ from app.runtime.models import (
     AgentTaskSkillUsage,
     ArtifactDeployment,
     ArtifactRelease,
+    LlmProviderModelValidation,
+    NodeBootstrapAttempt,
+    NodeBootstrapSession,
     NodeCredential,
+    NodeDistributionRelease,
     NodeEnrollmentToken,
     NodeHandshakeNonce,
+    NodeInstallationReceipt,
+    PlatformRuntimeReconcileAttempt,
+    PlatformRuntimeReconcileJob,
+    RuntimeAdapterRelease,
     RuntimeArtifact,
     RuntimeCapabilityReport,
     RuntimeConfigurationRevision,
+    RuntimeControlDecision,
+    RuntimeDiscoveryObservation,
+    RuntimeInstallationMigrationReceipt,
     RuntimeInstance,
     RuntimeJob,
     RuntimeModelBinding,
@@ -217,6 +228,12 @@ def isolate_runtime_data(db: Session) -> Generator[None, None, None]:
         db.execute(delete(RuntimeArtifact))
         db.execute(delete(RuntimeModelValidationAttempt))
         db.execute(delete(RuntimeModelBinding))
+        db.execute(delete(LlmProviderModelValidation))
+        db.execute(delete(PlatformRuntimeReconcileAttempt))
+        db.execute(delete(PlatformRuntimeReconcileJob))
+        db.execute(delete(RuntimeControlDecision))
+        db.execute(delete(RuntimeDiscoveryObservation))
+        db.execute(delete(RuntimeInstallationMigrationReceipt))
         db.execute(
             update(RuntimeInstance).values(
                 desired_configuration_revision_id=None,
@@ -227,10 +244,16 @@ def isolate_runtime_data(db: Session) -> Generator[None, None, None]:
         db.execute(delete(RuntimeCapabilityReport))
         db.execute(delete(RuntimeConfigurationRevision))
         db.execute(delete(RuntimeInstance))
+        db.execute(update(RuntimeNode).values(current_installation_receipt_id=None))
+        db.execute(delete(NodeInstallationReceipt))
+        db.execute(delete(NodeBootstrapAttempt))
+        db.execute(delete(NodeBootstrapSession))
         db.execute(delete(NodeCredential))
         db.execute(delete(NodeEnrollmentToken))
         db.execute(delete(NodeHandshakeNonce))
         db.execute(delete(RuntimeNode))
+        db.execute(delete(RuntimeAdapterRelease))
+        db.execute(delete(NodeDistributionRelease))
         db.execute(delete(RuntimeSecret))
         db.execute(delete(RuntimeProfile))
         db.commit()

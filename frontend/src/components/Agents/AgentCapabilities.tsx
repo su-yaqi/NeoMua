@@ -202,7 +202,10 @@ export default function AgentCapabilities({
         </CardHeader>
         <CardContent className="space-y-2">
           {skillCatalog?.data.map((item) => (
-            <div className="flex items-center justify-between gap-3" key={item.id}>
+            <div
+              className="flex items-center justify-between gap-3"
+              key={item.id}
+            >
               <div>
                 <p className="font-medium">{item.name}</p>
                 <p className="text-xs text-muted-foreground">
@@ -212,7 +215,11 @@ export default function AgentCapabilities({
               <select
                 className="rounded border bg-background px-2 py-1 text-sm"
                 value={
-                  item.id in skills ? (skills[item.id] ? "enabled" : "disabled") : "unbound"
+                  item.id in skills
+                    ? skills[item.id]
+                      ? "enabled"
+                      : "disabled"
+                    : "unbound"
                 }
                 disabled={!canManage || item.archived}
                 onChange={(event) => {

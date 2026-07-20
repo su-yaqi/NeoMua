@@ -8,6 +8,7 @@ from sqlmodel import Session, col, select
 from app.conversation_management.models import Conversation, ConversationStatus
 from app.conversation_management.service import reconcile_agent_messages
 from app.core.db import engine
+from app.models import Namespace
 from app.runtime.jobs import (
     expire_runtime_job_leases,
     expire_runtime_job_reservations,
@@ -17,6 +18,11 @@ from app.runtime.models import (
     ArtifactRelease,
     DeploymentStatus,
     NodeCredential,
+)
+from app.runtime.platform_builtin import (
+    enqueue_platform_reconcile_job,
+    ensure_builtin_platform_runtime,
+    process_platform_reconcile_jobs,
 )
 from app.runtime.repository import expire_dispatch_reservations, expire_task_leases
 from app.workflow_management.engine import reconcile_instance
@@ -44,6 +50,19 @@ def run_maintenance_once(*, now: datetime | None = None) -> bool:
         expire_task_leases(session, now=current)
         expire_runtime_job_reservations(session, now=current)
         expire_runtime_job_leases(session, now=current)
+
+        namespaces = session.exec(
+            select(Namespace)
+            .where(col(Namespace.is_active).is_(True))
+            .order_by(col(Namespace.created_at))
+            .limit(500)
+        ).all()
+        for namespace in namespaces:
+            ensure_builtin_platform_runtime(session, namespace.id)
+            enqueue_platform_reconcile_job(
+                session, namespace.id, trigger="periodic_backfill"
+            )
+        process_platform_reconcile_jobs(session)
 
         deployments = session.exec(
             select(ArtifactDeployment)

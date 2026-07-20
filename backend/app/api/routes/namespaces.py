@@ -29,6 +29,10 @@ from app.models import (
     UserPublic,
     UsersPublic,
 )
+from app.runtime.platform_builtin import (
+    enqueue_platform_reconcile_job,
+    ensure_builtin_platform_runtime,
+)
 
 router = APIRouter(prefix="/namespaces", tags=["namespaces"])
 platform_router = APIRouter(prefix="/platform", tags=["platform"])
@@ -177,6 +181,9 @@ def create_namespace(*, session: SessionDep, namespace_in: NamespaceCreate) -> A
         namespace_in.model_dump(exclude={"admin_user_id"})
     )
     session.add(namespace)
+    session.flush()
+    ensure_builtin_platform_runtime(session, namespace.id)
+    enqueue_platform_reconcile_job(session, namespace.id, trigger="namespace_created")
     session.commit()
     session.refresh(namespace)
     if namespace_in.admin_user_id:

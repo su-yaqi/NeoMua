@@ -54,8 +54,59 @@ class RuntimeLocationType(str, Enum):
 
 
 class RuntimeEngineType(str, Enum):
+    CLAUDE_AGENT_SDK = "claude_agent_sdk"
     CLAUDE_CODE = "claude_code"
     CODEX = "codex"
+
+
+class RuntimeManagementType(str, Enum):
+    PLATFORM_BUILTIN = "platform_builtin"
+    SERVICE_MANAGED = "service_managed"
+    CLIENT_DISCOVERED = "client_discovered"
+    LEGACY_MANUAL = "legacy_manual"
+
+
+class RuntimeNodeMode(str, Enum):
+    SERVICE = "service"
+    CLIENT = "client"
+    LEGACY_UNCLASSIFIED = "legacy_unclassified"
+
+
+class RuntimeConfigurationOrigin(str, Enum):
+    SYSTEM_BUILTIN = "system_builtin"
+    SERVICE_MANIFEST = "service_manifest"
+    CLIENT_ADAPTER = "client_adapter"
+    LEGACY_MANUAL = "legacy_manual"
+
+
+class RuntimeModelBindingOrigin(str, Enum):
+    LLM_CONFIG_RECONCILED = "llm_config_reconciled"
+    RUNTIME_NATIVE_DISCOVERED = "runtime_native_discovered"
+    LEGACY_MANUAL = "legacy_manual"
+
+
+class ReconcileStatus(str, Enum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
+class BootstrapStatus(str, Enum):
+    WAITING_FOR_INSTALL = "waiting_for_install"
+    PREFLIGHTED = "preflighted"
+    STAGED = "staged"
+    ENROLLED = "enrolled"
+    SERVICE_ACTIVATED = "service_activated"
+    RECONCILED = "reconciled"
+    FAILED = "failed"
+    REVOKED = "revoked"
+
+
+class RuntimeControlAction(str, Enum):
+    AUTO_ENABLE = "auto_enable"
+    PAUSE = "pause"
+    RESUME = "resume"
 
 
 class RuntimeInstanceStatus(str, Enum):
@@ -468,9 +519,7 @@ class AgentTaskModelUsage(SQLModel, table=True):
     prepared_at: datetime = Field(
         default_factory=utcnow, sa_type=DateTime(timezone=True)
     )
-    evidenced_at: datetime | None = Field(
-        default=None, sa_type=DateTime(timezone=True)
-    )
+    evidenced_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
 
 
 class AgentTaskModelCallUsage(SQLModel, table=True):
@@ -625,7 +674,30 @@ class RuntimeNode(SQLModel, table=True):
     connected_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     connection_id: uuid.UUID | None = Field(default=None, index=True)
     config_revision: int = 1
+    management_mode: RuntimeNodeMode = Field(
+        default=RuntimeNodeMode.LEGACY_UNCLASSIFIED,
+        sa_type=SAEnum(
+            RuntimeNodeMode,
+            name="runtimenodemode",
+            values_callable=lambda values: [value.value for value in values],
+        ),
+    )
+    adapter_registry_digest: str | None = Field(default=None, max_length=64)
+    current_installation_receipt_id: uuid.UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            Uuid,
+            ForeignKey(
+                "node_installation_receipt.id",
+                name="fk_runtime_node_current_installation_receipt",
+                ondelete="SET NULL",
+                use_alter=True,
+            ),
+            nullable=True,
+        ),
+    )
     discovery_generation: int = 0
+    discovery_requested_generation: int = 0
     discovery_digest: str | None = Field(default=None, max_length=64)
     revoked_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     created_at: datetime = Field(
@@ -650,6 +722,13 @@ class RuntimeInstance(SQLModel, table=True):
             postgresql_where=text("location_type = 'platform'"),
             sqlite_where=text("location_type = 'platform'"),
         ),
+        Index(
+            "uq_runtime_instance_platform_builtin",
+            "namespace_id",
+            unique=True,
+            postgresql_where=text("management_type = 'platform_builtin'"),
+            sqlite_where=text("management_type = 'platform_builtin'"),
+        ),
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
@@ -672,6 +751,15 @@ class RuntimeInstance(SQLModel, table=True):
             values_callable=lambda values: [value.value for value in values],
         )
     )
+    management_type: RuntimeManagementType = Field(
+        default=RuntimeManagementType.LEGACY_MANUAL,
+        sa_type=SAEnum(
+            RuntimeManagementType,
+            name="runtimemanagementtype",
+            values_callable=lambda values: [value.value for value in values],
+        ),
+    )
+    lifecycle_source_key: str | None = Field(default=None, max_length=255)
     name: str = Field(max_length=255)
     installation_key: str = Field(max_length=255)
     engine_type: RuntimeEngineType = Field(
@@ -732,9 +820,20 @@ class RuntimeInstance(SQLModel, table=True):
             nullable=True,
         ),
     )
-    last_seen_at: datetime | None = Field(
-        default=None, sa_type=DateTime(timezone=True)
+    current_discovery_observation_id: uuid.UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            Uuid,
+            ForeignKey(
+                "runtime_discovery_observation.id",
+                name="fk_runtime_instance_current_discovery_observation",
+                ondelete="SET NULL",
+                use_alter=True,
+            ),
+            nullable=True,
+        ),
     )
+    last_seen_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     created_at: datetime = Field(
         default_factory=utcnow, sa_type=DateTime(timezone=True)
     )
@@ -753,9 +852,21 @@ class RuntimeConfigurationRevision(SQLModel, table=True):
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     runtime_instance_id: uuid.UUID = Field(
-        foreign_key="runtime_instance.id", nullable=False, ondelete="CASCADE", index=True
+        foreign_key="runtime_instance.id",
+        nullable=False,
+        ondelete="CASCADE",
+        index=True,
     )
     revision: int
+    origin: RuntimeConfigurationOrigin = Field(
+        default=RuntimeConfigurationOrigin.LEGACY_MANUAL,
+        sa_type=SAEnum(
+            RuntimeConfigurationOrigin,
+            name="runtimeconfigurationorigin",
+            values_callable=lambda values: [value.value for value in values],
+        ),
+    )
+    adapter_execution_ref: str | None = Field(default=None, max_length=255)
     executable: str = Field(max_length=1024)
     arguments: list[str] = Field(
         default_factory=list, sa_column=Column(POSTGRES_JSON, nullable=False)
@@ -801,11 +912,17 @@ class RuntimeCapabilityReport(SQLModel, table=True):
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     runtime_instance_id: uuid.UUID = Field(
-        foreign_key="runtime_instance.id", nullable=False, ondelete="CASCADE", index=True
+        foreign_key="runtime_instance.id",
+        nullable=False,
+        ondelete="CASCADE",
+        index=True,
     )
     generation: int
     engine_version: str | None = Field(default=None, max_length=64)
     adapter_version: str = Field(max_length=64)
+    adapter_release_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_adapter_release.id", ondelete="RESTRICT"
+    )
     configuration_digest: str = Field(max_length=64)
     capabilities: dict[str, Any] = Field(
         default_factory=dict, sa_column=Column(POSTGRES_JSON, nullable=False)
@@ -836,7 +953,18 @@ class RuntimeModelBinding(SQLModel, table=True):
         foreign_key="namespace.id", nullable=False, ondelete="CASCADE", index=True
     )
     runtime_instance_id: uuid.UUID = Field(
-        foreign_key="runtime_instance.id", nullable=False, ondelete="CASCADE", index=True
+        foreign_key="runtime_instance.id",
+        nullable=False,
+        ondelete="CASCADE",
+        index=True,
+    )
+    origin: RuntimeModelBindingOrigin = Field(
+        default=RuntimeModelBindingOrigin.LEGACY_MANUAL,
+        sa_type=SAEnum(
+            RuntimeModelBindingOrigin,
+            name="runtimemodelbindingorigin",
+            values_callable=lambda values: [value.value for value in values],
+        ),
     )
     model_definition_id: uuid.UUID = Field(
         foreign_key="llm_model_definition.id", nullable=False, ondelete="RESTRICT"
@@ -846,6 +974,11 @@ class RuntimeModelBinding(SQLModel, table=True):
     )
     provider_model_id: uuid.UUID | None = Field(
         default=None, foreign_key="llm_provider_model.id", ondelete="RESTRICT"
+    )
+    provider_model_validation_id: uuid.UUID | None = Field(
+        default=None,
+        foreign_key="llm_provider_model_validation.id",
+        ondelete="SET NULL",
     )
     route_type: RuntimeModelRouteType = Field(
         sa_type=SAEnum(
@@ -909,9 +1042,7 @@ class RuntimeModelValidationAttempt(SQLModel, table=True):
     started_at: datetime = Field(
         default_factory=utcnow, sa_type=DateTime(timezone=True)
     )
-    completed_at: datetime | None = Field(
-        default=None, sa_type=DateTime(timezone=True)
-    )
+    completed_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
 
 
 class NodeEnrollmentToken(SQLModel, table=True):
@@ -925,12 +1056,380 @@ class NodeEnrollmentToken(SQLModel, table=True):
         foreign_key="namespace.id", nullable=False, ondelete="CASCADE", index=True
     )
     token_hash: str = Field(max_length=64)
+    requested_management_mode: RuntimeNodeMode = Field(
+        default=RuntimeNodeMode.LEGACY_UNCLASSIFIED,
+        sa_type=SAEnum(
+            RuntimeNodeMode,
+            name="runtimenodemode",
+            values_callable=lambda values: [value.value for value in values],
+        ),
+    )
+    preflight_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    bound_public_key_fingerprint: str | None = Field(default=None, max_length=128)
+    distribution_manifest_digest: str | None = Field(default=None, max_length=64)
     expires_at: datetime = Field(sa_type=DateTime(timezone=True))
     consumed_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     revoked_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     created_by: uuid.UUID | None = Field(
         default=None, foreign_key="user.id", ondelete="SET NULL"
     )
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+
+
+class PlatformRuntimeReconcileJob(SQLModel, table=True):
+    __tablename__ = "platform_runtime_reconcile_job"
+    __table_args__ = (
+        UniqueConstraint(
+            "namespace_id",
+            "input_fingerprint",
+            name="uq_platform_runtime_reconcile_input",
+        ),
+    )
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    namespace_id: uuid.UUID = Field(
+        foreign_key="namespace.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    trigger: str = Field(max_length=64)
+    input_fingerprint: str = Field(max_length=64)
+    status: ReconcileStatus = Field(
+        default=ReconcileStatus.QUEUED,
+        sa_type=SAEnum(
+            ReconcileStatus,
+            name="reconcilestatus",
+            values_callable=lambda values: [value.value for value in values],
+        ),
+    )
+    attempt_count: int = 0
+    last_error: dict[str, Any] | None = Field(
+        default=None, sa_column=Column(POSTGRES_JSON, nullable=True)
+    )
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+    updated_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+    completed_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+
+
+class PlatformRuntimeReconcileAttempt(SQLModel, table=True):
+    __tablename__ = "platform_runtime_reconcile_attempt"
+    __table_args__ = (
+        UniqueConstraint("job_id", "attempt_no", name="uq_platform_reconcile_attempt"),
+    )
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    job_id: uuid.UUID = Field(
+        foreign_key="platform_runtime_reconcile_job.id",
+        nullable=False,
+        ondelete="CASCADE",
+        index=True,
+    )
+    attempt_no: int
+    input_fingerprint: str = Field(max_length=64)
+    status: ReconcileStatus = Field(
+        sa_type=SAEnum(
+            ReconcileStatus,
+            name="reconcilestatus",
+            values_callable=lambda values: [value.value for value in values],
+        )
+    )
+    result: dict[str, Any] | None = Field(
+        default=None, sa_column=Column(POSTGRES_JSON, nullable=True)
+    )
+    error: dict[str, Any] | None = Field(
+        default=None, sa_column=Column(POSTGRES_JSON, nullable=True)
+    )
+    started_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+    completed_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+
+
+class LlmProviderModelValidation(SQLModel, table=True):
+    __tablename__ = "llm_provider_model_validation"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider_model_id",
+            "configuration_fingerprint",
+            "attempt_no",
+            name="uq_llm_provider_model_validation_attempt",
+        ),
+    )
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    namespace_id: uuid.UUID = Field(
+        foreign_key="namespace.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    provider_config_id: uuid.UUID = Field(
+        foreign_key="llm_provider_config.id", nullable=False, ondelete="CASCADE"
+    )
+    provider_model_id: uuid.UUID = Field(
+        foreign_key="llm_provider_model.id",
+        nullable=False,
+        ondelete="CASCADE",
+        index=True,
+    )
+    configuration_fingerprint: str = Field(max_length=64)
+    attempt_no: int
+    status: str = Field(max_length=32)
+    evidence_digest: str | None = Field(default=None, max_length=64)
+    evidence: dict[str, Any] | None = Field(
+        default=None, sa_column=Column(POSTGRES_JSON, nullable=True)
+    )
+    error: dict[str, Any] | None = Field(
+        default=None, sa_column=Column(POSTGRES_JSON, nullable=True)
+    )
+    started_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+    completed_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    valid_until: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+
+
+class NodeDistributionRelease(SQLModel, table=True):
+    __tablename__ = "node_distribution_release"
+    __table_args__ = (
+        UniqueConstraint("release_key", name="uq_node_distribution_release_key"),
+    )
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    release_key: str = Field(max_length=255)
+    channel: str = Field(default="stable", max_length=64)
+    management_mode: RuntimeNodeMode = Field(
+        sa_type=SAEnum(
+            RuntimeNodeMode,
+            name="runtimenodemode",
+            values_callable=lambda values: [value.value for value in values],
+        )
+    )
+    os_name: str = Field(max_length=128)
+    architecture: str = Field(max_length=64)
+    manifest: dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(POSTGRES_JSON, nullable=False)
+    )
+    manifest_digest: str = Field(max_length=64)
+    signature: str = Field(sa_column=Column(Text, nullable=False))
+    signing_public_key: str = Field(sa_column=Column(Text, nullable=False))
+    active: bool = True
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+
+
+class RuntimeAdapterRelease(SQLModel, table=True):
+    __tablename__ = "runtime_adapter_release"
+    __table_args__ = (
+        UniqueConstraint("adapter_id", "version", name="uq_runtime_adapter_release"),
+    )
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    adapter_id: str = Field(max_length=128)
+    engine_type: RuntimeEngineType = Field(
+        sa_type=SAEnum(
+            RuntimeEngineType,
+            name="runtimeenginetype",
+            values_callable=lambda values: [value.value for value in values],
+        )
+    )
+    version: str = Field(max_length=64)
+    discovery_contract: dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(POSTGRES_JSON, nullable=False)
+    )
+    execution_contract: dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(POSTGRES_JSON, nullable=False)
+    )
+    release_digest: str = Field(max_length=64)
+    signature: str = Field(sa_column=Column(Text, nullable=False))
+    signing_public_key: str = Field(sa_column=Column(Text, nullable=False))
+    active: bool = True
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+
+
+class NodeBootstrapSession(SQLModel, table=True):
+    __tablename__ = "node_bootstrap_session"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    namespace_id: uuid.UUID = Field(
+        foreign_key="namespace.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    enrollment_token_id: uuid.UUID = Field(
+        foreign_key="node_enrollment_token.id",
+        nullable=False,
+        ondelete="CASCADE",
+        unique=True,
+    )
+    management_mode: RuntimeNodeMode = Field(
+        sa_type=SAEnum(
+            RuntimeNodeMode,
+            name="runtimenodemode",
+            values_callable=lambda values: [value.value for value in values],
+        )
+    )
+    release_channel: str = Field(default="stable", max_length=64)
+    distribution_release_id: uuid.UUID | None = Field(
+        default=None, foreign_key="node_distribution_release.id", ondelete="RESTRICT"
+    )
+    status: BootstrapStatus = Field(
+        default=BootstrapStatus.WAITING_FOR_INSTALL,
+        sa_type=SAEnum(
+            BootstrapStatus,
+            name="bootstrapstatus",
+            values_callable=lambda values: [value.value for value in values],
+        ),
+    )
+    bound_public_key_fingerprint: str | None = Field(default=None, max_length=128)
+    node_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_node.id", ondelete="SET NULL"
+    )
+    enrollment_idempotency_key: str | None = Field(default=None, max_length=128)
+    enrollment_request_digest: str | None = Field(default=None, max_length=64)
+    enrollment_response_ciphertext: str | None = Field(
+        default=None, sa_column=Column(Text, nullable=True)
+    )
+    created_by: uuid.UUID | None = Field(
+        default=None, foreign_key="user.id", ondelete="SET NULL"
+    )
+    expires_at: datetime = Field(sa_type=DateTime(timezone=True))
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+    completed_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+
+
+class NodeBootstrapAttempt(SQLModel, table=True):
+    __tablename__ = "node_bootstrap_attempt"
+    __table_args__ = (
+        UniqueConstraint(
+            "bootstrap_session_id", "attempt_no", name="uq_bootstrap_attempt"
+        ),
+    )
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    bootstrap_session_id: uuid.UUID = Field(
+        foreign_key="node_bootstrap_session.id",
+        nullable=False,
+        ondelete="CASCADE",
+        index=True,
+    )
+    attempt_no: int
+    stage: BootstrapStatus = Field(
+        sa_type=SAEnum(
+            BootstrapStatus,
+            name="bootstrapstatus",
+            values_callable=lambda values: [value.value for value in values],
+        )
+    )
+    host_facts: dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(POSTGRES_JSON, nullable=False)
+    )
+    manifest_digest: str | None = Field(default=None, max_length=64)
+    error: dict[str, Any] | None = Field(
+        default=None, sa_column=Column(POSTGRES_JSON, nullable=True)
+    )
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+
+
+class NodeInstallationReceipt(SQLModel, table=True):
+    __tablename__ = "node_installation_receipt"
+    __table_args__ = (
+        UniqueConstraint(
+            "node_id", "receipt_digest", name="uq_node_installation_receipt"
+        ),
+    )
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    node_id: uuid.UUID = Field(
+        foreign_key="runtime_node.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    bootstrap_session_id: uuid.UUID | None = Field(
+        default=None, foreign_key="node_bootstrap_session.id", ondelete="SET NULL"
+    )
+    distribution_release_id: uuid.UUID | None = Field(
+        default=None, foreign_key="node_distribution_release.id", ondelete="RESTRICT"
+    )
+    adapter_release_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_adapter_release.id", ondelete="RESTRICT"
+    )
+    receipt_digest: str = Field(max_length=64)
+    manifest_digest: str = Field(max_length=64)
+    components: list[dict[str, Any]] = Field(
+        default_factory=list, sa_column=Column(POSTGRES_JSON, nullable=False)
+    )
+    logical_installation_ref: str = Field(max_length=255)
+    device_signature: str = Field(sa_column=Column(Text, nullable=False))
+    first_applied_at: datetime = Field(sa_type=DateTime(timezone=True))
+    last_verified_at: datetime = Field(sa_type=DateTime(timezone=True))
+
+
+class RuntimeDiscoveryObservation(SQLModel, table=True):
+    __tablename__ = "runtime_discovery_observation"
+    __table_args__ = (
+        UniqueConstraint(
+            "node_id", "generation", "installation_key", name="uq_discovery_observation"
+        ),
+    )
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    node_id: uuid.UUID = Field(
+        foreign_key="runtime_node.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    runtime_instance_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_instance.id", ondelete="SET NULL"
+    )
+    adapter_release_id: uuid.UUID | None = Field(
+        default=None, foreign_key="runtime_adapter_release.id", ondelete="RESTRICT"
+    )
+    generation: int
+    installation_key: str = Field(max_length=255)
+    status: str = Field(max_length=32)
+    evidence: dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(POSTGRES_JSON, nullable=False)
+    )
+    evidence_digest: str = Field(max_length=64)
+    observed_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+
+
+class RuntimeControlDecision(SQLModel, table=True):
+    __tablename__ = "runtime_control_decision"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    runtime_instance_id: uuid.UUID = Field(
+        foreign_key="runtime_instance.id",
+        nullable=False,
+        ondelete="CASCADE",
+        index=True,
+    )
+    action: RuntimeControlAction = Field(
+        sa_type=SAEnum(
+            RuntimeControlAction,
+            name="runtimecontrolaction",
+            values_callable=lambda values: [value.value for value in values],
+        )
+    )
+    actor_id: uuid.UUID | None = Field(
+        default=None, foreign_key="user.id", ondelete="SET NULL"
+    )
+    reason: str | None = Field(default=None, max_length=1024)
+    evidence: dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(POSTGRES_JSON, nullable=False)
+    )
+    created_at: datetime = Field(
+        default_factory=utcnow, sa_type=DateTime(timezone=True)
+    )
+
+
+class RuntimeInstallationMigrationReceipt(SQLModel, table=True):
+    __tablename__ = "runtime_installation_migration_receipt"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    node_id: uuid.UUID = Field(
+        foreign_key="runtime_node.id", nullable=False, ondelete="CASCADE", index=True
+    )
+    legacy_runtime_instance_id: uuid.UUID = Field(
+        foreign_key="runtime_instance.id", nullable=False, ondelete="CASCADE"
+    )
+    installation_key: str = Field(max_length=255)
+    evidence_digest: str = Field(max_length=64)
+    device_signature: str = Field(sa_column=Column(Text, nullable=False))
     created_at: datetime = Field(
         default_factory=utcnow, sa_type=DateTime(timezone=True)
     )

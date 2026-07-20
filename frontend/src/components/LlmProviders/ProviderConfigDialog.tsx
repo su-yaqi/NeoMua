@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Plus, RefreshCw, ShieldCheck } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
 import { z } from "zod"
@@ -115,6 +115,13 @@ function ProviderConfigDialog({
     !selectedProvider.base_url_editable &&
     Boolean(selectedProvider.default_base_url)
   const canProbe = Boolean(workingConfig || (providerSlug && baseUrl.trim()))
+  const runtimeReadiness = useQuery({
+    queryKey: ["llm-provider-runtime-readiness", workingConfig?.id],
+    queryFn: () =>
+      tenantApi.readLlmProviderRuntimeReadiness(String(workingConfig?.id)),
+    enabled: isOpen && Boolean(workingConfig?.id),
+    refetchInterval: 3000,
+  })
 
   useEffect(() => {
     if (!isOpen) {
@@ -630,6 +637,61 @@ function ProviderConfigDialog({
             </div>
           </div>
         </div>
+
+        {workingConfig ? (
+          <div className="space-y-3 rounded-lg border p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="font-semibold">平台 Runtime 就绪状态</h3>
+                <p className="text-sm text-muted-foreground">
+                  连接探活不等于模型可执行；每个启用模型必须完成最小真实调用并形成精确
+                  Binding。
+                </p>
+              </div>
+              <Badge
+                variant={
+                  runtimeReadiness.data?.status === "ready"
+                    ? "default"
+                    : runtimeReadiness.data?.status === "blocked"
+                      ? "destructive"
+                      : "outline"
+                }
+              >
+                {runtimeReadiness.data?.status ?? "加载中"}
+              </Badge>
+            </div>
+            <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
+              <span>
+                Worker 发行：
+                {runtimeReadiness.data?.release_trusted ? "可信" : "不匹配"}
+              </span>
+              <span>
+                Runtime：{runtimeReadiness.data?.runtime_status ?? "未创建"}
+              </span>
+              <span>
+                协调：{runtimeReadiness.data?.reconcile_status ?? "未开始"}
+              </span>
+            </div>
+            {runtimeReadiness.data?.models.map((model) => (
+              <div
+                key={model.provider_model_id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded bg-muted/40 p-2 text-xs"
+              >
+                <span>{model.model_id}</span>
+                <span>真实调用：{model.validation_status}</span>
+                <span>Binding：{model.binding_status ?? "未生成"}</span>
+                <Badge variant={model.ready ? "default" : "outline"}>
+                  {model.ready ? "可执行" : "未就绪"}
+                </Badge>
+              </div>
+            ))}
+            {runtimeReadiness.data?.reconcile_error ? (
+              <pre className="max-h-32 overflow-auto text-xs text-destructive">
+                {JSON.stringify(runtimeReadiness.data.reconcile_error, null, 2)}
+              </pre>
+            ) : null}
+          </div>
+        ) : null}
 
         <DialogFooter className="gap-2 sm:justify-between">
           <div className="text-sm text-muted-foreground">

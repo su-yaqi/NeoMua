@@ -14,6 +14,12 @@ export default function NodeTable({ canManage }: { canManage: boolean }) {
     queryFn: tenantApi.readRuntimeNodes,
     refetchInterval: 20_000,
   })
+  const bootstrapSessions = useQuery({
+    queryKey: ["runtime-node-bootstrap-sessions"],
+    queryFn: tenantApi.readNodeBootstrapSessions,
+    enabled: canManage,
+    refetchInterval: 5000,
+  })
   const revoke = useMutation({
     mutationFn: tenantApi.revokeNodeCredential,
     onSuccess: () =>
@@ -23,7 +29,12 @@ export default function NodeTable({ canManage }: { canManage: boolean }) {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle>节点运行时</CardTitle>
-        {canManage ? <EnrollNodeDialog /> : null}
+        {canManage ? (
+          <div className="flex gap-2">
+            <EnrollNodeDialog mode="service" />
+            <EnrollNodeDialog mode="client" />
+          </div>
+        ) : null}
       </CardHeader>
       <CardContent>
         {nodes.data?.data.length ? (
@@ -35,6 +46,7 @@ export default function NodeTable({ canManage }: { canManage: boolean }) {
                   <th>状态</th>
                   <th>系统</th>
                   <th>版本</th>
+                  <th>类型</th>
                   <th className="text-right">操作</th>
                 </tr>
               </thead>
@@ -68,6 +80,14 @@ export default function NodeTable({ canManage }: { canManage: boolean }) {
                       </div>
                     </td>
                     <td>
+                      <div className="flex flex-col items-start gap-1">
+                        <Badge variant="outline">{node.management_mode}</Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {node.bootstrap_status ?? "legacy"}
+                        </span>
+                      </div>
+                    </td>
+                    <td>
                       <div className="flex justify-end gap-2">
                         {canManage ? (
                           <Button
@@ -98,6 +118,30 @@ export default function NodeTable({ canManage }: { canManage: boolean }) {
             暂无已匹配的节点运行时。
           </p>
         )}
+        {canManage && bootstrapSessions.data?.length ? (
+          <div className="mt-6 space-y-2 border-t pt-4">
+            <h3 className="font-medium">Bootstrap 会话</h3>
+            <p className="text-xs text-muted-foreground">
+              一次性密文不会再次显示；这里仅保留正式安装阶段、绑定节点和到期时间。
+            </p>
+            {bootstrapSessions.data.slice(0, 20).map((session) => (
+              <div
+                key={session.id}
+                className="grid gap-2 rounded border p-3 text-xs sm:grid-cols-4"
+              >
+                <span>{session.management_mode}</span>
+                <Badge variant="outline">{session.status}</Badge>
+                <span>
+                  节点：
+                  {session.node_id ? session.node_id.slice(0, 8) : "尚未绑定"}
+                </span>
+                <span>
+                  到期：{new Date(session.expires_at).toLocaleString()}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   )

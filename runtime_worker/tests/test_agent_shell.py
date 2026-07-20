@@ -1,6 +1,11 @@
 import pytest
 
-from runtime_worker.agent_shell import AgentShell, CodexShell, RunCommand
+from runtime_worker.agent_shell import (
+    AgentShell,
+    ClaudeCodeShell,
+    CodexShell,
+    RunCommand,
+)
 
 
 def test_command_rejects_bypass_permissions() -> None:
@@ -46,6 +51,35 @@ def test_codex_adapter_builds_explicit_engine_command() -> None:
         "/workspace",
         "--add-dir",
         "/shared",
+        "review",
+    ]
+
+
+def test_client_claude_adapter_builds_direct_jsonl_command() -> None:
+    command = RunCommand(
+        engine_type="claude_code",
+        prompt="review",
+        model="sonnet",
+        permission_mode="plan",
+        tools=["Read", "Grep"],
+        allowed_tools=["Read"],
+        cwd="/workspace",
+    )
+    assert ClaudeCodeShell.build_argv(command, "/usr/local/bin/claude") == [
+        "/usr/local/bin/claude",
+        "--print",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--model",
+        "sonnet",
+        "--permission-mode",
+        "plan",
+        "--no-session-persistence",
+        "--tools",
+        "Read,Grep",
+        "--allowed-tools",
+        "Read",
         "review",
     ]
 

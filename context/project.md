@@ -32,7 +32,7 @@ NeoMua
 | items | 用户个人条目的增删改查 |
 | namespaces | 空间列表、空间 CRUD、空间成员关系与空间上下文选择 |
 | llm_configs | 按空间维护多供应商大模型接入配置、连接校验与模型清单同步 |
-| runtime_management | Runtime Node 与一对多 Runtime Instance、引擎适配器、模型能力绑定、持久任务、Skill 后台同步与任务使用审计、完整事件审计和签名内容分发 |
+| runtime_management | 平台内置、服务节点、客户端三类 Runtime；正式 bootstrap/receipt、签名 Adapter 发现、精确模型能力绑定、持久协调任务、Skill 后台同步与任务审计、完整事件审计和签名内容分发 |
 | agent_management | 引擎中立 Agent 草稿、模型偏好、可编辑 Skill 工作台、Tool/MCP/Plugin、统一解析、Release/Runtime 激活、审批与 Operator CLI |
 | project_management | 项目成员、多 Git 仓库、Spec 位置与不可变标准版本绑定 |
 | conversation_management | 固定模型 Chat、单/多 Agent 圆桌、可恢复事件流、项目上下文快照与委派审计 |
@@ -61,6 +61,8 @@ NeoMua
 - Runtime Instance 通过修订、能力报告、模型目录与已验证绑定声明可执行模型；Agent Release 只声明稳定模型偏好和引擎中立策略。Conversation、Agent 组与 Workflow 在不可变配置中选择具体模型或严格解析 Agent 偏好，任务启动前冻结 Runtime、引擎、模型、路由和能力证据，禁止隐式默认、模糊匹配或静默回退。
 - v0.9 需求一致性与安全整改复核已通过：Runtime 模型证据来自本地 applied 配置和已验证路由；安全策略在执行边界应用，无法可靠执行的策略明确阻断；离线/过期依赖、迁移歧义、冻结行为、逐次用量和并发语义均已关闭。
 - v0.9 集中验证为 Backend 213、Runtime Worker 19、Node Runtime 27、Playwright 74 项通过；前端生产构建、Ruff、变更范围 Biome、Alembic upgrade/check 与差异格式检查通过，数据库 head 为 `fc5a7b9d1e34`；已合并到本地 `master`。
+- v0.10 将 Runtime 收敛为平台内置、服务节点和客户端三种系统来源。平台通过持久协调和逐模型真实调用形成 Binding；service/client 通过签名发行、设备 receipt 和发现 generation 自动注册，客户端任务固定本地 installation UUID、路径指纹、Adapter 与登录证据，不接受业务侧命令配置或静默回退。
+- v0.10 集中验证为 Backend 218、Runtime Worker 与 Node Runtime 54、Runtime Playwright 3 项通过；Alembic 完整升级、v0.10 回退和再升级、前端生产构建、Ruff/Biome 及生成客户端检查通过，数据库 head 为 `0a10b2c3d4e5`。
 
 ## 版本状态
 | 版本 | 状态 | 说明 |
@@ -74,3 +76,4 @@ NeoMua
 | v0.7 | 已完成 | Chat/Agent 工作台、完整创建体验、独立 Workflow 应用与模板执行配置 |
 | v0.8 | 已完成 | Skill 文件工作台、不可变发布版本、身份绑定、Runtime 异步同步与任务使用审计 |
 | v0.9 | 已完成 | Runtime Instance、可信执行证据与安全边界已通过复核并合入 `master` |
+| v0.10 | 待评审 | 三类系统 Runtime、正式节点安装、签名客户端发现和自动模型路由已实现并完成集中验证 |

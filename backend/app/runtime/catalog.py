@@ -48,6 +48,7 @@ def canonical_digest(value: Any) -> str:
 
 def configuration_payload(row: RuntimeConfigurationRevision) -> dict[str, Any]:
     return {
+        "adapter_execution_ref": row.adapter_execution_ref,
         "executable": row.executable,
         "arguments": row.arguments,
         "working_directory_policy": row.working_directory_policy,
@@ -122,9 +123,7 @@ def validate_runtime_ready(session: Session, runtime: RuntimeInstance) -> None:
             else None
         )
         if node is None or not node_is_online(node):
-            raise RuntimeCatalogError(
-                "runtime_node_offline", "Runtime Node is offline"
-            )
+            raise RuntimeCatalogError("runtime_node_offline", "Runtime Node is offline")
 
 
 def model_binding_is_current(

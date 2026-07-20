@@ -110,6 +110,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD?Variable not set}
       - SENTRY_DSN=${SENTRY_DSN}
       - INTERNAL_RUNTIME_TOKEN=${INTERNAL_RUNTIME_TOKEN?Variable not set}
+      - RUNTIME_WORKER_RELEASE_DIGEST=${RUNTIME_WORKER_RELEASE_DIGEST?Variable not set}
       - MODEL_GATEWAY_URL=http://model-gateway:8090
       - MODEL_GATEWAY_PUBLIC_URL=${MODEL_GATEWAY_PUBLIC_URL?Variable not set}
       - ARTIFACT_STORAGE_BACKEND=local
@@ -186,6 +187,7 @@ services:
     environment:
       - CONTROL_PLANE_URL=http://backend:8000
       - INTERNAL_RUNTIME_TOKEN=${INTERNAL_RUNTIME_TOKEN?Variable not set}
+      - RUNTIME_WORKER_RELEASE_DIGEST=${RUNTIME_WORKER_RELEASE_DIGEST?Variable not set}
 
   frontend:
     image: '${DOCKER_IMAGE_FRONTEND?Variable not set}:${TAG-latest}'

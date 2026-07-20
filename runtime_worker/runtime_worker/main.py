@@ -36,7 +36,20 @@ async def main() -> None:
             raise RuntimeError(
                 "RUNTIME_WORKER_CONCURRENCY must be at least 2 for roundtable delegation"
             )
-        capabilities = discover_runtime_capabilities()
+        capabilities = discover_runtime_capabilities(mode="platform")
+        release_digest = os.environ.get("RUNTIME_WORKER_RELEASE_DIGEST")
+        if (
+            release_digest is None
+            or len(release_digest) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in release_digest.lower()
+            )
+        ):
+            raise RuntimeError(
+                "RUNTIME_WORKER_RELEASE_DIGEST must be a 64-character hex digest"
+            )
+        capabilities["release_digest"] = release_digest.lower()
         configuration_store = RuntimeConfigurationStore(
             configuration_store_path,
             source_environment=source_environment,

@@ -1193,6 +1193,21 @@ export const Body_runtime_artifacts_upload_artifactSchema = {
     title: 'Body_runtime-artifacts-upload_artifact'
 } as const;
 
+export const Body_runtime_node_distributions_publish_distributionSchema = {
+    properties: {
+        file: {
+            type: 'string',
+            format: 'binary',
+            title: 'File'
+        }
+    },
+    type: 'object',
+    required: [
+        'file'
+    ],
+    title: 'Body_runtime-node-distributions-publish_distribution'
+} as const;
+
 export const Body_workflows_upload_workflow_attachmentSchema = {
     properties: {
         file: {
@@ -1206,6 +1221,319 @@ export const Body_workflows_upload_workflow_attachmentSchema = {
         'file'
     ],
     title: 'Body_workflows-upload_workflow_attachment'
+} as const;
+
+export const BootstrapPreflightInputSchema = {
+    properties: {
+        token: {
+            type: 'string',
+            minLength: 16,
+            title: 'Token'
+        },
+        management_mode: {
+            $ref: '#/components/schemas/RuntimeNodeMode'
+        },
+        os_name: {
+            type: 'string',
+            maxLength: 128,
+            minLength: 1,
+            title: 'Os Name'
+        },
+        architecture: {
+            type: 'string',
+            maxLength: 64,
+            minLength: 1,
+            title: 'Architecture'
+        },
+        agent_version: {
+            type: 'string',
+            maxLength: 64,
+            minLength: 1,
+            title: 'Agent Version'
+        },
+        public_key: {
+            type: 'string',
+            title: 'Public Key'
+        },
+        service_manager: {
+            type: 'string',
+            title: 'Service Manager'
+        },
+        available_disk_bytes: {
+            type: 'integer',
+            minimum: 0,
+            title: 'Available Disk Bytes'
+        },
+        state_directory_atomic_rename: {
+            type: 'boolean',
+            title: 'State Directory Atomic Rename'
+        },
+        platform_tls_verified: {
+            type: 'boolean',
+            title: 'Platform Tls Verified'
+        },
+        clock_skew_seconds: {
+            type: 'integer',
+            title: 'Clock Skew Seconds'
+        }
+    },
+    type: 'object',
+    required: [
+        'token',
+        'management_mode',
+        'os_name',
+        'architecture',
+        'agent_version',
+        'public_key',
+        'service_manager',
+        'available_disk_bytes',
+        'state_directory_atomic_rename',
+        'platform_tls_verified',
+        'clock_skew_seconds'
+    ],
+    title: 'BootstrapPreflightInput'
+} as const;
+
+export const BootstrapPreflightResultSchema = {
+    properties: {
+        bootstrap_session_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Bootstrap Session Id'
+        },
+        release_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Release Id'
+        },
+        manifest: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Manifest'
+        },
+        manifest_digest: {
+            type: 'string',
+            title: 'Manifest Digest'
+        },
+        signature: {
+            type: 'string',
+            title: 'Signature'
+        },
+        signing_public_key: {
+            type: 'string',
+            title: 'Signing Public Key'
+        }
+    },
+    type: 'object',
+    required: [
+        'bootstrap_session_id',
+        'release_id',
+        'manifest',
+        'manifest_digest',
+        'signature',
+        'signing_public_key'
+    ],
+    title: 'BootstrapPreflightResult'
+} as const;
+
+export const BootstrapSessionCreateSchema = {
+    properties: {
+        management_mode: {
+            $ref: '#/components/schemas/RuntimeNodeMode'
+        },
+        release_channel: {
+            type: 'string',
+            maxLength: 64,
+            minLength: 1,
+            title: 'Release Channel',
+            default: 'stable'
+        }
+    },
+    type: 'object',
+    required: [
+        'management_mode'
+    ],
+    title: 'BootstrapSessionCreate'
+} as const;
+
+export const BootstrapSessionCreatedSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        token: {
+            type: 'string',
+            title: 'Token'
+        },
+        expires_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Expires At'
+        },
+        management_mode: {
+            $ref: '#/components/schemas/RuntimeNodeMode'
+        },
+        bootstrap_session_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Bootstrap Session Id'
+        },
+        release_channel: {
+            type: 'string',
+            title: 'Release Channel'
+        },
+        status: {
+            $ref: '#/components/schemas/BootstrapStatus'
+        },
+        signing_public_key: {
+            type: 'string',
+            title: 'Signing Public Key'
+        }
+    },
+    type: 'object',
+    required: [
+        'id',
+        'token',
+        'expires_at',
+        'management_mode',
+        'bootstrap_session_id',
+        'release_channel',
+        'status',
+        'signing_public_key'
+    ],
+    title: 'BootstrapSessionCreated'
+} as const;
+
+export const BootstrapSessionPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        management_mode: {
+            $ref: '#/components/schemas/RuntimeNodeMode'
+        },
+        release_channel: {
+            type: 'string',
+            title: 'Release Channel'
+        },
+        distribution_release_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Distribution Release Id'
+        },
+        status: {
+            $ref: '#/components/schemas/BootstrapStatus'
+        },
+        node_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Node Id'
+        },
+        expires_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Expires At'
+        },
+        completed_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Completed At'
+        }
+    },
+    type: 'object',
+    required: [
+        'id',
+        'management_mode',
+        'release_channel',
+        'distribution_release_id',
+        'status',
+        'node_id',
+        'expires_at',
+        'completed_at'
+    ],
+    title: 'BootstrapSessionPublic'
+} as const;
+
+export const BootstrapStageInputSchema = {
+    properties: {
+        node_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Node Id'
+        },
+        bootstrap_session_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Bootstrap Session Id'
+        },
+        stage: {
+            $ref: '#/components/schemas/BootstrapStatus'
+        },
+        error: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Error'
+        },
+        device_signature: {
+            type: 'string',
+            title: 'Device Signature'
+        }
+    },
+    type: 'object',
+    required: [
+        'node_id',
+        'bootstrap_session_id',
+        'stage',
+        'device_signature'
+    ],
+    title: 'BootstrapStageInput'
+} as const;
+
+export const BootstrapStatusSchema = {
+    type: 'string',
+    enum: [
+        'waiting_for_install',
+        'preflighted',
+        'staged',
+        'enrolled',
+        'service_activated',
+        'reconciled',
+        'failed',
+        'revoked'
+    ],
+    title: 'BootstrapStatus'
 } as const;
 
 export const CapabilityHeartbeatEvidenceSchema = {
@@ -2068,6 +2396,37 @@ export const DeploymentStatusSchema = {
     title: 'DeploymentStatus'
 } as const;
 
+export const DiscoveredNativeModelSchema = {
+    properties: {
+        model_id: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Model Id'
+        },
+        route_key: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Route Key'
+        },
+        login_evidence_digest: {
+            type: 'string',
+            maxLength: 64,
+            minLength: 64,
+            title: 'Login Evidence Digest'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'model_id',
+        'route_key',
+        'login_evidence_digest'
+    ],
+    title: 'DiscoveredNativeModel'
+} as const;
+
 export const DiscoveryInstallationSchema = {
     properties: {
         installation_key: {
@@ -2117,12 +2476,61 @@ export const DiscoveryInstallationSchema = {
         },
         discovered_models: {
             items: {
-                additionalProperties: true,
-                type: 'object'
+                $ref: '#/components/schemas/DiscoveredNativeModel'
             },
             type: 'array',
             title: 'Discovered Models',
             default: []
+        },
+        installation_receipt_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Installation Receipt Id'
+        },
+        distribution_manifest_digest: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 64,
+                    minLength: 64
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Distribution Manifest Digest'
+        },
+        adapter_release_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Adapter Release Id'
+        },
+        adapter_release_digest: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 64,
+                    minLength: 64
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Adapter Release Digest'
         }
     },
     additionalProperties: false,
@@ -2135,6 +2543,58 @@ export const DiscoveryInstallationSchema = {
         'executable_fingerprint'
     ],
     title: 'DiscoveryInstallation'
+} as const;
+
+export const DiscoveryObservationInputSchema = {
+    properties: {
+        adapter_release_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Adapter Release Id'
+        },
+        candidate_ref: {
+            type: 'string',
+            maxLength: 64,
+            minLength: 64,
+            title: 'Candidate Ref'
+        },
+        installation_key: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 255
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Installation Key'
+        },
+        status: {
+            type: 'string',
+            title: 'Status'
+        },
+        error: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Error'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'adapter_release_id',
+        'candidate_ref',
+        'status'
+    ],
+    title: 'DiscoveryObservationInput'
 } as const;
 
 export const DraftSaveSchema = {
@@ -2276,13 +2736,17 @@ export const EnrollmentTokenCreatedSchema = {
             type: 'string',
             format: 'date-time',
             title: 'Expires At'
+        },
+        management_mode: {
+            $ref: '#/components/schemas/RuntimeNodeMode'
         }
     },
     type: 'object',
     required: [
         'id',
         'token',
-        'expires_at'
+        'expires_at',
+        'management_mode'
     ],
     title: 'EnrollmentTokenCreated'
 } as const;
@@ -2322,6 +2786,9 @@ export const EnrollmentTokenPublicSchema = {
                 }
             ],
             title: 'Revoked At'
+        },
+        management_mode: {
+            $ref: '#/components/schemas/RuntimeNodeMode'
         }
     },
     type: 'object',
@@ -2329,7 +2796,8 @@ export const EnrollmentTokenPublicSchema = {
         'id',
         'expires_at',
         'consumed_at',
-        'revoked_at'
+        'revoked_at',
+        'management_mode'
     ],
     title: 'EnrollmentTokenPublic'
 } as const;
@@ -2522,8 +2990,35 @@ export const HTTPValidationErrorSchema = {
 
 export const HarnessCapabilitiesSchema = {
     properties: {
+        claude_agent_sdk: {
+            anyOf: [
+                {
+                    $ref: '#/components/schemas/HarnessCapability'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
         claude_code: {
-            $ref: '#/components/schemas/HarnessCapability'
+            anyOf: [
+                {
+                    $ref: '#/components/schemas/HarnessCapability'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        codex: {
+            anyOf: [
+                {
+                    $ref: '#/components/schemas/HarnessCapability'
+                },
+                {
+                    type: 'null'
+                }
+            ]
         },
         mcp_executables: {
             anyOf: [
@@ -2542,9 +3037,6 @@ export const HarnessCapabilitiesSchema = {
     },
     additionalProperties: false,
     type: 'object',
-    required: [
-        'claude_code'
-    ],
     title: 'HarnessCapabilities'
 } as const;
 
@@ -2557,16 +3049,43 @@ export const HarnessCapabilitySchema = {
             title: 'Cli Version'
         },
         sdk_version: {
-            type: 'string',
-            maxLength: 64,
-            minLength: 1,
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 64,
+                    minLength: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
             title: 'Sdk Version'
         },
         harness_version: {
-            type: 'string',
-            maxLength: 64,
-            minLength: 1,
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 64,
+                    minLength: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
             title: 'Harness Version'
+        },
+        adapter_version: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 64,
+                    minLength: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Adapter Version'
         },
         builtin_tools: {
             anyOf: [
@@ -2581,14 +3100,70 @@ export const HarnessCapabilitySchema = {
                 }
             ],
             title: 'Builtin Tools'
+        },
+        supports_tool_filters: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Supports Tool Filters'
+        },
+        supports_per_tool_approval: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Supports Per Tool Approval'
+        },
+        supports_mcp_injection: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Supports Mcp Injection'
+        },
+        permission_modes: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Permission Modes'
+        },
+        executable: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Executable'
         }
     },
     additionalProperties: false,
     type: 'object',
     required: [
-        'cli_version',
-        'sdk_version',
-        'harness_version'
+        'cli_version'
     ],
     title: 'HarnessCapability'
 } as const;
@@ -2906,6 +3481,141 @@ export const IdentityUpdateSchema = {
     additionalProperties: false,
     type: 'object',
     title: 'IdentityUpdate'
+} as const;
+
+export const InstallationReceiptInputSchema = {
+    properties: {
+        node_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Node Id'
+        },
+        bootstrap_session_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Bootstrap Session Id'
+        },
+        distribution_release_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Distribution Release Id'
+        },
+        manifest_digest: {
+            type: 'string',
+            maxLength: 64,
+            minLength: 64,
+            title: 'Manifest Digest'
+        },
+        components: {
+            items: {
+                additionalProperties: true,
+                type: 'object'
+            },
+            type: 'array',
+            title: 'Components'
+        },
+        logical_installation_ref: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Logical Installation Ref'
+        },
+        first_applied_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'First Applied At'
+        },
+        device_signature: {
+            type: 'string',
+            title: 'Device Signature'
+        }
+    },
+    type: 'object',
+    required: [
+        'node_id',
+        'bootstrap_session_id',
+        'distribution_release_id',
+        'manifest_digest',
+        'components',
+        'logical_installation_ref',
+        'first_applied_at',
+        'device_signature'
+    ],
+    title: 'InstallationReceiptInput'
+} as const;
+
+export const InstallationReceiptPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        node_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Node Id'
+        },
+        bootstrap_session_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Bootstrap Session Id'
+        },
+        distribution_release_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Distribution Release Id'
+        },
+        receipt_digest: {
+            type: 'string',
+            title: 'Receipt Digest'
+        },
+        manifest_digest: {
+            type: 'string',
+            title: 'Manifest Digest'
+        },
+        logical_installation_ref: {
+            type: 'string',
+            title: 'Logical Installation Ref'
+        },
+        first_applied_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'First Applied At'
+        },
+        last_verified_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Last Verified At'
+        }
+    },
+    type: 'object',
+    required: [
+        'id',
+        'node_id',
+        'bootstrap_session_id',
+        'distribution_release_id',
+        'receipt_digest',
+        'manifest_digest',
+        'logical_installation_ref',
+        'first_applied_at',
+        'last_verified_at'
+    ],
+    title: 'InstallationReceiptPublic'
 } as const;
 
 export const ItemCreateSchema = {
@@ -4685,6 +5395,71 @@ export const NodeConfirmationSchema = {
     title: 'NodeConfirmation'
 } as const;
 
+export const NodeDistributionPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        release_key: {
+            type: 'string',
+            title: 'Release Key'
+        },
+        channel: {
+            type: 'string',
+            title: 'Channel'
+        },
+        management_mode: {
+            $ref: '#/components/schemas/RuntimeNodeMode'
+        },
+        os_name: {
+            type: 'string',
+            title: 'Os Name'
+        },
+        architecture: {
+            type: 'string',
+            title: 'Architecture'
+        },
+        manifest: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Manifest'
+        },
+        manifest_digest: {
+            type: 'string',
+            title: 'Manifest Digest'
+        },
+        signature: {
+            type: 'string',
+            title: 'Signature'
+        },
+        signing_public_key: {
+            type: 'string',
+            title: 'Signing Public Key'
+        },
+        active: {
+            type: 'boolean',
+            title: 'Active'
+        }
+    },
+    type: 'object',
+    required: [
+        'id',
+        'release_key',
+        'channel',
+        'management_mode',
+        'os_name',
+        'architecture',
+        'manifest',
+        'manifest_digest',
+        'signature',
+        'signing_public_key',
+        'active'
+    ],
+    title: 'NodeDistributionPublic'
+} as const;
+
 export const NodeEnrollInputSchema = {
     properties: {
         token: {
@@ -4740,6 +5515,53 @@ export const NodeEnrollInputSchema = {
         public_key: {
             type: 'string',
             title: 'Public Key'
+        },
+        management_mode: {
+            anyOf: [
+                {
+                    $ref: '#/components/schemas/RuntimeNodeMode'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        proof: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Proof'
+        },
+        idempotency_key: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 128,
+                    minLength: 16
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Idempotency Key'
+        },
+        distribution_manifest_digest: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 64,
+                    minLength: 64
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Distribution Manifest Digest'
         }
     },
     type: 'object',
@@ -4920,6 +5742,73 @@ export const NodePublicSchema = {
                 }
             ],
             title: 'Runtime Profile Id'
+        },
+        management_mode: {
+            $ref: '#/components/schemas/RuntimeNodeMode'
+        },
+        adapter_registry_digest: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Adapter Registry Digest'
+        },
+        current_installation_receipt_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Current Installation Receipt Id'
+        },
+        installation_manifest_digest: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Installation Manifest Digest'
+        },
+        bootstrap_session_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Bootstrap Session Id'
+        },
+        bootstrap_status: {
+            anyOf: [
+                {
+                    $ref: '#/components/schemas/BootstrapStatus'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        discovery_generation: {
+            type: 'integer',
+            title: 'Discovery Generation'
+        },
+        discovery_requested_generation: {
+            type: 'integer',
+            title: 'Discovery Requested Generation'
         }
     },
     type: 'object',
@@ -4935,7 +5824,15 @@ export const NodePublicSchema = {
         'online',
         'last_seen_at',
         'revoked_at',
-        'runtime_profile_id'
+        'runtime_profile_id',
+        'management_mode',
+        'adapter_registry_digest',
+        'current_installation_receipt_id',
+        'installation_manifest_digest',
+        'bootstrap_session_id',
+        'bootstrap_status',
+        'discovery_generation',
+        'discovery_requested_generation'
     ],
     title: 'NodePublic'
 } as const;
@@ -5936,6 +6833,131 @@ export const ProviderAuthTypeSchema = {
     title: 'ProviderAuthType'
 } as const;
 
+export const ProviderModelRuntimeReadinessSchema = {
+    properties: {
+        provider_model_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Provider Model Id'
+        },
+        model_id: {
+            type: 'string',
+            title: 'Model Id'
+        },
+        enabled: {
+            type: 'boolean',
+            title: 'Enabled'
+        },
+        model_definition_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Model Definition Id'
+        },
+        validation_status: {
+            type: 'string',
+            title: 'Validation Status'
+        },
+        validation_error: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Validation Error'
+        },
+        validation_completed_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Validation Completed At'
+        },
+        validation_valid_until: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Validation Valid Until'
+        },
+        binding_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Binding Id'
+        },
+        binding_status: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Binding Status'
+        },
+        binding_error: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Binding Error'
+        },
+        ready: {
+            type: 'boolean',
+            title: 'Ready'
+        }
+    },
+    type: 'object',
+    required: [
+        'provider_model_id',
+        'model_id',
+        'enabled',
+        'model_definition_id',
+        'validation_status',
+        'validation_error',
+        'validation_completed_at',
+        'validation_valid_until',
+        'binding_id',
+        'binding_status',
+        'binding_error',
+        'ready'
+    ],
+    title: 'ProviderModelRuntimeReadiness'
+} as const;
+
 export const ProviderModelSourceTypeSchema = {
     type: 'string',
     enum: [
@@ -5953,6 +6975,137 @@ export const ProviderModelSyncStatusSchema = {
         'sync_failed'
     ],
     title: 'ProviderModelSyncStatus'
+} as const;
+
+export const ProviderRuntimeReadinessSchema = {
+    properties: {
+        status: {
+            type: 'string',
+            title: 'Status'
+        },
+        expected_worker_release_digest: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Expected Worker Release Digest'
+        },
+        reported_worker_release_digest: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Reported Worker Release Digest'
+        },
+        release_trusted: {
+            type: 'boolean',
+            title: 'Release Trusted'
+        },
+        runtime_instance_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Runtime Instance Id'
+        },
+        runtime_status: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Runtime Status'
+        },
+        reconcile_job_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Reconcile Job Id'
+        },
+        reconcile_status: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Reconcile Status'
+        },
+        reconcile_trigger: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Reconcile Trigger'
+        },
+        reconcile_attempt_count: {
+            type: 'integer',
+            title: 'Reconcile Attempt Count'
+        },
+        reconcile_error: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Reconcile Error'
+        },
+        models: {
+            items: {
+                $ref: '#/components/schemas/ProviderModelRuntimeReadiness'
+            },
+            type: 'array',
+            title: 'Models'
+        }
+    },
+    type: 'object',
+    required: [
+        'status',
+        'expected_worker_release_digest',
+        'reported_worker_release_digest',
+        'release_trusted',
+        'runtime_instance_id',
+        'runtime_status',
+        'reconcile_job_id',
+        'reconcile_status',
+        'reconcile_trigger',
+        'reconcile_attempt_count',
+        'reconcile_error',
+        'models'
+    ],
+    title: 'ProviderRuntimeReadiness'
 } as const;
 
 export const ProviderValidationStatusSchema = {
@@ -6174,6 +7327,110 @@ export const RepositoryValidationRequestSchema = {
     title: 'RepositoryValidationRequest'
 } as const;
 
+export const RuntimeAdapterReleaseCreateSchema = {
+    properties: {
+        adapter_id: {
+            type: 'string',
+            maxLength: 128,
+            minLength: 1,
+            title: 'Adapter Id'
+        },
+        engine_type: {
+            $ref: '#/components/schemas/RuntimeEngineType'
+        },
+        version: {
+            type: 'string',
+            maxLength: 64,
+            minLength: 1,
+            title: 'Version'
+        },
+        discovery_contract: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Discovery Contract'
+        },
+        execution_contract: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Execution Contract'
+        }
+    },
+    type: 'object',
+    required: [
+        'adapter_id',
+        'engine_type',
+        'version',
+        'discovery_contract',
+        'execution_contract'
+    ],
+    title: 'RuntimeAdapterReleaseCreate'
+} as const;
+
+export const RuntimeAdapterReleasePublicSchema = {
+    properties: {
+        adapter_id: {
+            type: 'string',
+            maxLength: 128,
+            minLength: 1,
+            title: 'Adapter Id'
+        },
+        engine_type: {
+            $ref: '#/components/schemas/RuntimeEngineType'
+        },
+        version: {
+            type: 'string',
+            maxLength: 64,
+            minLength: 1,
+            title: 'Version'
+        },
+        discovery_contract: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Discovery Contract'
+        },
+        execution_contract: {
+            additionalProperties: true,
+            type: 'object',
+            title: 'Execution Contract'
+        },
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        release_digest: {
+            type: 'string',
+            title: 'Release Digest'
+        },
+        signature: {
+            type: 'string',
+            title: 'Signature'
+        },
+        signing_public_key: {
+            type: 'string',
+            title: 'Signing Public Key'
+        },
+        active: {
+            type: 'boolean',
+            title: 'Active'
+        }
+    },
+    type: 'object',
+    required: [
+        'adapter_id',
+        'engine_type',
+        'version',
+        'discovery_contract',
+        'execution_contract',
+        'id',
+        'release_digest',
+        'signature',
+        'signing_public_key',
+        'active'
+    ],
+    title: 'RuntimeAdapterReleasePublic'
+} as const;
+
 export const RuntimeConfigurationInputSchema = {
     properties: {
         expected_revision: {
@@ -6280,6 +7537,37 @@ export const RuntimeDiscoveryReportSchema = {
             },
             type: 'array',
             title: 'Installations'
+        },
+        observations: {
+            items: {
+                $ref: '#/components/schemas/DiscoveryObservationInput'
+            },
+            type: 'array',
+            title: 'Observations'
+        },
+        adapter_registry_digest: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 64,
+                    minLength: 64
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Adapter Registry Digest'
+        },
+        device_signature: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Device Signature'
         }
     },
     additionalProperties: false,
@@ -6295,6 +7583,7 @@ export const RuntimeDiscoveryReportSchema = {
 export const RuntimeEngineTypeSchema = {
     type: 'string',
     enum: [
+        'claude_agent_sdk',
         'claude_code',
         'codex'
     ],
@@ -6439,6 +7728,16 @@ export const RuntimeModelRouteTypeSchema = {
         'legacy_direct'
     ],
     title: 'RuntimeModelRouteType'
+} as const;
+
+export const RuntimeNodeModeSchema = {
+    type: 'string',
+    enum: [
+        'service',
+        'client',
+        'legacy_unclassified'
+    ],
+    title: 'RuntimeNodeMode'
 } as const;
 
 export const RuntimeRouteModeSchema = {
