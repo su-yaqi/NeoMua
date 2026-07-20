@@ -2,7 +2,10 @@ import hashlib
 import json
 import os
 import re
+import resource
 import secrets
+import subprocess
+import tempfile
 import threading
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
@@ -36,7 +39,9 @@ _SECURITY_KEYS = {
 _RESOURCE_KEYS = {"max_timeout_seconds"}
 
 
-def _normalized_absolute_path(value: str):
+def _normalized_absolute_path(
+    value: str,
+) -> PurePosixPath | PureWindowsPath | None:
     candidates = (PurePosixPath(value), PureWindowsPath(value))
     for candidate in candidates:
         if candidate.is_absolute() and ".." not in candidate.parts:
@@ -81,6 +86,10 @@ class AppliedRuntimeConfiguration(BaseModel):
     locally_validated_models: list[str] = Field(default_factory=list)
     locally_validated_routes: dict[str, str] = Field(default_factory=dict)
     capability_fingerprint: str
+    adapter_execution_ref: str | None = None
+    local_execution_path: str | None = None
+    local_executable_fingerprint: str | None = None
+    local_revalidation_contract: dict[str, Any] | None = None
 
     @model_validator(mode="after")
     def validate_policy(self) -> "AppliedRuntimeConfiguration":
@@ -88,6 +97,7 @@ class AppliedRuntimeConfiguration(BaseModel):
             raise ValueError("adapter_contract_unsupported: configured base arguments")
         executable_name = Path(self.executable).name
         allowed_names = {
+            "claude_agent_sdk": {"claude", "claude-code"},
             "claude_code": {"claude", "claude-code"},
             "codex": {"codex"},
         }.get(self.engine_type, set())
@@ -114,9 +124,7 @@ class AppliedRuntimeConfiguration(BaseModel):
             )
         network_policy = self.security_policy.get("network_policy", "unrestricted")
         if network_policy != "unrestricted":
-            raise ValueError(
-                "adapter_contract_unsupported: restricted network policy"
-            )
+            raise ValueError("adapter_contract_unsupported: restricted network policy")
         modes = self.security_policy.get("permission_modes")
         if modes is None and self.security_policy.get("permission_mode") is not None:
             modes = [self.security_policy["permission_mode"]]
@@ -127,11 +135,12 @@ class AppliedRuntimeConfiguration(BaseModel):
                 validate_permission_mode(str(mode))
         roots = self.security_policy.get("allowed_working_roots", [])
         if not isinstance(roots, list) or any(
-            not isinstance(root, str)
-            or _normalized_absolute_path(root) is None
+            not isinstance(root, str) or _normalized_absolute_path(root) is None
             for root in roots
         ):
-            raise ValueError("allowed_working_roots must contain normalized absolute paths")
+            raise ValueError(
+                "allowed_working_roots must contain normalized absolute paths"
+            )
         unknown_limits = set(self.resource_limits) - _RESOURCE_KEYS
         if unknown_limits:
             raise ValueError(
@@ -143,6 +152,32 @@ class AppliedRuntimeConfiguration(BaseModel):
                 isinstance(value, bool) or not isinstance(value, int) or value < 1
             ):
                 raise ValueError(f"{key} must be a positive integer")
+        is_client = bool(
+            self.adapter_execution_ref
+            and self.adapter_execution_ref.startswith("client:")
+        )
+        local_fields = (
+            self.local_execution_path,
+            self.local_executable_fingerprint,
+            self.local_revalidation_contract,
+        )
+        if is_client:
+            if any(value is None for value in local_fields):
+                raise ValueError(
+                    "client Runtime requires exact local execution evidence"
+                )
+            assert self.local_execution_path is not None
+            assert self.local_executable_fingerprint is not None
+            local_path = Path(self.local_execution_path)
+            if (
+                not local_path.is_absolute()
+                or local_path.name not in allowed_names
+                or re.fullmatch(r"[0-9a-f]{64}", self.local_executable_fingerprint)
+                is None
+            ):
+                raise ValueError("client Runtime local execution evidence is invalid")
+        elif any(value is not None for value in local_fields):
+            raise ValueError("non-client Runtime cannot carry local execution evidence")
         return self
 
     def allowed_permission_modes(self) -> set[str]:
@@ -152,10 +187,77 @@ class AppliedRuntimeConfiguration(BaseModel):
         return {str(value) for value in (values or [])}
 
     def execution_path(self) -> str | None:
-        """Use adapter-owned discovery for canonical names, exact paths otherwise."""
+        """Revalidate and return the exact client installation selected by discovery."""
+        if self.local_execution_path is not None:
+            executable = Path(self.local_execution_path)
+            if not executable.is_absolute() or not os.access(executable, os.X_OK):
+                raise ValueError("runtime_installation_missing")
+            digest = hashlib.sha256()
+            with executable.open("rb") as source:
+                for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            if digest.hexdigest() != self.local_executable_fingerprint:
+                raise ValueError("runtime_executable_fingerprint_changed")
+            contract = self.local_revalidation_contract
+            if contract is None:
+                raise ValueError("runtime_adapter_revalidation_contract_missing")
+            version_output = self._bounded_probe(
+                executable, list(contract["version_args"]), contract
+            )
+            if re.search(str(contract["identity_regex"]), version_output) is None:
+                raise ValueError("runtime_executable_identity_changed")
+            version_match = re.search(str(contract["version_regex"]), version_output)
+            if version_match is None or version_match.group(1) != self.engine_version:
+                raise ValueError("runtime_engine_version_changed")
+            login_output = self._bounded_probe(
+                executable, list(contract["login_probe_args"]), contract
+            )
+            if re.search(str(contract["login_success_regex"]), login_output) is None:
+                raise ValueError("runtime_native_login_invalid")
+            return str(executable)
         if self.executable in {"claude", "claude-code", "codex"}:
             return None
         return self.executable
+
+    @staticmethod
+    def _bounded_probe(
+        executable: Path, args: list[str], contract: dict[str, Any]
+    ) -> str:
+        limit = int(contract["max_output_bytes"])
+
+        def limit_output() -> None:
+            resource.setrlimit(resource.RLIMIT_FSIZE, (limit, limit))
+
+        with tempfile.TemporaryFile() as output:
+            try:
+                completed = subprocess.run(
+                    [str(executable), *args],
+                    stdin=subprocess.DEVNULL,
+                    stdout=output,
+                    stderr=output,
+                    env={
+                        key: value
+                        for key, value in os.environ.items()
+                        if key
+                        in {
+                            "HOME",
+                            "LANG",
+                            "LC_ALL",
+                            "SSL_CERT_DIR",
+                            "SSL_CERT_FILE",
+                            "TMPDIR",
+                        }
+                    },
+                    check=False,
+                    timeout=int(contract["timeout_seconds"]),
+                    preexec_fn=limit_output,
+                )
+            except (OSError, subprocess.SubprocessError) as exc:
+                raise ValueError("runtime_adapter_revalidation_failed") from exc
+            if completed.returncode != 0 or output.tell() > limit:
+                raise ValueError("runtime_adapter_revalidation_failed")
+            output.seek(0)
+            return output.read(limit + 1).decode(errors="replace")
 
     def task_environment(self, source: dict[str, str]) -> dict[str, str]:
         return {
@@ -186,7 +288,9 @@ class AppliedRuntimeConfiguration(BaseModel):
         if max_timeout is not None and timeout > int(max_timeout):
             raise ValueError("agent_timeout_exceeds_runtime_limit")
         cwd = snapshot.get("working_directory")
-        roots = [str(root) for root in self.security_policy.get("allowed_working_roots", [])]
+        roots = [
+            str(root) for root in self.security_policy.get("allowed_working_roots", [])
+        ]
         if self.working_directory_policy == "project" and not cwd:
             raise ValueError("Runtime requires an explicit working directory")
         if cwd:
@@ -281,9 +385,7 @@ class RuntimeConfigurationStore:
             temporary = self.path.with_name(
                 f".{self.path.name}.{secrets.token_hex(8)}.tmp"
             )
-            descriptor = os.open(
-                temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600
-            )
+            descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             try:
                 with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
                     json.dump(values, handle, sort_keys=True, separators=(",", ":"))
@@ -303,9 +405,14 @@ class RuntimeConfigurationStore:
     def capability_evidence(self) -> list[dict[str, Any]]:
         with self._lock:
             values = list(self._read().values())
-        configurations = [
-            AppliedRuntimeConfiguration.model_validate(value) for value in values
-        ]
+        configurations: list[AppliedRuntimeConfiguration] = []
+        for value in values:
+            configuration = AppliedRuntimeConfiguration.model_validate(value)
+            try:
+                configuration.execution_path()
+            except ValueError:
+                continue
+            configurations.append(configuration)
         return [
             {
                 "runtime_instance_id": item.runtime_instance_id,
@@ -326,6 +433,10 @@ class RuntimeConfigurationStore:
         adapter_version: str,
         capabilities: dict[str, Any],
         discovered_models: list[dict[str, Any]],
+        adapter_execution_ref: str | None = None,
+        local_execution_path: str | None = None,
+        local_executable_fingerprint: str | None = None,
+        local_revalidation_contract: dict[str, Any] | None = None,
     ) -> AppliedRuntimeConfiguration:
         configuration_payload = {
             "executable": payload["executable"],
@@ -369,6 +480,10 @@ class RuntimeConfigurationStore:
             capabilities=capabilities,
             discovered_models=discovered_models,
             capability_fingerprint=canonical_digest(capability_payload),
+            adapter_execution_ref=adapter_execution_ref,
+            local_execution_path=local_execution_path,
+            local_executable_fingerprint=local_executable_fingerprint,
+            local_revalidation_contract=local_revalidation_contract,
         )
         self.save(configuration)
         return configuration

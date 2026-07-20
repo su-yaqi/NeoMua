@@ -30,10 +30,23 @@ from app.runtime.models import (
     AgentTask,
     ArtifactDeployment,
     ArtifactRelease,
+    LlmProviderModelValidation,
+    NodeBootstrapAttempt,
+    NodeBootstrapSession,
     NodeCredential,
+    NodeDistributionRelease,
     NodeEnrollmentToken,
     NodeHandshakeNonce,
+    NodeInstallationReceipt,
+    PlatformRuntimeReconcileAttempt,
+    PlatformRuntimeReconcileJob,
+    RuntimeAdapterRelease,
     RuntimeArtifact,
+    RuntimeControlDecision,
+    RuntimeDiscoveryObservation,
+    RuntimeInstallationMigrationReceipt,
+    RuntimeInstance,
+    RuntimeModelBinding,
     RuntimeNode,
     RuntimeNodeArtifact,
     RuntimeProfile,
@@ -87,10 +100,24 @@ def cleanup_test_data(session: Session) -> None:
     session.execute(delete(RuntimeNodeArtifact))
     session.execute(delete(ArtifactRelease))
     session.execute(delete(RuntimeArtifact))
+    session.execute(delete(RuntimeModelBinding))
+    session.execute(delete(LlmProviderModelValidation))
+    session.execute(delete(PlatformRuntimeReconcileAttempt))
+    session.execute(delete(PlatformRuntimeReconcileJob))
+    session.execute(delete(RuntimeControlDecision))
+    session.execute(delete(RuntimeDiscoveryObservation))
+    session.execute(delete(RuntimeInstallationMigrationReceipt))
+    session.execute(delete(RuntimeInstance))
+    session.execute(update(RuntimeNode).values(current_installation_receipt_id=None))
+    session.execute(delete(NodeInstallationReceipt))
+    session.execute(delete(NodeBootstrapAttempt))
+    session.execute(delete(NodeBootstrapSession))
     session.execute(delete(NodeCredential))
     session.execute(delete(NodeEnrollmentToken))
     session.execute(delete(NodeHandshakeNonce))
     session.execute(delete(RuntimeNode))
+    session.execute(delete(RuntimeAdapterRelease))
+    session.execute(delete(NodeDistributionRelease))
     session.execute(delete(RuntimeSecret))
     session.execute(delete(RuntimeProfile))
     session.execute(delete(LlmProviderModel))

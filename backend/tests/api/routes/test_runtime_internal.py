@@ -1,6 +1,9 @@
+import base64
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
@@ -10,13 +13,22 @@ from app.runtime.catalog import canonical_digest
 from app.runtime.models import (
     AgentTask,
     AgentTaskModelUsage,
+    NodeInstallationReceipt,
+    RuntimeAdapterRelease,
     RuntimeCapabilityReport,
+    RuntimeConfigurationOrigin,
+    RuntimeConfigurationRevision,
+    RuntimeEngineType,
+    RuntimeInstance,
     RuntimeJob,
     RuntimeJobKind,
     RuntimeJobStatus,
+    RuntimeManagementType,
     RuntimeModelBinding,
     RuntimeModelBindingStatus,
     RuntimeModelRouteType,
+    RuntimeNode,
+    RuntimeNodeMode,
     RuntimeProfile,
 )
 from app.runtime.policy import TaskStatus
@@ -344,3 +356,238 @@ def test_legacy_runtime_profile_task_is_not_claimed(
     assert response.status_code == 204
     db.expire_all()
     assert db.get(AgentTask, legacy_task.id).status == TaskStatus.QUEUED
+
+
+def _runtime_node(
+    db: Session, namespace_id: uuid.UUID, mode: RuntimeNodeMode
+) -> tuple[RuntimeNode, Ed25519PrivateKey]:
+    private = Ed25519PrivateKey.generate()
+    public = private.public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw
+    )
+    node = RuntimeNode(
+        namespace_id=namespace_id,
+        name=f"{mode.value}-node",
+        hostname=f"{mode.value}-host",
+        os_name="linux",
+        architecture="amd64",
+        agent_version="0.1.0",
+        harness_capabilities={},
+        public_key=base64.b64encode(public).decode(),
+        key_fingerprint=uuid.uuid4().hex,
+        management_mode=mode,
+    )
+    db.add(node)
+    db.commit()
+    db.refresh(node)
+    return node, private
+
+
+def _installation(engine_type: str, key: str) -> dict:
+    return {
+        "installation_key": key,
+        "name": key,
+        "engine_type": engine_type,
+        "engine_version": "1.0.0",
+        "adapter_version": "0.1.0",
+        "executable_fingerprint": "a" * 64,
+        "capabilities": {"permission_modes": ["default", "plan"]},
+        "discovered_models": [],
+    }
+
+
+def _signed_discovery(
+    private: Ed25519PrivateKey,
+    *,
+    generation: int,
+    installations: list[dict],
+    adapter_registry_digest: str | None = None,
+) -> dict:
+    payload = {
+        "generation": generation,
+        "installations": installations,
+        "observations": [],
+    }
+    if adapter_registry_digest is not None:
+        payload["adapter_registry_digest"] = adapter_registry_digest
+    digest = canonical_digest(payload)
+    return {
+        **payload,
+        "device_signature": base64.b64encode(
+            private.sign(f"neomua-runtime-discovery-v1:{digest}".encode())
+        ).decode(),
+    }
+
+
+def test_service_node_discovery_creates_managed_sdk_runtime(
+    client: TestClient, db: Session
+) -> None:
+    namespace = create_namespace(db)
+    node, private = _runtime_node(db, namespace.id, RuntimeNodeMode.SERVICE)
+    receipt = NodeInstallationReceipt(
+        node_id=node.id,
+        receipt_digest="b" * 64,
+        manifest_digest="c" * 64,
+        components=[
+            {"name": "claude-agent-sdk", "version": "0.2.110"},
+            {"name": "runtime-adapter", "version": "0.1.0"},
+        ],
+        logical_installation_ref="service:claude-agent-sdk",
+        device_signature="test-signature",
+        first_applied_at=datetime.now(timezone.utc),
+        last_verified_at=datetime.now(timezone.utc),
+    )
+    db.add(receipt)
+    db.flush()
+    node.current_installation_receipt_id = receipt.id
+    db.add(node)
+    db.commit()
+    rejected = client.post(
+        f"{settings.API_V1_STR}/internal/runtime/discovery",
+        headers=_internal_headers(),
+        json={
+            "node_id": str(node.id),
+            **_signed_discovery(
+                private,
+                generation=1,
+                installations=[_installation("codex", "service:codex")],
+            ),
+        },
+    )
+    assert rejected.status_code == 422
+
+    accepted = client.post(
+        f"{settings.API_V1_STR}/internal/runtime/discovery",
+        headers=_internal_headers(),
+        json={
+            "node_id": str(node.id),
+            **_signed_discovery(
+                private,
+                generation=1,
+                installations=[
+                    {
+                        **_installation(
+                            RuntimeEngineType.CLAUDE_AGENT_SDK.value,
+                            "service:claude-agent-sdk",
+                        ),
+                        "installation_receipt_id": str(receipt.id),
+                        "distribution_manifest_digest": receipt.manifest_digest,
+                    }
+                ],
+            ),
+        },
+    )
+    assert accepted.status_code == 200, accepted.text
+    runtime = db.exec(
+        select(RuntimeInstance).where(RuntimeInstance.runtime_node_id == node.id)
+    ).one()
+    assert runtime.management_type == RuntimeManagementType.SERVICE_MANAGED
+    assert runtime.enabled is True
+    configuration = db.get(
+        RuntimeConfigurationRevision, runtime.desired_configuration_revision_id
+    )
+    assert configuration is not None
+    assert configuration.origin == RuntimeConfigurationOrigin.SERVICE_MANIFEST
+    assert configuration.adapter_execution_ref == "service:claude-agent-sdk"
+
+
+def test_client_node_discovery_controls_only_existing_cli_runtimes(
+    client: TestClient, db: Session
+) -> None:
+    namespace = create_namespace(db)
+    node, private = _runtime_node(db, namespace.id, RuntimeNodeMode.CLIENT)
+    node.adapter_registry_digest = "d" * 64
+    db.add(node)
+    releases: dict[str, RuntimeAdapterRelease] = {}
+    for adapter_id, engine_type in (
+        ("neomua.claude-code", RuntimeEngineType.CLAUDE_CODE),
+        ("neomua.codex", RuntimeEngineType.CODEX),
+    ):
+        release = RuntimeAdapterRelease(
+            adapter_id=adapter_id,
+            engine_type=engine_type,
+            version="0.1.0",
+            discovery_contract={},
+            execution_contract={},
+            release_digest=canonical_digest({"adapter_id": adapter_id}),
+            signature="test",
+            signing_public_key="test",
+        )
+        db.add(release)
+        db.flush()
+        releases[engine_type.value] = release
+    db.commit()
+    rejected = client.post(
+        f"{settings.API_V1_STR}/internal/runtime/discovery",
+        headers=_internal_headers(),
+        json={
+            "node_id": str(node.id),
+            **_signed_discovery(
+                private,
+                generation=1,
+                adapter_registry_digest=node.adapter_registry_digest,
+                installations=[
+                    _installation(
+                        RuntimeEngineType.CLAUDE_AGENT_SDK.value,
+                        "client:forbidden-sdk",
+                    )
+                ],
+            ),
+        },
+    )
+    assert rejected.status_code == 422
+
+    client_installations = []
+    for engine_type, adapter_id in (
+        ("claude_code", "neomua.claude-code"),
+        ("codex", "neomua.codex"),
+    ):
+        installation_id = uuid.uuid4()
+        release = releases[engine_type]
+        client_installations.append(
+            {
+                **_installation(engine_type, f"client:{adapter_id}:{installation_id}"),
+                "adapter_release_id": str(release.id),
+                "adapter_release_digest": release.release_digest,
+                "capabilities": {
+                    "permission_modes": ["default", "plan"],
+                    "adapter_release_digest": release.release_digest,
+                    "native_login_ready": True,
+                },
+            }
+        )
+    accepted = client.post(
+        f"{settings.API_V1_STR}/internal/runtime/discovery",
+        headers=_internal_headers(),
+        json={
+            "node_id": str(node.id),
+            **_signed_discovery(
+                private,
+                generation=1,
+                installations=client_installations,
+                adapter_registry_digest=node.adapter_registry_digest,
+            ),
+        },
+    )
+    assert accepted.status_code == 200, accepted.text
+    runtimes = db.exec(
+        select(RuntimeInstance).where(RuntimeInstance.runtime_node_id == node.id)
+    ).all()
+    assert {runtime.engine_type for runtime in runtimes} == {
+        RuntimeEngineType.CLAUDE_CODE,
+        RuntimeEngineType.CODEX,
+    }
+    assert all(
+        runtime.management_type == RuntimeManagementType.CLIENT_DISCOVERED
+        and runtime.enabled
+        for runtime in runtimes
+    )
+    configurations = [
+        db.get(RuntimeConfigurationRevision, runtime.desired_configuration_revision_id)
+        for runtime in runtimes
+    ]
+    assert all(
+        configuration is not None
+        and configuration.origin == RuntimeConfigurationOrigin.CLIENT_ADAPTER
+        for configuration in configurations
+    )

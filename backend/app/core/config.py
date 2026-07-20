@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     SECRET_KEY: str = secrets.token_urlsafe(32)
     INTERNAL_RUNTIME_TOKEN: str | None = None
+    RUNTIME_WORKER_RELEASE_DIGEST: str | None = None
     MODEL_GATEWAY_URL: str = "http://model-gateway:8090"
     MODEL_GATEWAY_PUBLIC_URL: str | None = None
     GATEWAY_JWT_LEEWAY_SECONDS: int = 30
@@ -111,12 +112,17 @@ class Settings(BaseSettings):
     FIRST_SUPERUSER_PASSWORD: str
 
     def _check_default_secret(self, var_name: str, value: str | None) -> None:
-        weak = not value or value.lower().startswith("changethis") or value.lower() in {
-            "secret",
-            "password",
-            "template",
-            "example",
-        }
+        weak = (
+            not value
+            or value.lower().startswith("changethis")
+            or value.lower()
+            in {
+                "secret",
+                "password",
+                "template",
+                "example",
+            }
+        )
         if weak:
             message = (
                 f'The value of {var_name} is "changethis", '
@@ -137,6 +143,17 @@ class Settings(BaseSettings):
         self._check_default_secret(
             "INTERNAL_RUNTIME_TOKEN", self.INTERNAL_RUNTIME_TOKEN
         )
+        if self.ENVIRONMENT != "local" and (
+            self.RUNTIME_WORKER_RELEASE_DIGEST is None
+            or len(self.RUNTIME_WORKER_RELEASE_DIGEST) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in self.RUNTIME_WORKER_RELEASE_DIGEST.lower()
+            )
+        ):
+            raise ValueError(
+                "RUNTIME_WORKER_RELEASE_DIGEST must be a 64-character hex digest"
+            )
         if (
             self.ENVIRONMENT != "local"
             and self.INTERNAL_RUNTIME_TOKEN

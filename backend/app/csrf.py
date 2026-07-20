@@ -14,6 +14,10 @@ class CookieCSRFMiddleware(BaseHTTPMiddleware):
         csrf_exempt = {
             f"{settings.API_V1_STR}/login/access-token",
             f"{settings.API_V1_STR}/node/enroll",
+            f"{settings.API_V1_STR}/node/bootstrap/preflight",
+            f"{settings.API_V1_STR}/node/bootstrap/recover",
+            f"{settings.API_V1_STR}/node/bootstrap/receipt",
+            f"{settings.API_V1_STR}/node/bootstrap/stage",
             f"{settings.API_V1_STR}/users/signup",
         }
         if (
@@ -28,9 +32,7 @@ class CookieCSRFMiddleware(BaseHTTPMiddleware):
                 request.cookies.get("neomua_access")
                 or request.cookies.get("neomua_refresh")
             )
-            has_bearer = request.headers.get("authorization", "").startswith(
-                "Bearer "
-            )
+            has_bearer = request.headers.get("authorization", "").startswith("Bearer ")
             has_internal_service_auth = bool(request.headers.get("x-runtime-token"))
             if has_cookie_auth and not has_bearer and not has_internal_service_auth:
                 origin = request.headers.get("origin")

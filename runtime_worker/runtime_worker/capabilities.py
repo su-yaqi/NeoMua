@@ -2,12 +2,17 @@ import hashlib
 import json
 import os
 import re
-import shutil
 import subprocess
+from importlib import import_module
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+from types import ModuleType
 
-import claude_agent_sdk
+claude_agent_sdk: ModuleType | None
+try:
+    claude_agent_sdk = import_module("claude_agent_sdk")
+except ModuleNotFoundError:  # client node distributions intentionally omit it
+    claude_agent_sdk = None
 
 
 class CapabilityDetectionError(RuntimeError):
@@ -23,8 +28,17 @@ def _package_version(name: str) -> str:
         ) from exc
 
 
+def _claude_sdk_executable() -> Path:
+    if claude_agent_sdk is None:
+        raise CapabilityDetectionError("Claude Agent SDK is not installed")
+    module_file = claude_agent_sdk.__file__
+    if module_file is None:
+        raise CapabilityDetectionError("Claude Agent SDK package path is unavailable")
+    return Path(module_file).parent / "_bundled" / "claude"
+
+
 def _claude_cli_version() -> str:
-    executable = Path(claude_agent_sdk.__file__).parent / "_bundled" / "claude"
+    executable = _claude_sdk_executable()
     if not executable.is_file():
         raise CapabilityDetectionError("Claude Code CLI executable is not installed")
     try:
@@ -67,37 +81,16 @@ def _mcp_executable_inventory() -> list[str]:
     return sorted(result)
 
 
-def _codex_cli_capability() -> dict[str, object] | None:
-    executable = shutil.which("codex")
-    if executable is None:
-        return None
-    try:
-        completed = subprocess.run(
-            [executable, "--version"],
-            capture_output=True,
-            check=True,
-            text=True,
-            timeout=10,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise CapabilityDetectionError("Codex CLI version probe failed") from exc
-    match = re.search(r"([0-9]+(?:\.[0-9A-Za-z-]+)+)", completed.stdout)
-    if match is None:
-        raise CapabilityDetectionError("Codex CLI returned an invalid version")
-    return {
-        "cli_version": match.group(1),
-        "adapter_version": _package_version("neomua-runtime-worker"),
-        "builtin_tools": [],
-        "supports_tool_filters": False,
-        "supports_per_tool_approval": False,
-        "supports_mcp_injection": False,
-        "permission_modes": ["default", "acceptEdits", "plan"],
-    }
-
-
-def discover_runtime_capabilities() -> dict[str, object]:
-    result: dict[str, object] = {
-        "claude_code": {
+def discover_runtime_capabilities(*, mode: str = "service") -> dict[str, object]:
+    if mode not in {"service", "client", "platform"}:
+        raise CapabilityDetectionError(f"unsupported Runtime management mode: {mode}")
+    result: dict[str, object] = {"mcp_executables": _mcp_executable_inventory()}
+    if mode in {"service", "platform"}:
+        if claude_agent_sdk is None:
+            raise CapabilityDetectionError(
+                "Claude Agent SDK is required in service mode"
+            )
+        result["claude_agent_sdk"] = {
             "cli_version": _claude_cli_version(),
             "sdk_version": _package_version("claude-agent-sdk"),
             "harness_version": _package_version("neomua-runtime-worker"),
@@ -107,12 +100,10 @@ def discover_runtime_capabilities() -> dict[str, object]:
             "supports_per_tool_approval": True,
             "supports_mcp_injection": True,
             "permission_modes": ["default", "acceptEdits", "plan"],
-        },
-        "mcp_executables": _mcp_executable_inventory(),
-    }
-    codex = _codex_cli_capability()
-    if codex is not None:
-        result["codex"] = codex
+        }
+        return result
+    # Client engine evidence is exclusively produced by the signed Adapter Registry.
+    # This legacy heartbeat inventory must never search PATH or disclose local paths.
     return result
 
 
@@ -128,21 +119,29 @@ def _executable_fingerprint(path: Path) -> str:
     return digest.hexdigest()
 
 
-def discover_runtime_installations() -> list[dict[str, object]]:
-    capabilities = discover_runtime_capabilities()
+def discover_runtime_installations(*, mode: str = "service") -> list[dict[str, object]]:
+    if mode != "service":
+        raise CapabilityDetectionError(
+            "client Runtime discovery requires the signed Adapter Registry"
+        )
+    capabilities = discover_runtime_capabilities(mode=mode)
     installations: list[dict[str, object]] = []
-    claude_executable = Path(claude_agent_sdk.__file__).parent / "_bundled" / "claude"
-    claude = capabilities["claude_code"]
+    if claude_agent_sdk is None:
+        raise CapabilityDetectionError("Claude Agent SDK is required in service mode")
+    claude_executable = _claude_sdk_executable()
+    claude = capabilities["claude_agent_sdk"]
     assert isinstance(claude, dict)
     installations.append(
         {
-            "installation_key": "claude_code:bundled",
-            "name": "Claude Code (bundled)",
-            "engine_type": "claude_code",
+            "installation_key": "service:claude-agent-sdk",
+            "name": "Claude Agent SDK (NeoMua managed)",
+            "engine_type": "claude_agent_sdk",
             "engine_version": claude["cli_version"],
             "adapter_version": claude["adapter_version"],
             "executable_fingerprint": _executable_fingerprint(claude_executable),
             "capabilities": {
+                "sdk_version": claude["sdk_version"],
+                "harness_version": claude["harness_version"],
                 "tools": claude["builtin_tools"],
                 "permission_modes": claude["permission_modes"],
                 "supports_tool_filters": claude["supports_tool_filters"],
@@ -152,25 +151,4 @@ def discover_runtime_installations() -> list[dict[str, object]]:
             "discovered_models": [],
         }
     )
-    codex = capabilities.get("codex")
-    codex_executable = shutil.which("codex")
-    if isinstance(codex, dict) and codex_executable:
-        installations.append(
-            {
-                "installation_key": "codex:default",
-                "name": "Codex",
-                "engine_type": "codex",
-                "engine_version": codex["cli_version"],
-                "adapter_version": codex["adapter_version"],
-                "executable_fingerprint": _executable_fingerprint(Path(codex_executable)),
-                "capabilities": {
-                    "tools": codex["builtin_tools"],
-                    "permission_modes": codex["permission_modes"],
-                    "supports_tool_filters": codex["supports_tool_filters"],
-                    "supports_per_tool_approval": codex["supports_per_tool_approval"],
-                    "supports_mcp_injection": codex["supports_mcp_injection"],
-                },
-                "discovered_models": [],
-            }
-        )
     return installations

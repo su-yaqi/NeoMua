@@ -19,6 +19,7 @@ from app.api.routes import (
     llm_provider_configs,
     login,
     namespaces,
+    node_distributions,
     node_enrollment,
     node_socket,
     private,
@@ -48,6 +49,7 @@ api_router.include_router(llm_provider_configs.router)
 api_router.include_router(runtimes.router)
 api_router.include_router(runtime_internal.router)
 api_router.include_router(node_enrollment.admin_router)
+api_router.include_router(node_distributions.platform_router)
 api_router.include_router(runtime_instances.router)
 api_router.include_router(runtime_instances.internal_router)
 api_router.include_router(runtime_artifacts.router)
@@ -56,6 +58,7 @@ api_router.include_router(runtime_skills.router)
 api_router.include_router(runtime_skills.internal_router)
 api_router.include_router(runtime_skills.node_router)
 api_router.include_router(node_enrollment.node_router)
+api_router.include_router(node_distributions.node_router)
 api_router.include_router(node_socket.router)
 
 api_router.include_router(agent_management_router)

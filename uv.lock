@@ -1629,6 +1629,11 @@ dependencies = [
     { name = "websockets" },
 ]
 
+[package.optional-dependencies]
+service = [
+    { name = "neomua-runtime-worker", extra = ["claude"] },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
@@ -1639,10 +1644,12 @@ requires-dist = [
     { name = "cryptography", specifier = ">=44,<50" },
     { name = "httpx", specifier = ">=0.28,<1" },
     { name = "neomua-runtime-worker", editable = "runtime_worker" },
+    { name = "neomua-runtime-worker", extras = ["claude"], marker = "extra == 'service'", editable = "runtime_worker" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "typer", specifier = ">=0.21,<1" },
     { name = "websockets", specifier = ">=15,<17" },
 ]
+provides-extras = ["service"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=7.4,<8" }]
@@ -1675,10 +1682,14 @@ name = "neomua-runtime-worker"
 version = "0.1.0"
 source = { editable = "runtime_worker" }
 dependencies = [
-    { name = "claude-agent-sdk" },
     { name = "httpx" },
     { name = "neomua-workflow-runtime" },
     { name = "pydantic" },
+]
+
+[package.optional-dependencies]
+claude = [
+    { name = "claude-agent-sdk" },
 ]
 
 [package.dev-dependencies]
@@ -1688,11 +1699,12 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "claude-agent-sdk", specifier = "==0.2.110" },
+    { name = "claude-agent-sdk", marker = "extra == 'claude'", specifier = "==0.2.110" },
     { name = "httpx", specifier = ">=0.28,<1" },
     { name = "neomua-workflow-runtime", editable = "workflow_runtime" },
     { name = "pydantic", specifier = ">=2.12,<3" },
 ]
+provides-extras = ["claude"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=7.4,<8" }]

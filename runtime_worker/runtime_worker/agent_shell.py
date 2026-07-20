@@ -1,19 +1,26 @@
 import asyncio
 import json
 import os
-import shutil
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
-from claude_agent_sdk import (
-    ClaudeAgentOptions,
-    ClaudeSDKClient,
-    create_sdk_mcp_server,
-    tool,
-)
-from claude_agent_sdk.types import PermissionResultAllow, PermissionResultDeny
+try:
+    from claude_agent_sdk import (
+        ClaudeAgentOptions,
+        ClaudeSDKClient,
+        create_sdk_mcp_server,
+        tool,
+    )
+    from claude_agent_sdk.types import PermissionResultAllow, PermissionResultDeny
+except ModuleNotFoundError:  # client node distributions intentionally omit it
+    ClaudeAgentOptions = None  # type: ignore[assignment,misc]
+    ClaudeSDKClient = None  # type: ignore[assignment,misc]
+    create_sdk_mcp_server = None  # type: ignore[assignment]
+    tool = None  # type: ignore[assignment]
+    PermissionResultAllow = None  # type: ignore[assignment,misc]
+    PermissionResultDeny = None  # type: ignore[assignment,misc]
 
 from runtime_worker.events import normalize_messages
 from runtime_worker.permissions import permission_mode_for_sdk, validate_permission_mode
@@ -61,9 +68,14 @@ class AgentShell:
         self._clients: dict[str, ClaudeSDKClient] = {}
 
     @staticmethod
-    def build_options(
-        command: RunCommand, task_id: str | None = None
-    ) -> ClaudeAgentOptions:
+    def build_options(command: RunCommand, task_id: str | None = None) -> Any:
+        if (
+            ClaudeAgentOptions is None
+            or PermissionResultAllow is None
+            or PermissionResultDeny is None
+        ):
+            raise ValueError("claude_agent_sdk_not_installed")
+
         async def can_use_tool(
             tool_name: str, tool_input: dict[str, Any], _context: Any
         ) -> PermissionResultAllow | PermissionResultDeny:
@@ -85,6 +97,8 @@ class AgentShell:
         mcp_servers = dict(command.mcp_servers)
         allowed_tools = list(command.allowed_tools)
         if command.roundtable_participants:
+            if tool is None or create_sdk_mcp_server is None:
+                raise ValueError("claude_agent_sdk_not_installed")
             participant_ids = {
                 str(item["conversation_agent_id"])
                 for item in command.roundtable_participants
@@ -178,6 +192,8 @@ class AgentShell:
         self, command: RunCommand, *, task_id: str | None = None
     ) -> AsyncIterator[dict[str, Any]]:
         sequence = command.start_sequence
+        if ClaudeSDKClient is None:
+            raise ValueError("claude_agent_sdk_not_installed")
         async with ClaudeSDKClient(
             options=self.build_options(command, task_id)
         ) as client:
@@ -202,11 +218,187 @@ class AgentShell:
         return True
 
 
+class ClaudeCodeShell:
+    """Client-mode Claude Code adapter using its documented JSONL CLI contract."""
+
+    def __init__(self, executable: str | None = None) -> None:
+        self.executable = executable
+        self._processes: dict[str, asyncio.subprocess.Process] = {}
+
+    @staticmethod
+    def build_argv(command: RunCommand, executable: str) -> list[str]:
+        if command.require_approval_tools:
+            raise ValueError(
+                "adapter_contract_unsupported: Claude Code per-tool approval callback"
+            )
+        if command.roundtable_participants:
+            raise ValueError(
+                "adapter_contract_unsupported: Claude Code roundtable delegation"
+            )
+        argv = [
+            executable,
+            "--print",
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "--model",
+            command.model,
+            "--permission-mode",
+            command.permission_mode,
+        ]
+        if command.sdk_session_id:
+            argv.extend(["--resume", command.sdk_session_id])
+        else:
+            argv.append("--no-session-persistence")
+        if command.system_prompt:
+            argv.extend(["--system-prompt", command.system_prompt])
+        if command.tools:
+            argv.extend(["--tools", ",".join(command.tools)])
+        if command.allowed_tools:
+            argv.extend(["--allowed-tools", ",".join(command.allowed_tools)])
+        if command.disallowed_tools:
+            argv.extend(["--disallowed-tools", ",".join(command.disallowed_tools)])
+        for directory in command.add_dirs:
+            argv.extend(["--add-dir", directory])
+        if command.mcp_servers:
+            argv.extend(
+                [
+                    "--strict-mcp-config",
+                    "--mcp-config",
+                    json.dumps(
+                        {"mcpServers": command.mcp_servers},
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                ]
+            )
+        argv.append(command.prompt)
+        return argv
+
+    @staticmethod
+    def normalize_event(event: dict[str, Any]) -> list[dict[str, Any]]:
+        event_type = event.get("type")
+        if event_type == "assistant":
+            message = event.get("message")
+            content = message.get("content", []) if isinstance(message, dict) else []
+            result: list[dict[str, Any]] = []
+            for item in content if isinstance(content, list) else []:
+                if not isinstance(item, dict):
+                    continue
+                if item.get("type") == "text":
+                    result.append(
+                        {
+                            "event_type": "assistant_message",
+                            "payload": {"text": str(item.get("text", ""))},
+                        }
+                    )
+                elif item.get("type") == "tool_use":
+                    result.append(
+                        {
+                            "event_type": "tool_call",
+                            "payload": {
+                                "tool_call_id": item.get("id"),
+                                "name": item.get("name"),
+                                "input": item.get("input", {}),
+                            },
+                        }
+                    )
+            return result
+        if event_type == "user":
+            message = event.get("message")
+            content = message.get("content", []) if isinstance(message, dict) else []
+            return [
+                {
+                    "event_type": "tool_result",
+                    "payload": {
+                        "tool_call_id": item.get("tool_use_id"),
+                        "content": item.get("content"),
+                        "is_error": bool(item.get("is_error", False)),
+                    },
+                }
+                for item in content
+                if isinstance(item, dict) and item.get("type") == "tool_result"
+            ]
+        if event_type == "result":
+            if event.get("is_error"):
+                return [
+                    {
+                        "event_type": "error",
+                        "payload": {
+                            "code": "claude_code_execution_failed",
+                            "message": str(event.get("result") or event.get("subtype")),
+                        },
+                    }
+                ]
+            return [
+                {
+                    "event_type": "result",
+                    "payload": {
+                        "result": event.get("result"),
+                        "usage": event.get("usage", {}),
+                        "session_id": event.get("session_id"),
+                    },
+                }
+            ]
+        return []
+
+    async def run_session(
+        self, command: RunCommand, *, task_id: str | None = None
+    ) -> AsyncIterator[dict[str, Any]]:
+        executable = command.executable or self.executable
+        if not executable:
+            raise ValueError("Claude Code executable is not installed")
+        process = await asyncio.create_subprocess_exec(
+            *self.build_argv(command, executable),
+            cwd=command.cwd,
+            env={**os.environ, **command.env},
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        if task_id:
+            self._processes[task_id] = process
+        sequence = command.start_sequence
+        try:
+            assert process.stdout is not None
+            async for raw_line in process.stdout:
+                try:
+                    payload = json.loads(raw_line)
+                except json.JSONDecodeError:
+                    continue
+                for event in self.normalize_event(payload):
+                    sequence += 1
+                    yield {"sequence": sequence, **event}
+            return_code = await process.wait()
+            if return_code != 0:
+                assert process.stderr is not None
+                stderr = (await process.stderr.read()).decode(errors="replace")[-2048:]
+                sequence += 1
+                yield {
+                    "sequence": sequence,
+                    "event_type": "error",
+                    "payload": {
+                        "code": "claude_code_process_failed",
+                        "exit_code": return_code,
+                        "message": stderr,
+                    },
+                }
+        finally:
+            if task_id:
+                self._processes.pop(task_id, None)
+
+    async def interrupt(self, task_id: str) -> bool:
+        process = self._processes.get(task_id)
+        if process is None or process.returncode is not None:
+            return False
+        process.terminate()
+        return True
+
+
 class CodexShell:
     """Built-in Codex CLI adapter using argv execution and JSONL events."""
 
     def __init__(self, executable: str | None = None) -> None:
-        self.executable = executable or shutil.which("codex")
+        self.executable = executable
         self._processes: dict[str, asyncio.subprocess.Process] = {}
 
     @staticmethod
@@ -242,7 +434,10 @@ class CodexShell:
             argv.extend(["--add-dir", directory])
         if command.system_prompt:
             argv.extend(
-                ["--config", f"developer_instructions={json.dumps(command.system_prompt)}"]
+                [
+                    "--config",
+                    f"developer_instructions={json.dumps(command.system_prompt)}",
+                ]
             )
         argv.append(command.prompt)
         return argv
@@ -274,7 +469,10 @@ class CodexShell:
                 event_type = event.get("type")
                 normalized: dict[str, Any] | None = None
                 item = event.get("item") if isinstance(event.get("item"), dict) else {}
-                if event_type == "item.completed" and item.get("type") == "agent_message":
+                if (
+                    event_type == "item.completed"
+                    and item.get("type") == "agent_message"
+                ):
                     normalized = {
                         "event_type": "assistant_message",
                         "payload": {"text": str(item.get("text", ""))},
@@ -284,7 +482,11 @@ class CodexShell:
                         "event_type": "error",
                         "payload": {
                             "code": "codex_execution_failed",
-                            "message": str(event.get("message") or event.get("error") or "Codex failed"),
+                            "message": str(
+                                event.get("message")
+                                or event.get("error")
+                                or "Codex failed"
+                            ),
                         },
                     }
                 elif event_type == "turn.completed":
@@ -321,10 +523,19 @@ class CodexShell:
         return True
 
 
+class ShellAdapter(Protocol):
+    def run_session(
+        self, command: RunCommand, *, task_id: str | None = None
+    ) -> AsyncIterator[dict[str, Any]]: ...
+
+    async def interrupt(self, task_id: str) -> bool: ...
+
+
 class EngineShell:
     def __init__(self) -> None:
-        self.adapters = {
-            "claude_code": AgentShell(),
+        self.adapters: dict[str, ShellAdapter] = {
+            "claude_agent_sdk": AgentShell(),
+            "claude_code": ClaudeCodeShell(),
             "codex": CodexShell(),
         }
         self._task_engines: dict[str, str] = {}

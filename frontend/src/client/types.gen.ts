@@ -657,6 +657,16 @@ export type BodyRuntimeArtifactsUploadArtifact = {
 };
 
 /**
+ * Body_runtime-node-distributions-publish_distribution
+ */
+export type BodyRuntimeNodeDistributionsPublishDistribution = {
+    /**
+     * File
+     */
+    file: Blob | File;
+};
+
+/**
  * Body_workflows-upload_workflow_attachment
  */
 export type BodyWorkflowsUploadWorkflowAttachment = {
@@ -665,6 +675,190 @@ export type BodyWorkflowsUploadWorkflowAttachment = {
      */
     file: Blob | File;
 };
+
+/**
+ * BootstrapPreflightInput
+ */
+export type BootstrapPreflightInput = {
+    /**
+     * Token
+     */
+    token: string;
+    management_mode: RuntimeNodeMode;
+    /**
+     * Os Name
+     */
+    os_name: string;
+    /**
+     * Architecture
+     */
+    architecture: string;
+    /**
+     * Agent Version
+     */
+    agent_version: string;
+    /**
+     * Public Key
+     */
+    public_key: string;
+    /**
+     * Service Manager
+     */
+    service_manager: string;
+    /**
+     * Available Disk Bytes
+     */
+    available_disk_bytes: number;
+    /**
+     * State Directory Atomic Rename
+     */
+    state_directory_atomic_rename: boolean;
+    /**
+     * Platform Tls Verified
+     */
+    platform_tls_verified: boolean;
+    /**
+     * Clock Skew Seconds
+     */
+    clock_skew_seconds: number;
+};
+
+/**
+ * BootstrapPreflightResult
+ */
+export type BootstrapPreflightResult = {
+    /**
+     * Bootstrap Session Id
+     */
+    bootstrap_session_id: string;
+    /**
+     * Release Id
+     */
+    release_id: string;
+    /**
+     * Manifest
+     */
+    manifest: {
+        [key: string]: unknown;
+    };
+    /**
+     * Manifest Digest
+     */
+    manifest_digest: string;
+    /**
+     * Signature
+     */
+    signature: string;
+    /**
+     * Signing Public Key
+     */
+    signing_public_key: string;
+};
+
+/**
+ * BootstrapSessionCreate
+ */
+export type BootstrapSessionCreate = {
+    management_mode: RuntimeNodeMode;
+    /**
+     * Release Channel
+     */
+    release_channel?: string;
+};
+
+/**
+ * BootstrapSessionCreated
+ */
+export type BootstrapSessionCreated = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Token
+     */
+    token: string;
+    /**
+     * Expires At
+     */
+    expires_at: string;
+    management_mode: RuntimeNodeMode;
+    /**
+     * Bootstrap Session Id
+     */
+    bootstrap_session_id: string;
+    /**
+     * Release Channel
+     */
+    release_channel: string;
+    status: BootstrapStatus;
+    /**
+     * Signing Public Key
+     */
+    signing_public_key: string;
+};
+
+/**
+ * BootstrapSessionPublic
+ */
+export type BootstrapSessionPublic = {
+    /**
+     * Id
+     */
+    id: string;
+    management_mode: RuntimeNodeMode;
+    /**
+     * Release Channel
+     */
+    release_channel: string;
+    /**
+     * Distribution Release Id
+     */
+    distribution_release_id: string | null;
+    status: BootstrapStatus;
+    /**
+     * Node Id
+     */
+    node_id: string | null;
+    /**
+     * Expires At
+     */
+    expires_at: string;
+    /**
+     * Completed At
+     */
+    completed_at: string | null;
+};
+
+/**
+ * BootstrapStageInput
+ */
+export type BootstrapStageInput = {
+    /**
+     * Node Id
+     */
+    node_id: string;
+    /**
+     * Bootstrap Session Id
+     */
+    bootstrap_session_id: string;
+    stage: BootstrapStatus;
+    /**
+     * Error
+     */
+    error?: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Device Signature
+     */
+    device_signature: string;
+};
+
+/**
+ * BootstrapStatus
+ */
+export type BootstrapStatus = 'waiting_for_install' | 'preflighted' | 'staged' | 'enrolled' | 'service_activated' | 'reconciled' | 'failed' | 'revoked';
 
 /**
  * CapabilityHeartbeatEvidence
@@ -1104,6 +1298,24 @@ export type DeploymentResult = {
 export type DeploymentStatus = 'pending' | 'dispatched' | 'applied' | 'failed' | 'expired';
 
 /**
+ * DiscoveredNativeModel
+ */
+export type DiscoveredNativeModel = {
+    /**
+     * Model Id
+     */
+    model_id: string;
+    /**
+     * Route Key
+     */
+    route_key: string;
+    /**
+     * Login Evidence Digest
+     */
+    login_evidence_digest: string;
+};
+
+/**
  * DiscoveryInstallation
  */
 export type DiscoveryInstallation = {
@@ -1137,9 +1349,51 @@ export type DiscoveryInstallation = {
     /**
      * Discovered Models
      */
-    discovered_models?: Array<{
+    discovered_models?: Array<DiscoveredNativeModel>;
+    /**
+     * Installation Receipt Id
+     */
+    installation_receipt_id?: string | null;
+    /**
+     * Distribution Manifest Digest
+     */
+    distribution_manifest_digest?: string | null;
+    /**
+     * Adapter Release Id
+     */
+    adapter_release_id?: string | null;
+    /**
+     * Adapter Release Digest
+     */
+    adapter_release_digest?: string | null;
+};
+
+/**
+ * DiscoveryObservationInput
+ */
+export type DiscoveryObservationInput = {
+    /**
+     * Adapter Release Id
+     */
+    adapter_release_id: string;
+    /**
+     * Candidate Ref
+     */
+    candidate_ref: string;
+    /**
+     * Installation Key
+     */
+    installation_key?: string | null;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Error
+     */
+    error?: {
         [key: string]: unknown;
-    }>;
+    } | null;
 };
 
 /**
@@ -1218,6 +1472,7 @@ export type EnrollmentTokenCreated = {
      * Expires At
      */
     expires_at: string;
+    management_mode: RuntimeNodeMode;
 };
 
 /**
@@ -1240,6 +1495,7 @@ export type EnrollmentTokenPublic = {
      * Revoked At
      */
     revoked_at: string | null;
+    management_mode: RuntimeNodeMode;
 };
 
 /**
@@ -1368,7 +1624,9 @@ export type HttpValidationError = {
  * HarnessCapabilities
  */
 export type HarnessCapabilities = {
-    claude_code: HarnessCapability;
+    claude_agent_sdk?: HarnessCapability | null;
+    claude_code?: HarnessCapability | null;
+    codex?: HarnessCapability | null;
     /**
      * Mcp Executables
      */
@@ -1386,15 +1644,39 @@ export type HarnessCapability = {
     /**
      * Sdk Version
      */
-    sdk_version: string;
+    sdk_version?: string | null;
     /**
      * Harness Version
      */
-    harness_version: string;
+    harness_version?: string | null;
+    /**
+     * Adapter Version
+     */
+    adapter_version?: string | null;
     /**
      * Builtin Tools
      */
     builtin_tools?: Array<string> | null;
+    /**
+     * Supports Tool Filters
+     */
+    supports_tool_filters?: boolean | null;
+    /**
+     * Supports Per Tool Approval
+     */
+    supports_per_tool_approval?: boolean | null;
+    /**
+     * Supports Mcp Injection
+     */
+    supports_mcp_injection?: boolean | null;
+    /**
+     * Permission Modes
+     */
+    permission_modes?: Array<string> | null;
+    /**
+     * Executable
+     */
+    executable?: string | null;
 };
 
 /**
@@ -1577,6 +1859,88 @@ export type IdentityUpdate = {
      * Archived
      */
     archived?: boolean | null;
+};
+
+/**
+ * InstallationReceiptInput
+ */
+export type InstallationReceiptInput = {
+    /**
+     * Node Id
+     */
+    node_id: string;
+    /**
+     * Bootstrap Session Id
+     */
+    bootstrap_session_id: string;
+    /**
+     * Distribution Release Id
+     */
+    distribution_release_id: string;
+    /**
+     * Manifest Digest
+     */
+    manifest_digest: string;
+    /**
+     * Components
+     */
+    components: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Logical Installation Ref
+     */
+    logical_installation_ref: string;
+    /**
+     * First Applied At
+     */
+    first_applied_at: string;
+    /**
+     * Device Signature
+     */
+    device_signature: string;
+};
+
+/**
+ * InstallationReceiptPublic
+ */
+export type InstallationReceiptPublic = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Node Id
+     */
+    node_id: string;
+    /**
+     * Bootstrap Session Id
+     */
+    bootstrap_session_id: string | null;
+    /**
+     * Distribution Release Id
+     */
+    distribution_release_id: string | null;
+    /**
+     * Receipt Digest
+     */
+    receipt_digest: string;
+    /**
+     * Manifest Digest
+     */
+    manifest_digest: string;
+    /**
+     * Logical Installation Ref
+     */
+    logical_installation_ref: string;
+    /**
+     * First Applied At
+     */
+    first_applied_at: string;
+    /**
+     * Last Verified At
+     */
+    last_verified_at: string;
 };
 
 /**
@@ -2554,6 +2918,55 @@ export type NodeConfirmation = {
 };
 
 /**
+ * NodeDistributionPublic
+ */
+export type NodeDistributionPublic = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Release Key
+     */
+    release_key: string;
+    /**
+     * Channel
+     */
+    channel: string;
+    management_mode: RuntimeNodeMode;
+    /**
+     * Os Name
+     */
+    os_name: string;
+    /**
+     * Architecture
+     */
+    architecture: string;
+    /**
+     * Manifest
+     */
+    manifest: {
+        [key: string]: unknown;
+    };
+    /**
+     * Manifest Digest
+     */
+    manifest_digest: string;
+    /**
+     * Signature
+     */
+    signature: string;
+    /**
+     * Signing Public Key
+     */
+    signing_public_key: string;
+    /**
+     * Active
+     */
+    active: boolean;
+};
+
+/**
  * NodeEnrollInput
  */
 export type NodeEnrollInput = {
@@ -2590,6 +3003,19 @@ export type NodeEnrollInput = {
      * Public Key
      */
     public_key: string;
+    management_mode?: RuntimeNodeMode | null;
+    /**
+     * Proof
+     */
+    proof?: string | null;
+    /**
+     * Idempotency Key
+     */
+    idempotency_key?: string | null;
+    /**
+     * Distribution Manifest Digest
+     */
+    distribution_manifest_digest?: string | null;
 };
 
 /**
@@ -2702,6 +3128,32 @@ export type NodePublic = {
      * Runtime Profile Id
      */
     runtime_profile_id: string | null;
+    management_mode: RuntimeNodeMode;
+    /**
+     * Adapter Registry Digest
+     */
+    adapter_registry_digest: string | null;
+    /**
+     * Current Installation Receipt Id
+     */
+    current_installation_receipt_id: string | null;
+    /**
+     * Installation Manifest Digest
+     */
+    installation_manifest_digest: string | null;
+    /**
+     * Bootstrap Session Id
+     */
+    bootstrap_session_id: string | null;
+    bootstrap_status: BootstrapStatus | null;
+    /**
+     * Discovery Generation
+     */
+    discovery_generation: number;
+    /**
+     * Discovery Requested Generation
+     */
+    discovery_requested_generation: number;
 };
 
 /**
@@ -3235,6 +3687,64 @@ export type ProjectUpdate = {
 export type ProviderAuthType = 'api_key' | 'oauth_external' | 'oauth_device_code' | 'aws_sdk' | 'external_process' | 'copilot_token' | 'custom';
 
 /**
+ * ProviderModelRuntimeReadiness
+ */
+export type ProviderModelRuntimeReadiness = {
+    /**
+     * Provider Model Id
+     */
+    provider_model_id: string;
+    /**
+     * Model Id
+     */
+    model_id: string;
+    /**
+     * Enabled
+     */
+    enabled: boolean;
+    /**
+     * Model Definition Id
+     */
+    model_definition_id: string | null;
+    /**
+     * Validation Status
+     */
+    validation_status: string;
+    /**
+     * Validation Error
+     */
+    validation_error: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Validation Completed At
+     */
+    validation_completed_at: string | null;
+    /**
+     * Validation Valid Until
+     */
+    validation_valid_until: string | null;
+    /**
+     * Binding Id
+     */
+    binding_id: string | null;
+    /**
+     * Binding Status
+     */
+    binding_status: string | null;
+    /**
+     * Binding Error
+     */
+    binding_error: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Ready
+     */
+    ready: boolean;
+};
+
+/**
  * ProviderModelSourceType
  */
 export type ProviderModelSourceType = 'discovered' | 'manual';
@@ -3243,6 +3753,62 @@ export type ProviderModelSourceType = 'discovered' | 'manual';
  * ProviderModelSyncStatus
  */
 export type ProviderModelSyncStatus = 'active' | 'stale' | 'sync_failed';
+
+/**
+ * ProviderRuntimeReadiness
+ */
+export type ProviderRuntimeReadiness = {
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Expected Worker Release Digest
+     */
+    expected_worker_release_digest: string | null;
+    /**
+     * Reported Worker Release Digest
+     */
+    reported_worker_release_digest: string | null;
+    /**
+     * Release Trusted
+     */
+    release_trusted: boolean;
+    /**
+     * Runtime Instance Id
+     */
+    runtime_instance_id: string | null;
+    /**
+     * Runtime Status
+     */
+    runtime_status: string | null;
+    /**
+     * Reconcile Job Id
+     */
+    reconcile_job_id: string | null;
+    /**
+     * Reconcile Status
+     */
+    reconcile_status: string | null;
+    /**
+     * Reconcile Trigger
+     */
+    reconcile_trigger: string | null;
+    /**
+     * Reconcile Attempt Count
+     */
+    reconcile_attempt_count: number;
+    /**
+     * Reconcile Error
+     */
+    reconcile_error: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Models
+     */
+    models: Array<ProviderModelRuntimeReadiness>;
+};
 
 /**
  * ProviderValidationStatus
@@ -3357,6 +3923,80 @@ export type RepositoryValidationRequest = {
 };
 
 /**
+ * RuntimeAdapterReleaseCreate
+ */
+export type RuntimeAdapterReleaseCreate = {
+    /**
+     * Adapter Id
+     */
+    adapter_id: string;
+    engine_type: RuntimeEngineType;
+    /**
+     * Version
+     */
+    version: string;
+    /**
+     * Discovery Contract
+     */
+    discovery_contract: {
+        [key: string]: unknown;
+    };
+    /**
+     * Execution Contract
+     */
+    execution_contract: {
+        [key: string]: unknown;
+    };
+};
+
+/**
+ * RuntimeAdapterReleasePublic
+ */
+export type RuntimeAdapterReleasePublic = {
+    /**
+     * Adapter Id
+     */
+    adapter_id: string;
+    engine_type: RuntimeEngineType;
+    /**
+     * Version
+     */
+    version: string;
+    /**
+     * Discovery Contract
+     */
+    discovery_contract: {
+        [key: string]: unknown;
+    };
+    /**
+     * Execution Contract
+     */
+    execution_contract: {
+        [key: string]: unknown;
+    };
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Release Digest
+     */
+    release_digest: string;
+    /**
+     * Signature
+     */
+    signature: string;
+    /**
+     * Signing Public Key
+     */
+    signing_public_key: string;
+    /**
+     * Active
+     */
+    active: boolean;
+};
+
+/**
  * RuntimeConfigurationInput
  */
 export type RuntimeConfigurationInput = {
@@ -3432,12 +4072,24 @@ export type RuntimeDiscoveryReport = {
      * Installations
      */
     installations: Array<DiscoveryInstallation>;
+    /**
+     * Observations
+     */
+    observations?: Array<DiscoveryObservationInput>;
+    /**
+     * Adapter Registry Digest
+     */
+    adapter_registry_digest?: string | null;
+    /**
+     * Device Signature
+     */
+    device_signature?: string | null;
 };
 
 /**
  * RuntimeEngineType
  */
-export type RuntimeEngineType = 'claude_code' | 'codex';
+export type RuntimeEngineType = 'claude_agent_sdk' | 'claude_code' | 'codex';
 
 /**
  * RuntimeInstanceStatus
@@ -3507,6 +4159,11 @@ export type RuntimeModelBindingCreate = {
  * RuntimeModelRouteType
  */
 export type RuntimeModelRouteType = 'provider_config' | 'runtime_native' | 'legacy_direct';
+
+/**
+ * RuntimeNodeMode
+ */
+export type RuntimeNodeMode = 'service' | 'client' | 'legacy_unclassified';
 
 /**
  * RuntimeRouteMode
@@ -6091,6 +6748,47 @@ export type LlmValidateProviderConfigResponses = {
 
 export type LlmValidateProviderConfigResponse = LlmValidateProviderConfigResponses[keyof LlmValidateProviderConfigResponses];
 
+export type LlmReadProviderRuntimeReadinessData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Config Id
+         */
+        config_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/llm/provider-configs/{config_id}/runtime-readiness';
+};
+
+export type LlmReadProviderRuntimeReadinessErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type LlmReadProviderRuntimeReadinessError = LlmReadProviderRuntimeReadinessErrors[keyof LlmReadProviderRuntimeReadinessErrors];
+
+export type LlmReadProviderRuntimeReadinessResponses = {
+    /**
+     * Successful Response
+     */
+    200: ProviderRuntimeReadiness;
+};
+
+export type LlmReadProviderRuntimeReadinessResponse = LlmReadProviderRuntimeReadinessResponses[keyof LlmReadProviderRuntimeReadinessResponses];
+
 export type LlmSyncProviderModelsData = {
     body: LlmProviderSyncModelsRequest;
     headers?: {
@@ -6171,10 +6869,6 @@ export type RuntimesReadPlatformRuntimeResponse = RuntimesReadPlatformRuntimeRes
 export type RuntimeInstancesCreatePlatformRuntimeInstanceData = {
     body: PlatformRuntimeCreate;
     headers?: {
-        /**
-         * Idempotency-Key
-         */
-        'Idempotency-Key'?: string | null;
         /**
          * X-Namespace-Id
          */
@@ -7117,6 +7811,80 @@ export type RuntimeNodesCreateTokenResponses = {
 
 export type RuntimeNodesCreateTokenResponse = RuntimeNodesCreateTokenResponses[keyof RuntimeNodesCreateTokenResponses];
 
+export type RuntimeNodesListBootstrapSessionsData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/runtimes/nodes/bootstrap-sessions';
+};
+
+export type RuntimeNodesListBootstrapSessionsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeNodesListBootstrapSessionsError = RuntimeNodesListBootstrapSessionsErrors[keyof RuntimeNodesListBootstrapSessionsErrors];
+
+export type RuntimeNodesListBootstrapSessionsResponses = {
+    /**
+     * Response Runtime-Nodes-List Bootstrap Sessions
+     *
+     * Successful Response
+     */
+    200: Array<BootstrapSessionPublic>;
+};
+
+export type RuntimeNodesListBootstrapSessionsResponse = RuntimeNodesListBootstrapSessionsResponses[keyof RuntimeNodesListBootstrapSessionsResponses];
+
+export type RuntimeNodesCreateBootstrapSessionData = {
+    body: BootstrapSessionCreate;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/runtimes/nodes/bootstrap-sessions';
+};
+
+export type RuntimeNodesCreateBootstrapSessionErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeNodesCreateBootstrapSessionError = RuntimeNodesCreateBootstrapSessionErrors[keyof RuntimeNodesCreateBootstrapSessionErrors];
+
+export type RuntimeNodesCreateBootstrapSessionResponses = {
+    /**
+     * Successful Response
+     */
+    201: BootstrapSessionCreated;
+};
+
+export type RuntimeNodesCreateBootstrapSessionResponse = RuntimeNodesCreateBootstrapSessionResponses[keyof RuntimeNodesCreateBootstrapSessionResponses];
+
 export type RuntimeNodesListNodesData = {
     body?: never;
     headers?: {
@@ -7317,6 +8085,110 @@ export type RuntimeNodesRevokeTokenResponses = {
 
 export type RuntimeNodesRevokeTokenResponse = RuntimeNodesRevokeTokenResponses[keyof RuntimeNodesRevokeTokenResponses];
 
+export type RuntimeNodeDistributionsListAdapterReleasesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/runtime-node-distributions/adapters';
+};
+
+export type RuntimeNodeDistributionsListAdapterReleasesErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeNodeDistributionsListAdapterReleasesError = RuntimeNodeDistributionsListAdapterReleasesErrors[keyof RuntimeNodeDistributionsListAdapterReleasesErrors];
+
+export type RuntimeNodeDistributionsListAdapterReleasesResponses = {
+    /**
+     * Response Runtime-Node-Distributions-List Adapter Releases
+     *
+     * Successful Response
+     */
+    200: Array<RuntimeAdapterReleasePublic>;
+};
+
+export type RuntimeNodeDistributionsListAdapterReleasesResponse = RuntimeNodeDistributionsListAdapterReleasesResponses[keyof RuntimeNodeDistributionsListAdapterReleasesResponses];
+
+export type RuntimeNodeDistributionsPublishAdapterReleaseData = {
+    body: RuntimeAdapterReleaseCreate;
+    path?: never;
+    query?: never;
+    url: '/api/v1/runtime-node-distributions/adapters';
+};
+
+export type RuntimeNodeDistributionsPublishAdapterReleaseErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeNodeDistributionsPublishAdapterReleaseError = RuntimeNodeDistributionsPublishAdapterReleaseErrors[keyof RuntimeNodeDistributionsPublishAdapterReleaseErrors];
+
+export type RuntimeNodeDistributionsPublishAdapterReleaseResponses = {
+    /**
+     * Successful Response
+     */
+    201: RuntimeAdapterReleasePublic;
+};
+
+export type RuntimeNodeDistributionsPublishAdapterReleaseResponse = RuntimeNodeDistributionsPublishAdapterReleaseResponses[keyof RuntimeNodeDistributionsPublishAdapterReleaseResponses];
+
+export type RuntimeNodeDistributionsListDistributionsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/runtime-node-distributions';
+};
+
+export type RuntimeNodeDistributionsListDistributionsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeNodeDistributionsListDistributionsError = RuntimeNodeDistributionsListDistributionsErrors[keyof RuntimeNodeDistributionsListDistributionsErrors];
+
+export type RuntimeNodeDistributionsListDistributionsResponses = {
+    /**
+     * Response Runtime-Node-Distributions-List Distributions
+     *
+     * Successful Response
+     */
+    200: Array<NodeDistributionPublic>;
+};
+
+export type RuntimeNodeDistributionsListDistributionsResponse = RuntimeNodeDistributionsListDistributionsResponses[keyof RuntimeNodeDistributionsListDistributionsResponses];
+
+export type RuntimeNodeDistributionsPublishDistributionData = {
+    body: BodyRuntimeNodeDistributionsPublishDistribution;
+    path?: never;
+    query?: never;
+    url: '/api/v1/runtime-node-distributions';
+};
+
+export type RuntimeNodeDistributionsPublishDistributionErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeNodeDistributionsPublishDistributionError = RuntimeNodeDistributionsPublishDistributionErrors[keyof RuntimeNodeDistributionsPublishDistributionErrors];
+
+export type RuntimeNodeDistributionsPublishDistributionResponses = {
+    /**
+     * Successful Response
+     */
+    201: NodeDistributionPublic;
+};
+
+export type RuntimeNodeDistributionsPublishDistributionResponse = RuntimeNodeDistributionsPublishDistributionResponses[keyof RuntimeNodeDistributionsPublishDistributionResponses];
+
 export type RuntimeInstancesListRuntimeInstancesData = {
     body?: never;
     headers?: {
@@ -7510,10 +8382,6 @@ export type RuntimeInstancesEnableNodeRuntimeInstanceResponse = RuntimeInstances
 export type RuntimeInstancesCreatePlatformRuntimeInstanceAliasData = {
     body: PlatformRuntimeCreate;
     headers?: {
-        /**
-         * Idempotency-Key
-         */
-        'Idempotency-Key'?: string | null;
         /**
          * X-Namespace-Id
          */
@@ -7953,6 +8821,186 @@ export type RuntimeInstancesDisableRuntimeModelBindingResponses = {
 };
 
 export type RuntimeInstancesDisableRuntimeModelBindingResponse = RuntimeInstancesDisableRuntimeModelBindingResponses[keyof RuntimeInstancesDisableRuntimeModelBindingResponses];
+
+export type RuntimeInstancesPauseManagedNodeRuntimeData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Runtime Id
+         */
+        runtime_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/runtimes/{runtime_id}/pause';
+};
+
+export type RuntimeInstancesPauseManagedNodeRuntimeErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeInstancesPauseManagedNodeRuntimeError = RuntimeInstancesPauseManagedNodeRuntimeErrors[keyof RuntimeInstancesPauseManagedNodeRuntimeErrors];
+
+export type RuntimeInstancesPauseManagedNodeRuntimeResponses = {
+    /**
+     * Response Runtime-Instances-Pause Managed Node Runtime
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type RuntimeInstancesPauseManagedNodeRuntimeResponse = RuntimeInstancesPauseManagedNodeRuntimeResponses[keyof RuntimeInstancesPauseManagedNodeRuntimeResponses];
+
+export type RuntimeInstancesResumeManagedNodeRuntimeData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Runtime Id
+         */
+        runtime_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/runtimes/{runtime_id}/resume';
+};
+
+export type RuntimeInstancesResumeManagedNodeRuntimeErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeInstancesResumeManagedNodeRuntimeError = RuntimeInstancesResumeManagedNodeRuntimeErrors[keyof RuntimeInstancesResumeManagedNodeRuntimeErrors];
+
+export type RuntimeInstancesResumeManagedNodeRuntimeResponses = {
+    /**
+     * Response Runtime-Instances-Resume Managed Node Runtime
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type RuntimeInstancesResumeManagedNodeRuntimeResponse = RuntimeInstancesResumeManagedNodeRuntimeResponses[keyof RuntimeInstancesResumeManagedNodeRuntimeResponses];
+
+export type RuntimeInstancesListDiscoveryObservationsData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Node Id
+         */
+        node_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/runtime-nodes/{node_id}/discovery-observations';
+};
+
+export type RuntimeInstancesListDiscoveryObservationsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeInstancesListDiscoveryObservationsError = RuntimeInstancesListDiscoveryObservationsErrors[keyof RuntimeInstancesListDiscoveryObservationsErrors];
+
+export type RuntimeInstancesListDiscoveryObservationsResponses = {
+    /**
+     * Response Runtime-Instances-List Discovery Observations
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type RuntimeInstancesListDiscoveryObservationsResponse = RuntimeInstancesListDiscoveryObservationsResponses[keyof RuntimeInstancesListDiscoveryObservationsResponses];
+
+export type RuntimeInstancesRequestClientDiscoveryRefreshData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Namespace-Id
+         */
+        'X-Namespace-Id'?: string | null;
+    };
+    path: {
+        /**
+         * Node Id
+         */
+        node_id: string;
+    };
+    query?: {
+        /**
+         * Namespace Id
+         */
+        namespace_id?: string | null;
+    };
+    url: '/api/v1/runtime-nodes/{node_id}/discovery/refresh';
+};
+
+export type RuntimeInstancesRequestClientDiscoveryRefreshErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RuntimeInstancesRequestClientDiscoveryRefreshError = RuntimeInstancesRequestClientDiscoveryRefreshErrors[keyof RuntimeInstancesRequestClientDiscoveryRefreshErrors];
+
+export type RuntimeInstancesRequestClientDiscoveryRefreshResponses = {
+    /**
+     * Response Runtime-Instances-Request Client Discovery Refresh
+     *
+     * Successful Response
+     */
+    202: {
+        [key: string]: unknown;
+    };
+};
+
+export type RuntimeInstancesRequestClientDiscoveryRefreshResponse = RuntimeInstancesRequestClientDiscoveryRefreshResponses[keyof RuntimeInstancesRequestClientDiscoveryRefreshResponses];
 
 export type InternalRuntimeInstancesReportRuntimeDiscoveryData = {
     body: RuntimeDiscoveryReport;
@@ -8875,6 +9923,105 @@ export type NodeRuntimeSkillsDownloadNodeSkillBundleResponses = {
     200: unknown;
 };
 
+export type NodeEnrollmentBootstrapPreflightData = {
+    body: BootstrapPreflightInput;
+    path?: never;
+    query?: never;
+    url: '/api/v1/node/bootstrap/preflight';
+};
+
+export type NodeEnrollmentBootstrapPreflightErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type NodeEnrollmentBootstrapPreflightError = NodeEnrollmentBootstrapPreflightErrors[keyof NodeEnrollmentBootstrapPreflightErrors];
+
+export type NodeEnrollmentBootstrapPreflightResponses = {
+    /**
+     * Successful Response
+     */
+    200: BootstrapPreflightResult;
+};
+
+export type NodeEnrollmentBootstrapPreflightResponse = NodeEnrollmentBootstrapPreflightResponses[keyof NodeEnrollmentBootstrapPreflightResponses];
+
+export type NodeEnrollmentBootstrapServerTimeData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/node/bootstrap/time';
+};
+
+export type NodeEnrollmentBootstrapServerTimeResponses = {
+    /**
+     * Response Node-Enrollment-Bootstrap Server Time
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: string;
+    };
+};
+
+export type NodeEnrollmentBootstrapServerTimeResponse = NodeEnrollmentBootstrapServerTimeResponses[keyof NodeEnrollmentBootstrapServerTimeResponses];
+
+export type NodeEnrollmentRecordInstallationReceiptData = {
+    body: InstallationReceiptInput;
+    path?: never;
+    query?: never;
+    url: '/api/v1/node/bootstrap/receipt';
+};
+
+export type NodeEnrollmentRecordInstallationReceiptErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type NodeEnrollmentRecordInstallationReceiptError = NodeEnrollmentRecordInstallationReceiptErrors[keyof NodeEnrollmentRecordInstallationReceiptErrors];
+
+export type NodeEnrollmentRecordInstallationReceiptResponses = {
+    /**
+     * Successful Response
+     */
+    201: InstallationReceiptPublic;
+};
+
+export type NodeEnrollmentRecordInstallationReceiptResponse = NodeEnrollmentRecordInstallationReceiptResponses[keyof NodeEnrollmentRecordInstallationReceiptResponses];
+
+export type NodeEnrollmentReportBootstrapStageData = {
+    body: BootstrapStageInput;
+    path?: never;
+    query?: never;
+    url: '/api/v1/node/bootstrap/stage';
+};
+
+export type NodeEnrollmentReportBootstrapStageErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type NodeEnrollmentReportBootstrapStageError = NodeEnrollmentReportBootstrapStageErrors[keyof NodeEnrollmentReportBootstrapStageErrors];
+
+export type NodeEnrollmentReportBootstrapStageResponses = {
+    /**
+     * Response Node-Enrollment-Report Bootstrap Stage
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: string;
+    };
+};
+
+export type NodeEnrollmentReportBootstrapStageResponse = NodeEnrollmentReportBootstrapStageResponses[keyof NodeEnrollmentReportBootstrapStageResponses];
+
 export type NodeEnrollmentEnrollNodeData = {
     body: NodeEnrollInput;
     path?: never;
@@ -8899,6 +10046,65 @@ export type NodeEnrollmentEnrollNodeResponses = {
 };
 
 export type NodeEnrollmentEnrollNodeResponse = NodeEnrollmentEnrollNodeResponses[keyof NodeEnrollmentEnrollNodeResponses];
+
+export type NodeEnrollmentRecoverBootstrapEnrollmentData = {
+    body: NodeEnrollInput;
+    path?: never;
+    query?: never;
+    url: '/api/v1/node/bootstrap/recover';
+};
+
+export type NodeEnrollmentRecoverBootstrapEnrollmentErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type NodeEnrollmentRecoverBootstrapEnrollmentError = NodeEnrollmentRecoverBootstrapEnrollmentErrors[keyof NodeEnrollmentRecoverBootstrapEnrollmentErrors];
+
+export type NodeEnrollmentRecoverBootstrapEnrollmentResponses = {
+    /**
+     * Successful Response
+     */
+    200: NodeEnrollResult;
+};
+
+export type NodeEnrollmentRecoverBootstrapEnrollmentResponse = NodeEnrollmentRecoverBootstrapEnrollmentResponses[keyof NodeEnrollmentRecoverBootstrapEnrollmentResponses];
+
+export type NodeBootstrapDownloadDistributionData = {
+    body?: never;
+    headers: {
+        /**
+         * X-Bootstrap-Token
+         */
+        'X-Bootstrap-Token': string;
+    };
+    path: {
+        /**
+         * Release Id
+         */
+        release_id: string;
+    };
+    query?: never;
+    url: '/api/v1/node/bootstrap/distributions/{release_id}';
+};
+
+export type NodeBootstrapDownloadDistributionErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type NodeBootstrapDownloadDistributionError = NodeBootstrapDownloadDistributionErrors[keyof NodeBootstrapDownloadDistributionErrors];
+
+export type NodeBootstrapDownloadDistributionResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
 
 export type AgentManagementListAgentsData = {
     body?: never;

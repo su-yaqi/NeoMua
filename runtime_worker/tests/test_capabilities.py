@@ -1,9 +1,11 @@
 from types import SimpleNamespace
 
+import pytest
+
 from runtime_worker import capabilities
 
 
-def test_discover_runtime_capabilities(monkeypatch) -> None:
+def test_service_mode_discovers_only_managed_agent_sdk(monkeypatch) -> None:
     versions = {
         "claude-agent-sdk": "0.2.110",
         "neomua-runtime-worker": "0.1.0",
@@ -14,9 +16,8 @@ def test_discover_runtime_capabilities(monkeypatch) -> None:
         "run",
         lambda *_args, **_kwargs: SimpleNamespace(stdout="2.1.191 (Claude Code)\n"),
     )
-    monkeypatch.setattr(capabilities.shutil, "which", lambda _name: None)
-    assert capabilities.discover_runtime_capabilities() == {
-        "claude_code": {
+    assert capabilities.discover_runtime_capabilities(mode="service") == {
+        "claude_agent_sdk": {
             "cli_version": "2.1.191",
             "sdk_version": "0.2.110",
             "harness_version": "0.1.0",
@@ -29,3 +30,14 @@ def test_discover_runtime_capabilities(monkeypatch) -> None:
         },
         "mcp_executables": [],
     }
+
+
+def test_client_mode_never_uses_legacy_path_discovery() -> None:
+    assert capabilities.discover_runtime_capabilities(mode="client") == {
+        "mcp_executables": []
+    }
+    with pytest.raises(
+        capabilities.CapabilityDetectionError,
+        match="signed Adapter Registry",
+    ):
+        capabilities.discover_runtime_installations(mode="client")

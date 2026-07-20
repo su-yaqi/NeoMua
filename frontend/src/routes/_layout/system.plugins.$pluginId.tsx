@@ -89,7 +89,8 @@ function Page() {
                   disabled={!canManage || skill.archived}
                   onChange={() => toggleSkill(skill.id)}
                 />
-                {skill.name} · {skill.slug} · 当前 v{skill.current_version.version}
+                {skill.name} · {skill.slug} · 当前 v
+                {skill.current_version.version}
               </label>
             ))}
           </div>

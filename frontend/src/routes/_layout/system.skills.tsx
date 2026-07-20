@@ -62,15 +62,21 @@ function Page() {
               type="button"
               key={item.id}
               className="grid w-full grid-cols-[minmax(220px,1fr)_100px_80px_80px_120px_140px_32px] items-center gap-3 border-b px-4 py-4 text-left transition-colors last:border-b-0 hover:bg-muted/50"
-              onClick={() => window.location.assign(`/system/skills/${item.id}`)}
+              onClick={() =>
+                window.location.assign(`/system/skills/${item.id}`)
+              }
             >
               <span className="flex min-w-0 items-center gap-3">
                 <span className="rounded-md bg-primary/10 p-2 text-primary">
                   <FileCode2 className="size-4" />
                 </span>
                 <span className="min-w-0">
-                  <span className="block truncate font-medium">{item.name}</span>
-                  <code className="text-xs text-muted-foreground">{item.slug}</code>
+                  <span className="block truncate font-medium">
+                    {item.name}
+                  </span>
+                  <code className="text-xs text-muted-foreground">
+                    {item.slug}
+                  </code>
                 </span>
               </span>
               <span className="text-sm">v{item.current_version.version}</span>

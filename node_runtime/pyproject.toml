@@ -11,6 +11,9 @@ dependencies = [
   "websockets>=15,<17",
 ]
 
+[project.optional-dependencies]
+service = ["neomua-runtime-worker[claude]"]
+
 [project.scripts]
 neomua-node = "node_runtime.cli:app"
 

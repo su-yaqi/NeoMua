@@ -40,6 +40,11 @@ def generate_keypair() -> DeviceKeypair:
     )
 
 
+def sign_device_payload(private_key: str, payload: str) -> str:
+    private = Ed25519PrivateKey.from_private_bytes(base64.b64decode(private_key))
+    return base64.b64encode(private.sign(payload.encode())).decode()
+
+
 class IdentityStore:
     def __init__(self, path: Path) -> None:
         self.path = path

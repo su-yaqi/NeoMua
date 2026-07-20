@@ -35,8 +35,8 @@ function RuntimeManagementPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">运行时管理</h1>
         <p className="text-muted-foreground">
-          按机器管理 Runtime Node，并配置其 Claude Code、Codex 等 Runtime
-          引擎实例与模型能力。
+          平台内置 Runtime
+          无需配置；服务节点与客户端节点通过正式安装命令自动注册并发现执行引擎。
         </p>
       </div>
       <RuntimeInstancePanel canManage={canManage} />

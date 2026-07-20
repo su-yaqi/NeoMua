@@ -1,195 +1,179 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { useEffect, useState } from "react"
+import { useState } from "react"
+
 import {
-  modelDefinitionsApi,
   type RuntimeInstanceSummary,
   runtimeInstancesApi,
 } from "@/api/tenantApi"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import useCustomToast from "@/hooks/useCustomToast"
-import { handleError } from "@/utils"
+
+const managementLabels: Record<
+  RuntimeInstanceSummary["management_type"],
+  string
+> = {
+  platform_builtin: "平台内置",
+  service_managed: "服务节点",
+  client_discovered: "客户端发现",
+  legacy_manual: "历史 Runtime",
+}
 
 export default function RuntimeInstancePanel({
   canManage,
 }: {
   canManage: boolean
 }) {
-  const queryClient = useQueryClient()
-  const { showSuccessToast, showErrorToast } = useCustomToast()
   const runtimes = useQuery({
     queryKey: ["runtime-instances"],
     queryFn: runtimeInstancesApi.list,
     refetchInterval: 5000,
   })
-  const [open, setOpen] = useState(false)
-  const [name, setName] = useState("")
-  const [installationKey, setInstallationKey] = useState("")
-  const [engineType, setEngineType] = useState<"claude_code" | "codex">(
-    "claude_code",
-  )
-  const [executable, setExecutable] = useState("claude")
   const [selectedId, setSelectedId] = useState("")
-
-  const create = useMutation({
-    mutationFn: () =>
-      runtimeInstancesApi.createPlatform({
-        name,
-        installation_key: installationKey,
-        engine_type: engineType,
-        adapter_version: "1.0.0",
-        configuration: {
-          executable,
-          arguments: [],
-          working_directory_policy: "workspace",
-          environment_allowlist: [],
-          security_policy: { permission_mode: "default" },
-          resource_limits: {},
-          expected_revision: 0,
-        },
-      }),
-    onSuccess: () => {
-      setOpen(false)
-      showSuccessToast("Runtime 已创建，等待 Worker 应用配置并回报能力")
-      void queryClient.invalidateQueries({ queryKey: ["runtime-instances"] })
+  const queryClient = useQueryClient()
+  const control = useMutation({
+    mutationFn: (runtime: RuntimeInstanceSummary) =>
+      runtime.enabled
+        ? runtimeInstancesApi.pause(runtime.id)
+        : runtimeInstancesApi.resume(runtime.id),
+    onSuccess: (runtime) => {
+      queryClient.invalidateQueries({ queryKey: ["runtime-instances"] })
+      queryClient.invalidateQueries({
+        queryKey: ["runtime-instance", runtime.id],
+      })
     },
-    onError: handleError.bind(showErrorToast),
   })
+  const groups: Array<{
+    key: RuntimeInstanceSummary["management_type"]
+    title: string
+    description: string
+  }> = [
+    {
+      key: "platform_builtin",
+      title: "平台内置",
+      description: "由平台发布和大模型配置自动协调。",
+    },
+    {
+      key: "service_managed",
+      title: "服务节点",
+      description: "由签名发行清单安装并由 NeoMua 管理生命周期。",
+    },
+    {
+      key: "client_discovered",
+      title: "客户端",
+      description:
+        "节点上已有的 Claude Code / Codex，仅发现和控制，不负责安装。",
+    },
+    {
+      key: "legacy_manual",
+      title: "历史 Runtime",
+      description: "缺少 v0.10 来源证据，仅保留历史读取。",
+    },
+  ]
 
   return (
     <Card>
-      <CardHeader className="flex-row items-center justify-between">
-        <div>
-          <CardTitle>Runtime 目录</CardTitle>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Runtime 是 Claude Code、Codex 等实际运行 Agent Loop
-            的引擎实例；一台节点可拥有多个 Runtime。
-          </p>
-        </div>
-        {canManage && (
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button>创建平台 Runtime</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>创建平台 Runtime</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label>名称</Label>
-                  <Input
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>安装标识</Label>
-                  <Input
-                    value={installationKey}
-                    onChange={(e) => setInstallationKey(e.target.value)}
-                    placeholder="platform-claude-primary"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>引擎</Label>
-                  <Select
-                    value={engineType}
-                    onValueChange={(value: "claude_code" | "codex") => {
-                      setEngineType(value)
-                      setExecutable(value === "codex" ? "codex" : "claude")
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="claude_code">Claude Code</SelectItem>
-                      <SelectItem value="codex">Codex</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>受控可执行文件</Label>
-                  <Input
-                    value={executable}
-                    onChange={(e) => setExecutable(e.target.value)}
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button
-                  onClick={() => create.mutate()}
-                  disabled={
-                    !name || !installationKey || !executable || create.isPending
-                  }
-                >
-                  创建
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        )}
+      <CardHeader>
+        <CardTitle>Runtime 目录</CardTitle>
+        <p className="mt-1 text-sm text-muted-foreground">
+          平台 Runtime 自动提供；服务节点和客户端 Runtime
+          由正式安装及发现协议注册，无需填写命令或安装标识。
+        </p>
       </CardHeader>
       <CardContent className="space-y-3">
-        {runtimes.data?.data.map((runtime) => (
-          <div key={runtime.id} className="rounded-lg border p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
+        {groups.map((group) => {
+          const rows =
+            runtimes.data?.data.filter(
+              (runtime) => runtime.management_type === group.key,
+            ) || []
+          if (rows.length === 0) return null
+          return (
+            <section key={group.key} className="space-y-3">
               <div>
-                <p className="font-medium">{runtime.name}</p>
-                <p className="font-mono text-xs text-muted-foreground">
-                  {runtime.id}
+                <h3 className="font-semibold">{group.title}</h3>
+                <p className="text-xs text-muted-foreground">
+                  {group.description}
                 </p>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <Badge variant="outline">{runtime.location_type}</Badge>
-                <Badge variant="outline">{runtime.engine_type}</Badge>
-                <Badge>{runtime.status}</Badge>
-              </div>
-            </div>
-            <div className="mt-3 grid gap-2 text-xs text-muted-foreground md:grid-cols-4">
-              <span>Engine {runtime.engine_version || "待发现"}</span>
-              <span>Adapter {runtime.adapter_version}</span>
-              <span>可用模型 {runtime.available_model_count}</span>
-              <span>{runtime.enabled ? "已启用" : "未启用"}</span>
-            </div>
-            <Button
-              className="mt-3"
-              size="sm"
-              variant="outline"
-              onClick={() =>
-                setSelectedId((current) =>
-                  current === runtime.id ? "" : runtime.id,
-                )
-              }
-            >
-              {selectedId === runtime.id ? "收起配置" : "配置与模型能力"}
-            </Button>
-            {selectedId === runtime.id && (
-              <RuntimeInstanceDetail runtime={runtime} canManage={canManage} />
-            )}
-          </div>
-        ))}
+              {rows.map((runtime) => (
+                <div key={runtime.id} className="rounded-lg border p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="font-medium">{runtime.name}</p>
+                      <p className="font-mono text-xs text-muted-foreground">
+                        {runtime.id}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Badge variant="outline">
+                        {managementLabels[runtime.management_type]}
+                      </Badge>
+                      <Badge variant="outline">{runtime.engine_type}</Badge>
+                      <Badge>{runtime.evidence_state || runtime.status}</Badge>
+                    </div>
+                  </div>
+                  <div className="mt-3 grid gap-2 text-xs text-muted-foreground md:grid-cols-4">
+                    <span>Engine {runtime.engine_version || "待发现"}</span>
+                    <span>Adapter {runtime.adapter_version}</span>
+                    <span>可用模型 {runtime.available_model_count}</span>
+                    <span>{runtime.enabled ? "已启用" : "未启用"}</span>
+                  </div>
+                  {runtime.management_type === "platform_builtin" && (
+                    <p className="mt-3 text-xs text-muted-foreground">
+                      无需配置。请在“大模型接入配置”中启用并验证模型，系统会自动形成平台路由。
+                    </p>
+                  )}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        setSelectedId((current) =>
+                          current === runtime.id ? "" : runtime.id,
+                        )
+                      }
+                    >
+                      {selectedId === runtime.id
+                        ? "收起状态"
+                        : "查看状态与模型"}
+                    </Button>
+                    {canManage &&
+                    ["client_discovered", "service_managed"].includes(
+                      runtime.management_type,
+                    ) ? (
+                      <Button
+                        size="sm"
+                        variant={runtime.enabled ? "destructive" : "default"}
+                        disabled={control.isPending}
+                        onClick={() => {
+                          const action = runtime.enabled ? "暂停" : "恢复"
+                          if (
+                            window.confirm(
+                              `${action} ${runtime.name} 的新任务调度？在途任务和本机引擎不会被修改。`,
+                            )
+                          )
+                            control.mutate(runtime)
+                        }}
+                      >
+                        {runtime.enabled ? "暂停调度" : "恢复调度"}
+                      </Button>
+                    ) : null}
+                  </div>
+                  {selectedId === runtime.id && (
+                    <RuntimeInstanceDetail runtime={runtime} />
+                  )}
+                </div>
+              ))}
+            </section>
+          )
+        })}
+        {control.isError ? (
+          <p className="text-sm text-destructive">{control.error.message}</p>
+        ) : null}
         {runtimes.data?.data.length === 0 && (
-          <p className="text-sm text-muted-foreground">尚未注册 Runtime。</p>
+          <p className="text-sm text-muted-foreground">
+            正在初始化 Runtime 目录。
+          </p>
         )}
       </CardContent>
     </Card>
@@ -198,13 +182,9 @@ export default function RuntimeInstancePanel({
 
 function RuntimeInstanceDetail({
   runtime,
-  canManage,
 }: {
   runtime: RuntimeInstanceSummary
-  canManage: boolean
 }) {
-  const queryClient = useQueryClient()
-  const { showSuccessToast, showErrorToast } = useCustomToast()
   const detail = useQuery({
     queryKey: ["runtime-instance", runtime.id],
     queryFn: () => runtimeInstancesApi.get(runtime.id),
@@ -215,102 +195,7 @@ function RuntimeInstanceDetail({
     queryFn: () => runtimeInstancesApi.listBindings(runtime.id),
     refetchInterval: 5000,
   })
-  const definitions = useQuery({
-    queryKey: ["model-definitions"],
-    queryFn: modelDefinitionsApi.list,
-  })
-  const [loadedRuntimeId, setLoadedRuntimeId] = useState("")
-  const [configExecutable, setConfigExecutable] = useState("")
-  const [argumentsText, setArgumentsText] = useState("")
-  const [environmentText, setEnvironmentText] = useState("")
-  const [workingDirectoryPolicy, setWorkingDirectoryPolicy] =
-    useState("workspace")
-  const [modelDefinitionId, setModelDefinitionId] = useState("")
-  const [engineModelId, setEngineModelId] = useState("")
-  const [routeKey, setRouteKey] = useState("native")
-
-  useEffect(() => {
-    if (!detail.data || loadedRuntimeId === runtime.id) return
-    const latest = detail.data.configurations[0]
-    setLoadedRuntimeId(runtime.id)
-    setConfigExecutable(
-      latest?.executable ||
-        (runtime.engine_type === "codex" ? "codex" : "claude"),
-    )
-    setArgumentsText(latest?.arguments.join("\n") || "")
-    setEnvironmentText(latest?.environment_allowlist.join("\n") || "")
-    setWorkingDirectoryPolicy(latest?.working_directory_policy || "workspace")
-  }, [detail.data, loadedRuntimeId, runtime.engine_type, runtime.id])
-
-  const refresh = async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["runtime-instances"] }),
-      queryClient.invalidateQueries({
-        queryKey: ["runtime-instance", runtime.id],
-      }),
-      queryClient.invalidateQueries({
-        queryKey: ["runtime-model-bindings", runtime.id],
-      }),
-    ])
-  }
-  const saveConfiguration = useMutation({
-    mutationFn: async () => {
-      const created = (await runtimeInstancesApi.saveConfiguration(runtime.id, {
-        expected_revision: detail.data?.configurations[0]?.revision || 0,
-        executable: configExecutable,
-        arguments: lines(argumentsText),
-        working_directory_policy: workingDirectoryPolicy,
-        environment_allowlist: lines(environmentText),
-        security_policy: { permission_mode: "default" },
-        resource_limits: {},
-      })) as { id: string }
-      return runtimeInstancesApi.applyConfiguration(runtime.id, created.id)
-    },
-    onSuccess: async () => {
-      showSuccessToast("Runtime 配置修订已提交应用")
-      setLoadedRuntimeId("")
-      await refresh()
-    },
-    onError: handleError.bind(showErrorToast),
-  })
-  const enable = useMutation({
-    mutationFn: () =>
-      runtimeInstancesApi.enableNode(runtime.runtime_node_id || "", runtime.id),
-    onSuccess: async () => {
-      showSuccessToast("Node Runtime 已启用")
-      await refresh()
-    },
-    onError: handleError.bind(showErrorToast),
-  })
-  const createBinding = useMutation({
-    mutationFn: () =>
-      runtimeInstancesApi.createBinding(runtime.id, {
-        model_definition_id: modelDefinitionId,
-        route_type: "runtime_native",
-        route_key: routeKey,
-        engine_model_id: engineModelId,
-      }),
-    onSuccess: async () => {
-      setEngineModelId("")
-      showSuccessToast("模型绑定已声明，请执行真实校验")
-      await refresh()
-    },
-    onError: handleError.bind(showErrorToast),
-  })
-  const bindingAction = useMutation({
-    mutationFn: ({
-      id,
-      action,
-    }: {
-      id: string
-      action: "validate" | "disable"
-    }) =>
-      action === "validate"
-        ? runtimeInstancesApi.validateBinding(runtime.id, id)
-        : runtimeInstancesApi.disableBinding(runtime.id, id),
-    onSuccess: refresh,
-    onError: handleError.bind(showErrorToast),
-  })
+  const latestConfiguration = detail.data?.configurations[0]
   const latestReport = detail.data?.capability_reports[0]
 
   return (
@@ -322,110 +207,19 @@ function RuntimeInstanceDetail({
             {JSON.stringify(latestReport || { status: "尚未上报" }, null, 2)}
           </pre>
         </div>
-        <div className="space-y-2 rounded border p-3">
-          <p className="font-medium">配置修订</p>
-          <Input
-            value={configExecutable}
-            onChange={(event) => setConfigExecutable(event.target.value)}
-            placeholder="受控可执行文件"
-            disabled={!canManage}
-          />
-          <Input
-            value={argumentsText}
-            onChange={(event) => setArgumentsText(event.target.value)}
-            placeholder="参数，每行一个"
-            disabled={!canManage}
-          />
-          <Input
-            value={environmentText}
-            onChange={(event) => setEnvironmentText(event.target.value)}
-            placeholder="环境变量白名单，每行一个"
-            disabled={!canManage}
-          />
-          <Select
-            value={workingDirectoryPolicy}
-            onValueChange={setWorkingDirectoryPolicy}
-            disabled={!canManage}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="workspace">workspace</SelectItem>
-              <SelectItem value="project">project</SelectItem>
-              <SelectItem value="isolated">isolated</SelectItem>
-            </SelectContent>
-          </Select>
-          {canManage && (
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                disabled={!configExecutable || saveConfiguration.isPending}
-                onClick={() => saveConfiguration.mutate()}
-              >
-                保存并应用新修订
-              </Button>
-              {runtime.location_type === "node" && !runtime.enabled && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={
-                    !detail.data?.configurations.length || enable.isPending
-                  }
-                  onClick={() => enable.mutate()}
-                >
-                  启用实例
-                </Button>
-              )}
-            </div>
-          )}
+        <div className="rounded border p-3">
+          <p className="font-medium">系统配置证据（只读）</p>
+          <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+            <p>来源：{latestConfiguration?.origin || "等待系统生成"}</p>
+            <p>修订：{latestConfiguration?.revision || "-"}</p>
+            <p>状态：{latestConfiguration?.status || "-"}</p>
+            <p>执行引用：{latestConfiguration?.adapter_execution_ref || "-"}</p>
+          </div>
         </div>
       </div>
 
       <div className="space-y-3 rounded border p-3">
-        <p className="font-medium">受支持模型（RuntimeModelBinding）</p>
-        {canManage && (
-          <div className="grid gap-2 md:grid-cols-4">
-            <Select
-              value={modelDefinitionId}
-              onValueChange={setModelDefinitionId}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="稳定模型身份" />
-              </SelectTrigger>
-              <SelectContent>
-                {definitions.data?.data
-                  .filter((definition) => definition.enabled)
-                  .map((definition) => (
-                    <SelectItem key={definition.id} value={definition.id}>
-                      {definition.display_name || definition.model_key}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
-            <Input
-              value={engineModelId}
-              onChange={(event) => setEngineModelId(event.target.value)}
-              placeholder="引擎模型 ID"
-            />
-            <Input
-              value={routeKey}
-              onChange={(event) => setRouteKey(event.target.value)}
-              placeholder="路由键"
-            />
-            <Button
-              disabled={
-                !modelDefinitionId ||
-                !engineModelId ||
-                !routeKey ||
-                createBinding.isPending
-              }
-              onClick={() => createBinding.mutate()}
-            >
-              声明绑定
-            </Button>
-          </div>
-        )}
+        <p className="font-medium">模型路由（只读）</p>
         {bindings.data?.data.map((binding) => (
           <div
             key={binding.id}
@@ -434,53 +228,18 @@ function RuntimeInstanceDetail({
             <div>
               <p>{binding.engine_model_id}</p>
               <p className="text-xs text-muted-foreground">
-                {binding.model_definition_id} · {binding.route_type}:
-                {binding.route_key}
+                {binding.route_type}:{binding.route_key}
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <Badge>{binding.status}</Badge>
-              {canManage && binding.status !== "disabled" && (
-                <>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={bindingAction.isPending}
-                    onClick={() =>
-                      bindingAction.mutate({
-                        id: binding.id,
-                        action: "validate",
-                      })
-                    }
-                  >
-                    真实校验
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    disabled={bindingAction.isPending}
-                    onClick={() =>
-                      bindingAction.mutate({
-                        id: binding.id,
-                        action: "disable",
-                      })
-                    }
-                  >
-                    停用
-                  </Button>
-                </>
-              )}
-            </div>
+            <Badge>{binding.status}</Badge>
           </div>
         ))}
+        {!bindings.data?.data.length && (
+          <p className="text-sm text-muted-foreground">
+            尚无经过验证的模型路由。
+          </p>
+        )}
       </div>
     </div>
   )
-}
-
-function lines(value: string) {
-  return value
-    .split("\n")
-    .map((item) => item.trim())
-    .filter(Boolean)
 }

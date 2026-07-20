@@ -160,12 +160,21 @@ export interface PlatformUserCreateBody {
 
 export interface HarnessCapability {
   cli_version: string
-  sdk_version: string
-  harness_version: string
+  sdk_version?: string
+  harness_version?: string
+  adapter_version?: string
+  builtin_tools?: string[]
+  supports_tool_filters?: boolean
+  supports_per_tool_approval?: boolean
+  supports_mcp_injection?: boolean
+  permission_modes?: string[]
+  executable?: string
 }
 
 export interface HarnessCapabilities {
+  claude_agent_sdk?: HarnessCapability
   claude_code?: HarnessCapability
+  codex?: HarnessCapability
   mcp_executables?: string[]
 }
 
@@ -182,6 +191,75 @@ export interface RuntimeNode {
   last_seen_at: string | null
   revoked_at: string | null
   runtime_profile_id: string | null
+  management_mode: "service" | "client" | "legacy_unclassified"
+  adapter_registry_digest: string | null
+  current_installation_receipt_id: string | null
+  installation_manifest_digest: string | null
+  bootstrap_session_id: string | null
+  bootstrap_status:
+    | "waiting_for_install"
+    | "preflighted"
+    | "staged"
+    | "enrolled"
+    | "service_activated"
+    | "reconciled"
+    | "failed"
+    | "revoked"
+    | null
+  discovery_generation: number
+  discovery_requested_generation: number
+}
+
+export interface NodeBootstrapSession {
+  id: string
+  management_mode: "service" | "client"
+  release_channel: string
+  distribution_release_id: string | null
+  status: NonNullable<RuntimeNode["bootstrap_status"]>
+  node_id: string | null
+  expires_at: string
+  completed_at: string | null
+}
+
+export interface RuntimeDiscoveryObservation {
+  id: string
+  node_id: string
+  runtime_instance_id: string | null
+  adapter_release_id: string | null
+  generation: number
+  installation_key: string
+  status: "available" | "missing" | "blocked"
+  evidence: Record<string, unknown>
+  evidence_digest: string
+  observed_at: string
+}
+
+export interface ProviderRuntimeReadiness {
+  status: "reconciling" | "not_configured" | "ready" | "blocked"
+  expected_worker_release_digest: string | null
+  reported_worker_release_digest: string | null
+  release_trusted: boolean
+  runtime_instance_id: string | null
+  runtime_status: string | null
+  reconcile_job_id: string | null
+  reconcile_status: string | null
+  reconcile_trigger: string | null
+  reconcile_attempt_count: number
+  reconcile_error: Record<string, unknown> | null
+  models: Array<{
+    provider_model_id: string
+    model_id: string
+    enabled: boolean
+    model_definition_id: string | null
+    validation_status: string
+    validation_error: Record<string, unknown> | null
+    validation_completed_at: string | null
+    validation_valid_until: string | null
+    binding_id: string | null
+    binding_status: string | null
+    binding_error: Record<string, unknown> | null
+    ready: boolean
+  }>
 }
 
 export interface RuntimeInstanceSummary {
@@ -189,9 +267,15 @@ export interface RuntimeInstanceSummary {
   namespace_id: string
   runtime_node_id: string | null
   location_type: "platform" | "node"
+  management_type:
+    | "platform_builtin"
+    | "service_managed"
+    | "client_discovered"
+    | "legacy_manual"
+  lifecycle_source_key: string | null
   name: string
   installation_key: string
-  engine_type: "claude_code" | "codex"
+  engine_type: "claude_agent_sdk" | "claude_code" | "codex"
   engine_version: string | null
   adapter_version: string
   status:
@@ -200,6 +284,7 @@ export interface RuntimeInstanceSummary {
     | "unavailable"
     | "incompatible"
     | "disabled"
+  evidence_state: string
   enabled: boolean
   available_model_count: number
   applied_configuration_revision_id: string | null
@@ -235,6 +320,12 @@ export interface RuntimeModelBinding {
 export interface RuntimeConfigurationRevision {
   id: string
   revision: number
+  origin:
+    | "system_builtin"
+    | "service_manifest"
+    | "client_adapter"
+    | "legacy_manual"
+  adapter_execution_ref: string | null
   executable: string
   arguments: string[]
   working_directory_policy: string
@@ -439,6 +530,12 @@ export const tenantApi = {
     )
     return data
   },
+  readLlmProviderRuntimeReadiness: async (configId: string) =>
+    (
+      await api.get<ProviderRuntimeReadiness>(
+        `/api/v1/llm/provider-configs/${configId}/runtime-readiness`,
+      )
+    ).data,
   validateLlmProviderDraft: async (body: LlmProviderDraftBody) => {
     const { data } = await api.post<LlmProviderDraftResult>(
       "/api/v1/llm/provider-configs/draft/validate",
@@ -519,14 +616,27 @@ export const tenantApi = {
     )
     return data
   },
-  createNodeEnrollmentToken: async () => {
+  createNodeBootstrapSession: async (managementMode: "service" | "client") => {
     const { data } = await api.post<{
       id: string
       token: string
       expires_at: string
-    }>("/api/v1/runtimes/nodes/enrollment-tokens")
+      management_mode: "service" | "client"
+      bootstrap_session_id: string
+      release_channel: string
+      status: NonNullable<RuntimeNode["bootstrap_status"]>
+      signing_public_key: string
+    }>("/api/v1/runtimes/nodes/bootstrap-sessions", {
+      management_mode: managementMode,
+    })
     return data
   },
+  readNodeBootstrapSessions: async () =>
+    (
+      await api.get<NodeBootstrapSession[]>(
+        "/api/v1/runtimes/nodes/bootstrap-sessions",
+      )
+    ).data,
   revokeNodeCredential: async (nodeId: string) => {
     await api.delete(`/api/v1/runtimes/nodes/${nodeId}/credential`)
   },
@@ -649,20 +759,35 @@ export const runtimeInstancesApi = {
         `/api/v1/runtime-nodes/${nodeId}/runtimes`,
       )
     ).data,
+  listDiscoveryObservations: async (nodeId: string) =>
+    (
+      await api.get<{
+        data: RuntimeDiscoveryObservation[]
+        count: number
+      }>(`/api/v1/runtime-nodes/${nodeId}/discovery-observations`)
+    ).data,
+  requestDiscoveryRefresh: async (nodeId: string) =>
+    (
+      await api.post<{ status: string; generation: number }>(
+        `/api/v1/runtime-nodes/${nodeId}/discovery/refresh`,
+      )
+    ).data,
+  pause: async (runtimeId: string) =>
+    (
+      await api.post<RuntimeInstanceSummary>(
+        `/api/v1/runtimes/${runtimeId}/pause`,
+      )
+    ).data,
+  resume: async (runtimeId: string) =>
+    (
+      await api.post<RuntimeInstanceSummary>(
+        `/api/v1/runtimes/${runtimeId}/resume`,
+      )
+    ).data,
   enableNode: async (nodeId: string, runtimeId: string) =>
     (
       await api.post<RuntimeInstanceSummary>(
         `/api/v1/runtime-nodes/${nodeId}/runtimes/${runtimeId}/enable`,
-      )
-    ).data,
-  createPlatform: async (body: Record<string, unknown>) =>
-    (
-      await api.post<RuntimeInstanceSummary>(
-        "/api/v1/runtimes/platform",
-        body,
-        {
-          headers: { "Idempotency-Key": crypto.randomUUID() },
-        },
       )
     ).data,
   saveConfiguration: async (runtimeId: string, body: Record<string, unknown>) =>
@@ -1493,7 +1618,7 @@ export interface ConversationRuntime {
   runtime_instance_id: string
   runtime_node_id: string | null
   runtime_type: "platform" | "node"
-  engine_type: "codex" | "claude_code"
+  engine_type: "claude_agent_sdk" | "claude_code" | "codex"
   name: string
   compatible: boolean
 }

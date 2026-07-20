@@ -3,9 +3,12 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlmodel import col, select
 
 from app import crud
 from app.api.deps import CurrentUser, SessionDep, require_namespace_admin
+from app.core.config import settings
 from app.llm_provider_service import (
     fetch_provider_models,
     get_primary_secret_mask,
@@ -34,8 +37,51 @@ from app.models import (
     ProviderValidationStatus,
 )
 from app.runtime.endpoints import EndpointValidationError, canonical_endpoint
+from app.runtime.models import (
+    LlmProviderModelValidation,
+    PlatformRuntimeReconcileJob,
+    RuntimeCapabilityReport,
+    RuntimeInstance,
+    RuntimeManagementType,
+    RuntimeModelBinding,
+    RuntimeModelBindingStatus,
+)
+from app.runtime.platform_builtin import (
+    enqueue_platform_reconcile_job,
+    reconcile_platform_model_bindings,
+)
 
 router = APIRouter(prefix="/llm", tags=["llm"])
+
+
+class ProviderModelRuntimeReadiness(BaseModel):
+    provider_model_id: uuid.UUID
+    model_id: str
+    enabled: bool
+    model_definition_id: uuid.UUID | None
+    validation_status: str
+    validation_error: dict[str, Any] | None
+    validation_completed_at: datetime | None
+    validation_valid_until: datetime | None
+    binding_id: uuid.UUID | None
+    binding_status: str | None
+    binding_error: dict[str, Any] | None
+    ready: bool
+
+
+class ProviderRuntimeReadiness(BaseModel):
+    status: str
+    expected_worker_release_digest: str | None
+    reported_worker_release_digest: str | None
+    release_trusted: bool
+    runtime_instance_id: uuid.UUID | None
+    runtime_status: str | None
+    reconcile_job_id: uuid.UUID | None
+    reconcile_status: str | None
+    reconcile_trigger: str | None
+    reconcile_attempt_count: int
+    reconcile_error: dict[str, Any] | None
+    models: list[ProviderModelRuntimeReadiness]
 
 
 def _require_namespace_config(
@@ -171,6 +217,9 @@ def create_provider_config(
     config = _require_namespace_config(
         session=session, config_id=config.id, namespace_id=namespace_id
     )
+    enqueue_platform_reconcile_job(session, namespace_id, trigger="provider_created")
+    reconcile_platform_model_bindings(session, namespace_id)
+    session.commit()
     return to_provider_config_public(config)
 
 
@@ -244,6 +293,7 @@ def update_provider_config(
         session=session, config_id=config_id, namespace_id=namespace_id
     )
     definition = get_provider_definition(config.provider_slug)
+    route_credentials_changed = False
 
     if config_in.config_name is not None:
         config.config_name = config_in.config_name
@@ -259,9 +309,7 @@ def update_provider_config(
                     detail="Changing base_url requires resubmitting credentials",
                 )
             config.base_url = base_url
-            config.validation_status = ProviderValidationStatus.UNVERIFIED
-            config.validation_message = None
-            config.enabled = False
+            route_credentials_changed = True
     if config_in.enabled is not None:
         config.enabled = config_in.enabled
     if config_in.extra_config is not None:
@@ -273,6 +321,13 @@ def update_provider_config(
             raise HTTPException(status_code=400, detail=str(exc))
         config.secret_ciphertext = seal_secret_payload(secret_inputs)
         config.secret_masked = get_primary_secret_mask(definition, secret_inputs)
+        route_credentials_changed = True
+
+    if route_credentials_changed:
+        config.validation_status = ProviderValidationStatus.UNVERIFIED
+        config.validation_message = None
+        config.last_validated_at = None
+        config.enabled = False
 
     config.updated_by = current_user.id
     config.updated_at = datetime.now(timezone.utc)
@@ -290,9 +345,13 @@ def update_provider_config(
             config=config,
             models_payload=merged_models,
         )
-        config = _require_namespace_config(
-            session=session, config_id=config_id, namespace_id=namespace_id
-        )
+    config = _require_namespace_config(
+        session=session, config_id=config_id, namespace_id=namespace_id
+    )
+
+    reconcile_platform_model_bindings(session, namespace_id)
+    enqueue_platform_reconcile_job(session, namespace_id, trigger="provider_updated")
+    session.commit()
 
     return to_provider_config_public(config)
 
@@ -319,7 +378,118 @@ def validate_provider_config(
     config = _require_namespace_config(
         session=session, config_id=config_id, namespace_id=namespace_id
     )
+    enqueue_platform_reconcile_job(session, namespace_id, trigger="provider_validated")
+    reconcile_platform_model_bindings(session, namespace_id)
+    session.commit()
     return to_provider_config_public(config)
+
+
+@router.get(
+    "/provider-configs/{config_id}/runtime-readiness",
+    response_model=ProviderRuntimeReadiness,
+)
+def read_provider_runtime_readiness(
+    config_id: uuid.UUID,
+    *,
+    session: SessionDep,
+    namespace_id: uuid.UUID = Depends(require_namespace_admin),
+) -> ProviderRuntimeReadiness:
+    config = _require_namespace_config(
+        session=session, config_id=config_id, namespace_id=namespace_id
+    )
+    runtime = session.exec(
+        select(RuntimeInstance).where(
+            RuntimeInstance.namespace_id == namespace_id,
+            RuntimeInstance.management_type == RuntimeManagementType.PLATFORM_BUILTIN,
+        )
+    ).first()
+    capability = (
+        session.get(RuntimeCapabilityReport, runtime.current_capability_report_id)
+        if runtime is not None and runtime.current_capability_report_id is not None
+        else None
+    )
+    reported_release_digest = (
+        capability.capabilities.get("release_digest")
+        if capability is not None
+        else None
+    )
+    if not isinstance(reported_release_digest, str):
+        reported_release_digest = None
+    release_trusted = bool(
+        settings.RUNTIME_WORKER_RELEASE_DIGEST is not None
+        and reported_release_digest == settings.RUNTIME_WORKER_RELEASE_DIGEST
+    )
+    job = session.exec(
+        select(PlatformRuntimeReconcileJob)
+        .where(PlatformRuntimeReconcileJob.namespace_id == namespace_id)
+        .order_by(col(PlatformRuntimeReconcileJob.updated_at).desc())
+    ).first()
+
+    model_rows: list[ProviderModelRuntimeReadiness] = []
+    for model in config.models:
+        validation = session.exec(
+            select(LlmProviderModelValidation)
+            .where(LlmProviderModelValidation.provider_model_id == model.id)
+            .order_by(col(LlmProviderModelValidation.started_at).desc())
+        ).first()
+        binding = (
+            session.exec(
+                select(RuntimeModelBinding).where(
+                    RuntimeModelBinding.runtime_instance_id == runtime.id,
+                    RuntimeModelBinding.provider_config_id == config.id,
+                    RuntimeModelBinding.provider_model_id == model.id,
+                )
+            ).first()
+            if runtime is not None
+            else None
+        )
+        ready = bool(
+            model.is_enabled
+            and binding is not None
+            and binding.status == RuntimeModelBindingStatus.AVAILABLE
+        )
+        model_rows.append(
+            ProviderModelRuntimeReadiness(
+                provider_model_id=model.id,
+                model_id=model.model_id,
+                enabled=model.is_enabled,
+                model_definition_id=model.model_definition_id,
+                validation_status=(validation.status if validation else "not_started"),
+                validation_error=validation.error if validation else None,
+                validation_completed_at=(
+                    validation.completed_at if validation else None
+                ),
+                validation_valid_until=validation.valid_until if validation else None,
+                binding_id=binding.id if binding else None,
+                binding_status=binding.status.value if binding else None,
+                binding_error=binding.last_error if binding else None,
+                ready=ready,
+            )
+        )
+
+    enabled_models = [row for row in model_rows if row.enabled]
+    if job is not None and job.status.value in {"queued", "running"}:
+        status = "reconciling"
+    elif not enabled_models:
+        status = "not_configured"
+    elif all(row.ready for row in enabled_models):
+        status = "ready"
+    else:
+        status = "blocked"
+    return ProviderRuntimeReadiness(
+        status=status,
+        expected_worker_release_digest=settings.RUNTIME_WORKER_RELEASE_DIGEST,
+        reported_worker_release_digest=reported_release_digest,
+        release_trusted=release_trusted,
+        runtime_instance_id=runtime.id if runtime else None,
+        runtime_status=runtime.status.value if runtime else None,
+        reconcile_job_id=job.id if job else None,
+        reconcile_status=job.status.value if job else None,
+        reconcile_trigger=job.trigger if job else None,
+        reconcile_attempt_count=job.attempt_count if job else 0,
+        reconcile_error=job.last_error if job else None,
+        models=model_rows,
+    )
 
 
 @router.post(
@@ -376,4 +546,9 @@ def sync_provider_models(
     config = _require_namespace_config(
         session=session, config_id=config_id, namespace_id=namespace_id
     )
+    enqueue_platform_reconcile_job(
+        session, namespace_id, trigger="provider_models_synced"
+    )
+    reconcile_platform_model_bindings(session, namespace_id)
+    session.commit()
     return to_provider_config_public(config)

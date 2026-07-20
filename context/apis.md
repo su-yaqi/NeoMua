@@ -105,6 +105,7 @@
 | POST | /llm/provider-configs | 创建当前空间的大模型接入配置 |
 | PATCH | /llm/provider-configs/{config_id} | 更新当前空间的接入配置 |
 | POST | /llm/provider-configs/{config_id}/validate | 对当前配置执行连接校验 |
+| GET | /llm/provider-configs/{config_id}/runtime-readiness | 查看 Worker 发行、持久协调、逐模型真实调用与最终 Binding 就绪状态 |
 | POST | /llm/provider-configs/{config_id}/sync-models | 拉取供应商模型并合并手工模型 |
 | POST | /llm/provider-configs/draft/validate | 使用未保存的地址、密钥和扩展参数校验连接 |
 | POST | /llm/provider-configs/draft/sync-models | 使用未保存配置同步模型预览，不产生数据库实体 |
@@ -120,19 +121,30 @@
 
 | Method | Path | 权限与用途 |
 |---|---|---|
-| GET/POST | `/runtime-instances` | admin/developer 读取 Runtime Instance；admin 创建明确 engine/location 的实例 |
-| GET | `/runtime-instances/{id}` | 返回实例、当前配置、能力报告、模型目录与绑定摘要 |
-| PUT | `/runtimes/{id}/configuration` | admin 以 expected revision 创建不可变配置修订 |
+| GET | `/runtimes` | admin/developer 读取平台内置、服务节点受管和客户端发现的 Runtime Instance |
+| GET | `/runtimes/{id}` | 返回实例、当前配置、能力报告、模型目录与绑定摘要 |
+| PUT | `/runtimes/{id}/configuration` | 历史手工 Runtime 可写；v0.10 三类系统管理 Runtime 拒绝用户配置 |
 | POST | `/runtimes/{id}/configuration/apply` | admin 请求应用 desired 配置 |
 | POST | `/runtimes/{id}/model-bindings` | admin 声明稳定模型在该 Runtime 上的精确路由 |
 | POST | `/runtimes/{id}/model-bindings/{binding_id}/validate` | admin 发起 provider 或 runtime-native 模型验证 |
 | GET/POST | `/llm/model-definitions` | 读取稳定模型目录；admin 对明确模型身份建档 |
 | GET | `/runtimes/tasks/{id}/events` | 读取完整持久事件 |
 | GET | `/runtimes/tasks/{id}/stream` | 支持 Last-Event-ID 的鉴权 SSE |
-| POST/GET | `/runtimes/nodes/enrollment-tokens` | admin 创建一次性令牌/读取无明文列表 |
+| POST | `/runtimes/nodes/bootstrap-sessions` | admin 创建绑定 service/client 模式且只显示一次的 bootstrap 凭证 |
+| GET | `/runtimes/nodes/bootstrap-sessions` | admin 查看 bootstrap 阶段、绑定节点、发行与完成状态；不再返回密文 |
+| POST/GET | `/runtime-node-distributions/adapters` | 超级管理员发布/读取不可变签名 Claude Code/Codex Adapter release |
+| POST/GET | `/runtime-node-distributions` | 超级管理员发布/读取签名 Linux/systemd Node 发行 ZIP 与逐文件清单 |
+| POST | `/node/bootstrap/preflight` | 安装器绑定设备公钥、校验主机并取得精确签名发行清单 |
+| GET | `/node/bootstrap/distributions/{release_id}` | bootstrap 凭证范围内下载精确不可变发行 ZIP |
+| POST | `/node/bootstrap/receipt` | 节点提交设备签名的发行/组件安装 receipt |
+| POST | `/node/bootstrap/stage` | 节点追加 service 激活或安装失败 attempt |
+| POST | `/node/bootstrap/recover` | 仅在 enrollment 响应丢失时，以同一设备密钥证明恢复凭证 |
 | POST | `/node/enroll` | 节点使用一次性令牌和 Ed25519 公钥注册 |
 | WS | `/node/ws` | 设备 JWT + 时间戳签名鉴权的 WSS 心跳、任务和内容通道 |
 | GET | `/runtimes/nodes` | admin/developer 读取机器节点及其 Runtime Instance 摘要 |
+| POST | `/runtime-nodes/{id}/discovery/refresh` | admin 请求 client Node 下一代受控有限探测 |
+| GET | `/runtime-nodes/{id}/discovery-observations` | admin/developer 查看逐代摘要和脱敏诊断 |
+| POST | `/runtimes/{id}/pause|resume` | admin 审计式暂停/恢复 service/client 新任务调度；恢复重新核验证据 |
 | DELETE | `/runtimes/nodes/{id}/credential` | admin 吊销节点及全部凭证 |
 | POST/GET | `/runtime-tasks` | admin/developer 下发普通任务；admin 才可下发管理任务 |
 | POST | `/runtime-tasks/{id}/cancel|retry` | 显式取消或新建 retry 任务，要求幂等键 |
@@ -141,7 +153,7 @@
 | POST | `/runtime-artifacts/deployments/{id}/retry|rollback` | admin 显式重试或回滚 |
 | GET | `/node/artifacts/{id}/download` | 节点凭短期、部署范围 JWT 下载 |
 
-旧 `/runtimes/platform`、节点 Runtime Profile 与 Harness 写接口仅保留迁移期只读/410 语义，不参与 v0.9 新执行配置。内部 `/internal/runtime/*` 仅接受独立服务凭证；浏览器 JWT 无法访问。Model Gateway token 绑定 namespace/runtime/task/model，不能换模型或跨空间使用。
+旧 `/runtimes/platform` 创建、节点 Runtime Profile 与 Harness 写接口仅保留只读/410 语义。平台内置 Runtime 由 namespace 初始化和目录读取幂等创建；service/client Runtime 只由设备身份通道的发现报告创建。内部 `/internal/runtime/*` 仅接受独立服务凭证；浏览器 JWT 无法访问。
 
 ### agent management（v0.5-v0.9）
 

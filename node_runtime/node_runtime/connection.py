@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import hashlib
 import json
 import random
 import secrets
@@ -14,9 +15,10 @@ from runtime_worker.runtime_configuration import RuntimeConfigurationStore
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed, InvalidStatus, WebSocketException
 
+from node_runtime.adapter_registry import public_installation
 from node_runtime.agent_releases import AgentReleaseController
 from node_runtime.artifacts.controller import ArtifactController
-from node_runtime.identity import DeviceIdentity, IdentityStore
+from node_runtime.identity import DeviceIdentity, IdentityStore, sign_device_payload
 from node_runtime.mcp_validation import NodeMcpValidationController
 from node_runtime.protocol import Envelope, envelope
 from node_runtime.reconcile import ReconcileState
@@ -79,6 +81,12 @@ class NodeConnection:
         runtime_installations: list[dict[str, Any]] | None = None,
         runtime_configuration_store: RuntimeConfigurationStore | None = None,
         on_discovery_generation: Callable[[int], None] | None = None,
+        discovery_observations: list[dict[str, Any]] | None = None,
+        adapter_registry_digest: str | None = None,
+        discovery_provider: Callable[
+            [], tuple[list[dict[str, Any]], list[dict[str, Any]]]
+        ]
+        | None = None,
     ) -> None:
         self.url = websocket_url(platform_url)
         self.identity = identity
@@ -96,6 +104,48 @@ class NodeConnection:
         self.runtime_installations = runtime_installations
         self.runtime_configuration_store = runtime_configuration_store
         self.on_discovery_generation = on_discovery_generation
+        self.discovery_observations = discovery_observations or []
+        self.adapter_registry_digest = adapter_registry_digest
+        self.discovery_provider = discovery_provider
+
+    async def _send_discovery_report(
+        self,
+        websocket,
+        *,
+        generation: int,
+        installations: list[dict[str, Any]],
+        observations: list[dict[str, Any]],
+    ) -> None:
+        discovery_payload = {
+            "generation": generation,
+            "installations": [public_installation(item) for item in installations],
+            "observations": observations,
+        }
+        if self.adapter_registry_digest is not None:
+            discovery_payload["adapter_registry_digest"] = (
+                self.adapter_registry_digest
+            )
+        discovery_digest = hashlib.sha256(
+            json.dumps(
+                discovery_payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+        await websocket.send(
+            envelope(
+                "runtime_discovery_report",
+                self.identity.node_id,
+                {
+                    **discovery_payload,
+                    "device_signature": sign_device_payload(
+                        self.identity.private_key,
+                        f"neomua-runtime-discovery-v1:{discovery_digest}",
+                    ),
+                },
+            ).model_dump_json()
+        )
 
     async def connect_once(self) -> None:
         try:
@@ -129,16 +179,11 @@ class NodeConnection:
                     ).model_dump_json()
                 )
                 if self.runtime_installations is not None:
-                    await websocket.send(
-                        envelope(
-                            "runtime_discovery_report",
-                            self.identity.node_id,
-                            {
-                                "generation": self.reconcile_state.discovery_generation
-                                + 1,
-                                "installations": self.runtime_installations,
-                            },
-                        ).model_dump_json()
+                    await self._send_discovery_report(
+                        websocket,
+                        generation=self.reconcile_state.discovery_generation + 1,
+                        installations=self.runtime_installations,
+                        observations=self.discovery_observations,
                     )
                 if self.task_controller:
                     await self.task_controller.replay_pending()
@@ -195,6 +240,21 @@ class NodeConnection:
                     ).model_dump_json()
                 )
                 continue
+            if message.type == "runtime_discovery_refresh":
+                if self.discovery_provider is None:
+                    raise RuntimeError("Runtime discovery refresh is unavailable")
+                installations, observations = await asyncio.to_thread(
+                    self.discovery_provider
+                )
+                self.runtime_installations = installations
+                self.discovery_observations = observations
+                await self._send_discovery_report(
+                    websocket,
+                    generation=int(message.payload["generation"]),
+                    installations=installations,
+                    observations=observations,
+                )
+                continue
             if message.type == "runtime_discovery_ack":
                 generation = int(message.payload["generation"])
                 self.reconcile_state.discovery_generation = generation
@@ -243,7 +303,8 @@ class NodeConnection:
                     (
                         item
                         for item in (self.runtime_installations or [])
-                        if item.get("installation_key") == payload.get("installation_key")
+                        if item.get("installation_key")
+                        == payload.get("installation_key")
                         and item.get("engine_type") == payload.get("engine_type")
                     ),
                     None,
@@ -261,6 +322,20 @@ class NodeConnection:
                         discovered_models=list(
                             installation.get("discovered_models", [])
                         ),
+                        adapter_execution_ref=payload.get("adapter_execution_ref"),
+                        local_execution_path=(
+                            str(installation["_execution_path"])
+                            if installation.get("_execution_path") is not None
+                            else None
+                        ),
+                        local_executable_fingerprint=str(
+                            installation.get("executable_fingerprint")
+                        ),
+                        local_revalidation_contract=(
+                            dict(installation["_revalidation_contract"])
+                            if installation.get("_revalidation_contract") is not None
+                            else None
+                        ),
                     )
                     result = {
                         "status": "applied",
@@ -275,7 +350,9 @@ class NodeConnection:
                         "engine_version": installation.get("engine_version")
                         if installation
                         else None,
-                        "adapter_version": installation.get("adapter_version", "unknown")
+                        "adapter_version": installation.get(
+                            "adapter_version", "unknown"
+                        )
                         if installation
                         else "unknown",
                         "error": {
@@ -292,9 +369,7 @@ class NodeConnection:
                             "configuration_revision_id": payload.get(
                                 "configuration_revision_id"
                             ),
-                            "configuration_digest": payload.get(
-                                "configuration_digest"
-                            ),
+                            "configuration_digest": payload.get("configuration_digest"),
                             **result,
                         },
                     ).model_dump_json()

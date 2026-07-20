@@ -14,7 +14,7 @@ COPY runtime_worker/runtime_worker ./runtime_worker/runtime_worker
 COPY node_runtime/pyproject.toml ./node_runtime/
 COPY node_runtime/node_runtime ./node_runtime/node_runtime
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --package neomua-node-runtime
+    uv sync --frozen --package neomua-node-runtime --extra service
 
 ENTRYPOINT ["neomua-node"]
 CMD ["--help"]

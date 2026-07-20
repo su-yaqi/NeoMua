@@ -85,7 +85,8 @@
 - `/admin` 在进入页面前再次验证 `is_superuser`。
 - 顶部空间选择器将当前空间写入 `localStorage.selected_namespace_id`，并通过 `tenantApi` 自动附加到请求头。
 - 布局层会在 `/namespaces/mine` 返回后再校验并修正本地缓存的空间 ID，避免首次渲染时因空间列表尚未加载完成而误清空当前选择。
-- 运行时页以 Runtime Instance 库存为核心，并同时展示承载它们的 Node、配置修订、能力报告、模型 Binding、签名内容与 Skill 同步状态。Admin 可创建/配置实例、验证 Binding、注册/吊销 Node 和发布内容；Developer 只读运行状态并可下发授权的普通任务；User 不渲染页面内容或导航。
+- 运行时页按平台内置、服务节点、客户端和历史来源分组：平台内置 Runtime 显示“无需配置”及自动模型路由；Admin 可分别生成 service/client 一次性 bootstrap，在目标主机执行包含平台签名公钥但不含 enrollment 密文的命令，并通过隐藏输入提交一次性凭证。节点详情展示 bootstrap/receipt/Registry/发现代次与脱敏观察，client 支持受控重扫，service/client 支持审计式暂停/恢复；实例配置与模型路由只读。Developer 只读，User 不渲染页面与导航。
+- 大模型配置详情同时展示连接探活、逐模型最小真实调用、平台协调任务、Worker 发行信任和最终 Binding；任一环节失败保持 blocked，不用单一“连接成功”掩盖 Runtime 尚不可执行。
 - 任务详情按事件类型展示，工具负载默认折叠；中断任务只提供显式“重新执行”，不显示自动重试。
 - 一次性节点令牌只保存在对话框组件状态，关闭或刷新即消失，不写 localStorage。
 - Agent 能力页选择稳定模型偏好和引擎中立策略；对 Skill 只选择身份并启用/停用，对 Plugin 仍选择精确 Version，对 MCP 选择已发现 Tool。Release 页必须选择明确 Runtime Instance 并通过服务端 precheck 后才能创建 Activation；Harness 历史页只读。界面不提供 Skill Version 或供应商路由锁定控件。

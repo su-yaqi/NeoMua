@@ -48,9 +48,9 @@ AgentTask 1 ---- 1 AgentTaskModelUsage
 
 | 表 | 关键职责 |
 |---|---|
-| `runtime_node` | 机器身份、公钥、指纹、心跳、连接代次、安装发现与吊销时间；一台 Node 可承载多个 Runtime Instance |
-| `runtime_instance` | namespace 内执行引擎实例；绑定 Node/平台位置、engine type、desired/applied 配置、当前能力报告和状态 |
-| `runtime_configuration_revision` | Runtime 不可变配置修订、配置摘要、应用状态、工作目录策略、环境白名单、安全策略与资源限制 |
+| `runtime_node` | 机器身份、公钥、指纹、service/client 管理模式、Adapter Registry 摘要、心跳、发现与吊销时间 |
+| `runtime_instance` | namespace 内执行引擎实例；记录 `platform_builtin/service_managed/client_discovered` 管理来源、生命周期 source key、配置和能力状态 |
+| `runtime_configuration_revision` | Runtime 不可变系统配置；增加 `system_builtin/service_manifest/client_adapter` 来源和 Adapter 执行引用 |
 | `runtime_capability_report` | Runtime/engine/Adapter 版本、能力、发现模型、generation、指纹与上报时间 |
 | `llm_model_definition` | namespace 内稳定模型身份；以 provider family 与精确 model key 表达偏好 |
 | `runtime_model_binding` / `runtime_model_validation_attempt` | 稳定模型在具体 Runtime 上的精确路由、engine model id、验证状态与证据 |
@@ -59,7 +59,16 @@ AgentTask 1 ---- 1 AgentTaskModelUsage
 | `agent_task` | 不可变执行快照、目标节点、任务类型、状态、租约、幂等键和 retry 链 |
 | `agent_event` | 按 `(task_id, sequence)` 唯一保存用户、Agent、工具、状态、错误和结果事件 |
 | `runtime_job` | 仓库探测、Workflow Validator/Handler 的持久任务；保存目标 Runtime、租约、修订、幂等键、结果与人工处理状态 |
-| `node_enrollment_token` | 一次性注册令牌 HMAC；仅保存哈希、有效期和消费时间 |
+| `node_enrollment_token` | 一次性 bootstrap HMAC；保存绑定管理模式、预检时间、设备公钥指纹和签名发行清单摘要，不保存明文 |
+| `node_distribution_release` | 不可变 Node 发行清单、ZIP 摘要/大小、逐文件摘要、模式/系统/架构、签名和生效通道 |
+| `runtime_adapter_release` | 不可变 Adapter 身份、引擎、版本范围、有限发现合同、执行合同、摘要和签名 |
+| `node_bootstrap_session` / `node_bootstrap_attempt` | 从 waiting、preflight、staged、enrolled/activated 到 reconciled 的正式安装状态与追加诊断；保存同设备幂等恢复密文，不保存明文凭证 |
+| `node_installation_receipt` | 设备签名的精确发行/组件/逻辑安装引用；只有与平台签名清单一致时才能成为 Node current receipt |
+| `runtime_discovery_observation` | 设备签名完整 generation 中每个稳定安装或候选的 available/missing/blocked 摘要；不保存本地路径或凭证 |
+| `runtime_control_decision` | client bootstrap 自动授权以及 Admin pause/resume 的操作者和证据历史 |
+| `runtime_installation_migration_receipt` | 预留给正式 adopt 流程的旧 Runtime 与本地 installation UUID 设备签名关联；当前无 adopt 时不猜测合并 |
+| `platform_runtime_reconcile_job` / `platform_runtime_reconcile_attempt` | 按协调输入指纹幂等的持久任务、attempt、结果和脱敏错误 |
+| `llm_provider_model_validation` | Provider Config 指纹下逐模型最小真实调用证据、有效期和错误；连接探活不能替代 |
 | `node_credential` | 90 天设备凭证、密钥指纹、轮换链与吊销时间；不保存私钥 |
 | `runtime_artifact` | namespace 内不可变内容哈希、逻辑目标、清单、签名和存储键 |
 | `artifact_release` | 有效期内的发布或回滚意图 |
@@ -255,4 +264,4 @@ Skill 草稿每个 Skill 只允许一条；文件路径在草稿内唯一并拒�
 | Workflow Agent | `workflow_node_definition.agent_role_key`、`workflow_instance_agent_binding` | Agent 节点声明逻辑角色；实例绑定精确 Runtime、Agent Release 与 Resolved Spec digest |
 | Workflow 执行配置 | `namespace_workflow_configuration`、`workflow_execution_configuration_revision`、`workflow_execution_node_binding`；`workflow_instance.execution_configuration_revision_id` | 每个 namespace/模板版本只有一个当前配置指针；保存使用 expected revision 并创建不可变新修订；每个非人工节点必须明确 Runtime，Agent 节点还必须明确 Release；实例创建时冻结当前修订 |
 
-迁移链在 v0.7 依次加入会话配置修订、独立 Workflow 上下文、Agent 角色绑定和模板执行配置。v0.8 新增 Skill 草稿/文件/current-version 审计、Runtime Skill 状态/attempt 和任务使用证据，并迁移 Skill 身份绑定。v0.9 新增 Runtime Instance、配置/能力报告、稳定模型定义与 Binding、Activation precheck、Binding 验证有效期和逐次 Task 模型调用证据；当前目标 Alembic head 为 `fc5a7b9d1e34`。旧模型只在来源可证明时迁移，未知或歧义记录会阻断升级并要求 Admin 确认。
+迁移链在 v0.7-v0.9 建立会话、Workflow、Skill 与 Runtime Instance 执行证据。v0.10 增加三类 Runtime 管理来源、Node 模式、配置/Binding 来源、bootstrap 设备绑定和平台内置 Runtime 唯一约束；当前目标 Alembic head 为 `0a10b2c3d4e5`。
