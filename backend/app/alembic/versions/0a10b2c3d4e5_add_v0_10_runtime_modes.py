@@ -48,7 +48,12 @@ runtime_binding_origin = postgresql.ENUM(
     create_type=False,
 )
 reconcile_status = postgresql.ENUM(
-    "queued", "running", "succeeded", "failed", name="reconcilestatus", create_type=False
+    "queued",
+    "running",
+    "succeeded",
+    "failed",
+    name="reconcilestatus",
+    create_type=False,
 )
 bootstrap_status = postgresql.ENUM(
     "waiting_for_install",
@@ -72,6 +77,18 @@ runtime_json = sa.JSON().with_variant(
 
 def upgrade() -> None:
     bind = op.get_bind()
+    inspector = sa.inspect(bind)
+
+    def has_column(table_name: str, column_name: str) -> bool:
+        return column_name in {
+            column["name"] for column in inspector.get_columns(table_name)
+        }
+
+    def has_index(table_name: str, index_name: str) -> bool:
+        return index_name in {
+            index["name"] for index in inspector.get_indexes(table_name)
+        }
+
     if bind.dialect.name == "postgresql":
         op.execute(
             "ALTER TYPE runtimeenginetype ADD VALUE IF NOT EXISTS 'claude_agent_sdk'"
@@ -84,98 +101,115 @@ def upgrade() -> None:
         bootstrap_status.create(bind, checkfirst=True)
         runtime_control_action.create(bind, checkfirst=True)
 
-    op.add_column(
-        "runtime_node",
-        sa.Column(
-            "management_mode",
-            runtime_node_mode if bind.dialect.name == "postgresql" else sa.String(32),
-            nullable=False,
-            server_default="legacy_unclassified",
-        ),
-    )
-    op.add_column(
-        "runtime_node",
-        sa.Column("adapter_registry_digest", sa.String(64), nullable=True),
-    )
-    op.add_column(
-        "runtime_node",
-        sa.Column(
-            "discovery_requested_generation",
-            sa.Integer(),
-            nullable=False,
-            server_default="0",
-        ),
-    )
-    op.add_column(
-        "runtime_instance",
-        sa.Column(
-            "management_type",
-            runtime_management_type
-            if bind.dialect.name == "postgresql"
-            else sa.String(32),
-            nullable=False,
-            server_default="legacy_manual",
-        ),
-    )
-    op.add_column(
-        "runtime_instance",
-        sa.Column("lifecycle_source_key", sa.String(255), nullable=True),
-    )
-    op.create_index(
-        "uq_runtime_instance_platform_builtin",
-        "runtime_instance",
-        ["namespace_id"],
-        unique=True,
-        postgresql_where=sa.text("management_type = 'platform_builtin'"),
-        sqlite_where=sa.text("management_type = 'platform_builtin'"),
-    )
-    op.add_column(
-        "runtime_configuration_revision",
-        sa.Column(
-            "origin",
-            runtime_configuration_origin
-            if bind.dialect.name == "postgresql"
-            else sa.String(32),
-            nullable=False,
-            server_default="legacy_manual",
-        ),
-    )
-    op.add_column(
-        "runtime_configuration_revision",
-        sa.Column("adapter_execution_ref", sa.String(255), nullable=True),
-    )
-    op.add_column(
-        "runtime_model_binding",
-        sa.Column(
-            "origin",
-            runtime_binding_origin
-            if bind.dialect.name == "postgresql"
-            else sa.String(32),
-            nullable=False,
-            server_default="legacy_manual",
-        ),
-    )
-    op.add_column(
-        "node_enrollment_token",
-        sa.Column(
-            "requested_management_mode",
-            runtime_node_mode if bind.dialect.name == "postgresql" else sa.String(32),
-            nullable=False,
-            server_default="legacy_unclassified",
-        ),
-    )
-    op.add_column(
-        "node_enrollment_token",
-        sa.Column("preflight_at", sa.DateTime(timezone=True), nullable=True),
-    )
-    op.add_column(
-        "node_enrollment_token",
-        sa.Column("bound_public_key_fingerprint", sa.String(128), nullable=True),
-    )
-    op.add_column(
-        "node_enrollment_token",
-        sa.Column("distribution_manifest_digest", sa.String(64), nullable=True),
-    )
+    if not has_column("runtime_node", "management_mode"):
+        op.add_column(
+            "runtime_node",
+            sa.Column(
+                "management_mode",
+                runtime_node_mode
+                if bind.dialect.name == "postgresql"
+                else sa.String(32),
+                nullable=False,
+                server_default="legacy_unclassified",
+            ),
+        )
+    if not has_column("runtime_node", "adapter_registry_digest"):
+        op.add_column(
+            "runtime_node",
+            sa.Column("adapter_registry_digest", sa.String(64), nullable=True),
+        )
+    if not has_column("runtime_node", "discovery_requested_generation"):
+        op.add_column(
+            "runtime_node",
+            sa.Column(
+                "discovery_requested_generation",
+                sa.Integer(),
+                nullable=False,
+                server_default="0",
+            ),
+        )
+    if not has_column("runtime_instance", "management_type"):
+        op.add_column(
+            "runtime_instance",
+            sa.Column(
+                "management_type",
+                runtime_management_type
+                if bind.dialect.name == "postgresql"
+                else sa.String(32),
+                nullable=False,
+                server_default="legacy_manual",
+            ),
+        )
+    if not has_column("runtime_instance", "lifecycle_source_key"):
+        op.add_column(
+            "runtime_instance",
+            sa.Column("lifecycle_source_key", sa.String(255), nullable=True),
+        )
+    if not has_index("runtime_instance", "uq_runtime_instance_platform_builtin"):
+        op.create_index(
+            "uq_runtime_instance_platform_builtin",
+            "runtime_instance",
+            ["namespace_id"],
+            unique=True,
+            postgresql_where=sa.text("management_type = 'platform_builtin'"),
+            sqlite_where=sa.text("management_type = 'platform_builtin'"),
+        )
+    if not has_column("runtime_configuration_revision", "origin"):
+        op.add_column(
+            "runtime_configuration_revision",
+            sa.Column(
+                "origin",
+                runtime_configuration_origin
+                if bind.dialect.name == "postgresql"
+                else sa.String(32),
+                nullable=False,
+                server_default="legacy_manual",
+            ),
+        )
+    if not has_column("runtime_configuration_revision", "adapter_execution_ref"):
+        op.add_column(
+            "runtime_configuration_revision",
+            sa.Column("adapter_execution_ref", sa.String(255), nullable=True),
+        )
+    if not has_column("runtime_model_binding", "origin"):
+        op.add_column(
+            "runtime_model_binding",
+            sa.Column(
+                "origin",
+                runtime_binding_origin
+                if bind.dialect.name == "postgresql"
+                else sa.String(32),
+                nullable=False,
+                server_default="legacy_manual",
+            ),
+        )
+    if not has_column("node_enrollment_token", "requested_management_mode"):
+        op.add_column(
+            "node_enrollment_token",
+            sa.Column(
+                "requested_management_mode",
+                runtime_node_mode
+                if bind.dialect.name == "postgresql"
+                else sa.String(32),
+                nullable=False,
+                server_default="legacy_unclassified",
+            ),
+        )
+    if not has_column("node_enrollment_token", "preflight_at"):
+        op.add_column(
+            "node_enrollment_token",
+            sa.Column("preflight_at", sa.DateTime(timezone=True), nullable=True),
+        )
+    if not has_column("node_enrollment_token", "bound_public_key_fingerprint"):
+        op.add_column(
+            "node_enrollment_token",
+            sa.Column("bound_public_key_fingerprint", sa.String(128), nullable=True),
+        )
+    if not has_column("node_enrollment_token", "distribution_manifest_digest"):
+        op.add_column(
+            "node_enrollment_token",
+            sa.Column("distribution_manifest_digest", sa.String(64), nullable=True),
+        )
     op.create_table(
         "platform_runtime_reconcile_job",
         sa.Column("id", sa.Uuid(), nullable=False),
@@ -195,7 +229,9 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["namespace_id"], ["namespace.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
-            "namespace_id", "input_fingerprint", name="uq_platform_runtime_reconcile_input"
+            "namespace_id",
+            "input_fingerprint",
+            name="uq_platform_runtime_reconcile_input",
         ),
     )
     op.create_index(
@@ -222,7 +258,9 @@ def upgrade() -> None:
             ["job_id"], ["platform_runtime_reconcile_job.id"], ondelete="CASCADE"
         ),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("job_id", "attempt_no", name="uq_platform_reconcile_attempt"),
+        sa.UniqueConstraint(
+            "job_id", "attempt_no", name="uq_platform_reconcile_attempt"
+        ),
     )
     op.create_index(
         "ix_platform_runtime_reconcile_attempt_job_id",
@@ -357,7 +395,9 @@ def upgrade() -> None:
             ["enrollment_token_id"], ["node_enrollment_token.id"], ondelete="CASCADE"
         ),
         sa.ForeignKeyConstraint(
-            ["distribution_release_id"], ["node_distribution_release.id"], ondelete="RESTRICT"
+            ["distribution_release_id"],
+            ["node_distribution_release.id"],
+            ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(["node_id"], ["runtime_node.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["created_by"], ["user.id"], ondelete="SET NULL"),
@@ -415,19 +455,24 @@ def upgrade() -> None:
             ["bootstrap_session_id"], ["node_bootstrap_session.id"], ondelete="SET NULL"
         ),
         sa.ForeignKeyConstraint(
-            ["distribution_release_id"], ["node_distribution_release.id"], ondelete="RESTRICT"
+            ["distribution_release_id"],
+            ["node_distribution_release.id"],
+            ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
             ["adapter_release_id"], ["runtime_adapter_release.id"], ondelete="RESTRICT"
         ),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("node_id", "receipt_digest", name="uq_node_installation_receipt"),
+        sa.UniqueConstraint(
+            "node_id", "receipt_digest", name="uq_node_installation_receipt"
+        ),
     )
     op.create_index(
         "ix_node_installation_receipt_node_id", "node_installation_receipt", ["node_id"]
     )
     op.add_column(
-        "runtime_node", sa.Column("current_installation_receipt_id", sa.Uuid(), nullable=True)
+        "runtime_node",
+        sa.Column("current_installation_receipt_id", sa.Uuid(), nullable=True),
     )
     op.create_foreign_key(
         "fk_runtime_node_current_installation_receipt",
@@ -573,13 +618,18 @@ def downgrade() -> None:
         type_="foreignkey",
     )
     op.drop_column("runtime_node", "current_installation_receipt_id")
-    op.drop_index("ix_node_installation_receipt_node_id", table_name="node_installation_receipt")
+    op.drop_index(
+        "ix_node_installation_receipt_node_id", table_name="node_installation_receipt"
+    )
     op.drop_table("node_installation_receipt")
     op.drop_index(
-        "ix_node_bootstrap_attempt_bootstrap_session_id", table_name="node_bootstrap_attempt"
+        "ix_node_bootstrap_attempt_bootstrap_session_id",
+        table_name="node_bootstrap_attempt",
     )
     op.drop_table("node_bootstrap_attempt")
-    op.drop_index("ix_node_bootstrap_session_namespace_id", table_name="node_bootstrap_session")
+    op.drop_index(
+        "ix_node_bootstrap_session_namespace_id", table_name="node_bootstrap_session"
+    )
     op.drop_table("node_bootstrap_session")
     op.drop_table("runtime_adapter_release")
     op.drop_table("node_distribution_release")

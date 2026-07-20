@@ -16,6 +16,21 @@ from runtime_worker.skill_store import SkillStore
 from runtime_worker.worker import RuntimeWorker
 
 
+def _consume_release_digest(source_environment: dict[str, str]) -> str:
+    release_digest = source_environment.pop("RUNTIME_WORKER_RELEASE_DIGEST", None)
+    if (
+        release_digest is None
+        or len(release_digest) != 64
+        or any(
+            character not in "0123456789abcdef" for character in release_digest.lower()
+        )
+    ):
+        raise RuntimeError(
+            "RUNTIME_WORKER_RELEASE_DIGEST must be a 64-character hex digest"
+        )
+    return release_digest.lower()
+
+
 async def main() -> None:
     control_url = os.environ["CONTROL_PLANE_URL"]
     token = os.environ.pop("INTERNAL_RUNTIME_TOKEN")
@@ -31,25 +46,14 @@ async def main() -> None:
     )
     client = httpx.AsyncClient(base_url=control_url, timeout=30)
     source_environment = sanitize_process_environment()
+    release_digest = _consume_release_digest(source_environment)
     async with client:
         if concurrency < 2:
             raise RuntimeError(
                 "RUNTIME_WORKER_CONCURRENCY must be at least 2 for roundtable delegation"
             )
         capabilities = discover_runtime_capabilities(mode="platform")
-        release_digest = os.environ.get("RUNTIME_WORKER_RELEASE_DIGEST")
-        if (
-            release_digest is None
-            or len(release_digest) != 64
-            or any(
-                character not in "0123456789abcdef"
-                for character in release_digest.lower()
-            )
-        ):
-            raise RuntimeError(
-                "RUNTIME_WORKER_RELEASE_DIGEST must be a 64-character hex digest"
-            )
-        capabilities["release_digest"] = release_digest.lower()
+        capabilities["release_digest"] = release_digest
         configuration_store = RuntimeConfigurationStore(
             configuration_store_path,
             source_environment=source_environment,

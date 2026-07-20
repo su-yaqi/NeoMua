@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from runtime_worker import capabilities
+from runtime_worker.main import _consume_release_digest
 
 
 def test_service_mode_discovers_only_managed_agent_sdk(monkeypatch) -> None:
@@ -41,3 +42,13 @@ def test_client_mode_never_uses_legacy_path_discovery() -> None:
         match="signed Adapter Registry",
     ):
         capabilities.discover_runtime_installations(mode="client")
+
+
+def test_release_digest_is_consumed_before_agent_environment_is_used() -> None:
+    source_environment = {
+        "PATH": "/usr/bin",
+        "RUNTIME_WORKER_RELEASE_DIGEST": "A" * 64,
+    }
+
+    assert _consume_release_digest(source_environment) == "a" * 64
+    assert source_environment == {"PATH": "/usr/bin"}
