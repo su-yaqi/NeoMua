@@ -13,7 +13,6 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 from urllib.parse import urlparse
 
-from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, Field
 from sqlmodel import Session, col, select
 
@@ -232,12 +231,18 @@ def _load_skill_files(version: SkillVersion) -> list[dict[str, Any]]:
 
 
 def validate_semver(value: str) -> bool:
-    if not SEMVER_PATTERN.fullmatch(value):
+    match = SEMVER_PATTERN.fullmatch(value)
+    if match is None:
         return False
-    try:
-        return str(Version(value)) == value
-    except InvalidVersion:
-        return False
+    prerelease = match.group(4)
+    if prerelease is None:
+        return True
+    return all(
+        not (
+            identifier.isdigit() and len(identifier) > 1 and identifier.startswith("0")
+        )
+        for identifier in prerelease.split(".")
+    )
 
 
 def _parse_scalar(raw: str) -> Any:
@@ -294,8 +299,12 @@ def parse_skill_frontmatter(text: str) -> dict[str, Any]:
         key = key.strip()
         if not re.fullmatch(r"[a-z][a-z0-9_]*", key):
             raise ValueError(f"frontmatter line {number} has an invalid key")
-        result[key] = _parse_scalar(raw)
-        active_list = key if not raw.strip() else None
+        if raw.strip():
+            result[key] = _parse_scalar(raw)
+            active_list = None
+        else:
+            result[key] = []
+            active_list = key
     return result
 
 
@@ -770,7 +779,11 @@ def resolve_agent_spec(
                 )
             )
             continue
-        if not is_v09 and profile and plugin_version.harness_type != profile.harness_type:
+        if (
+            not is_v09
+            and profile
+            and plugin_version.harness_type != profile.harness_type
+        ):
             diagnostics.append(
                 Diagnostic(
                     code="plugin_harness_mismatch",
@@ -1129,11 +1142,27 @@ def resolve_agent_spec(
             )
     if diagnostics:
         raise ResolutionError(diagnostics)
-    if not is_v09:
+    if is_v09:
+        assert model_definition is not None
+        harness_type = None
+        resolved_model: dict[str, Any] = {
+            "preferred_model_definition_id": str(model_definition.id),
+            "provider_family": model_definition.provider_family,
+            "model_key": model_definition.model_key,
+        }
+        version_constraints: dict[str, str] = {}
+    else:
         assert profile is not None and provider is not None
-    profile_diags = (
-        validate_config(profile.config, is_profile=True) if profile else []
-    )
+        harness_type = profile.harness_type
+        resolved_model = {
+            "provider_config_id": str(provider.id),
+            "model_id": draft.model_id,
+        }
+        version_constraints = {
+            "cli": profile.cli_version_constraint,
+            "sdk": profile.sdk_version_constraint,
+        }
+    profile_diags = validate_config(profile.config, is_profile=True) if profile else []
     draft_diags = [] if is_v09 else validate_config(draft.config, is_profile=False)
     if profile_diags or draft_diags:
         raise ResolutionError(profile_diags + draft_diags)
@@ -1142,18 +1171,10 @@ def resolve_agent_spec(
         schema_version="2.0" if is_v09 else "1.1",
         agent_id=agent.id,
         agent_release_id=release_id,
-        harness_type=None if is_v09 else profile.harness_type,
+        harness_type=harness_type,
         harness_adapter_version=None if is_v09 else "claude-code-1.1",
         adapter_config=adapter_config,
-        model=(
-            {
-                "preferred_model_definition_id": str(model_definition.id),
-                "provider_family": model_definition.provider_family,
-                "model_key": model_definition.model_key,
-            }
-            if is_v09 and model_definition
-            else {"provider_config_id": str(provider.id), "model_id": draft.model_id}
-        ),
+        model=resolved_model,
         system_prompt=draft.system_prompt,
         policies=(
             draft.execution_policy
@@ -1170,14 +1191,7 @@ def resolve_agent_spec(
         plugins=sorted(plugins, key=lambda item: item["slug"]),
         tools=sorted(tools, key=lambda item: item["key"]),
         mcp_servers=sorted(mcp_servers, key=lambda item: item["slug"]),
-        version_constraints=(
-            {}
-            if is_v09
-            else {
-                "cli": profile.cli_version_constraint,
-                "sdk": profile.sdk_version_constraint,
-            }
-        ),
+        version_constraints=version_constraints,
         required_capabilities={
             "tools": sorted(required_tools),
             "mcp_tools": sorted(required_mcp_tools),

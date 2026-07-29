@@ -406,10 +406,7 @@ def _recompute_activation(session: SessionDep, activation: AgentActivation) -> N
         target_id = row.runtime_instance_id or row.runtime_profile_id
         if target_id is None:
             continue
-        if (
-            target_id not in latest
-            or row.attempt > latest[target_id].attempt
-        ):
+        if target_id not in latest or row.attempt > latest[target_id].attempt:
             latest[target_id] = row
     statuses = {row.status for row in latest.values()}
     if statuses and statuses <= {AgentDeploymentStatus.APPLIED}:
@@ -676,18 +673,22 @@ def _v09_precheck(
         )
     policy_errors: list[dict[str, Any]] = []
     if runtime_permission_modes and permission_mode not in runtime_permission_modes:
-        policy_errors.append(
-            {"code": "agent_permission_exceeds_runtime_policy"}
-        )
+        policy_errors.append({"code": "agent_permission_exceeds_runtime_policy"})
     capability_permission_modes = set(
         capability.capabilities.get("permission_modes", [])
     )
-    if capability_permission_modes and permission_mode not in capability_permission_modes:
+    if (
+        capability_permission_modes
+        and permission_mode not in capability_permission_modes
+    ):
         policy_errors.append({"code": "runtime_permission_mode_unsupported"})
-    approval_required = any(
-        item.get("policy") == "require_approval"
-        for item in release.resolved_spec.get("tools", [])
-    ) or policies.get("tool_approval") is True
+    approval_required = (
+        any(
+            item.get("policy") == "require_approval"
+            for item in release.resolved_spec.get("tools", [])
+        )
+        or policies.get("tool_approval") is True
+    )
     if approval_required and not capability.capabilities.get(
         "supports_per_tool_approval", False
     ):
@@ -708,9 +709,7 @@ def _v09_precheck(
         )
     required_capabilities = policies.get("required_capabilities", {})
     for key, required in (
-        required_capabilities.items()
-        if isinstance(required_capabilities, dict)
-        else []
+        required_capabilities.items() if isinstance(required_capabilities, dict) else []
     ):
         if required is True and not capability.capabilities.get(key, False):
             policy_errors.append(
@@ -746,9 +745,7 @@ def _v09_precheck(
             )
     if skill_errors:
         deployable = False
-        checks.append(
-            {"key": "skills", "status": "blocked", "errors": skill_errors}
-        )
+        checks.append({"key": "skills", "status": "blocked", "errors": skill_errors})
     else:
         checks.append(
             {
@@ -779,7 +776,9 @@ def _v09_precheck(
             code = "mcp_tool_digest_stale"
         elif target.capability_fingerprint != capability.capability_fingerprint:
             code = "mcp_capability_stale"
-        elif runtime.location_type == RuntimeLocationType.NODE and not target.secret_ref:
+        elif (
+            runtime.location_type == RuntimeLocationType.NODE and not target.secret_ref
+        ):
             code = "mcp_node_secret_missing"
         elif (
             runtime.location_type == RuntimeLocationType.PLATFORM
@@ -825,8 +824,7 @@ def _v09_precheck(
         deployable=deployable,
         checks=checks,
         precheck_digest=runtime_digest(payload),
-        expires_at=datetime.now(timezone.utc)
-        + timedelta(seconds=valid_for_seconds),
+        expires_at=datetime.now(timezone.utc) + timedelta(seconds=valid_for_seconds),
     )
 
 
@@ -864,9 +862,7 @@ def release_runtime_compatibility(
     targets: list[dict[str, Any]] = []
     for runtime in runtimes:
         try:
-            precheck = _v09_precheck(
-                session, release, runtime.id, valid_for_seconds=60
-            )
+            precheck = _v09_precheck(session, release, runtime.id, valid_for_seconds=60)
             targets.append(
                 {
                     "runtime_instance_id": runtime.id,
@@ -881,10 +877,14 @@ def release_runtime_compatibility(
                 }
             )
         except HTTPException as exc:
-            detail = exc.detail if isinstance(exc.detail, dict) else {
-                "code": "runtime_incompatible",
-                "message": str(exc.detail),
-            }
+            detail = (
+                exc.detail
+                if isinstance(exc.detail, dict)
+                else {
+                    "code": "runtime_incompatible",
+                    "message": str(exc.detail),
+                }
+            )
             targets.append(
                 {
                     "runtime_instance_id": runtime.id,
@@ -892,9 +892,7 @@ def release_runtime_compatibility(
                     "engine_type": runtime.engine_type.value,
                     "compatible": False,
                     "preference_status": "unavailable",
-                    "checks": [
-                        {"key": "runtime", "status": "blocked", **detail}
-                    ],
+                    "checks": [{"key": "runtime", "status": "blocked", **detail}],
                 }
             )
     return {"release_id": release.id, "targets": targets}
@@ -911,9 +909,7 @@ def precheck_activation(
     release = _get_release(session, release_id, namespace_id)
     if release.resolved_spec_schema_version == "2.0":
         if body.runtime_instance_id is None or body.runtime_profile_ids:
-            raise HTTPException(
-                422, "v0.9 Activation requires one runtime_instance_id"
-            )
+            raise HTTPException(422, "v0.9 Activation requires one runtime_instance_id")
         precheck = _v09_precheck(
             session,
             release,
@@ -1012,7 +1008,9 @@ def activate_release(
             valid_for_seconds=body.valid_for_seconds,
         )
         if fresh.precheck_digest != precheck.precheck_digest:
-            raise HTTPException(409, "Runtime state changed; run Activation precheck again")
+            raise HTTPException(
+                409, "Runtime state changed; run Activation precheck again"
+            )
         runtime = session.get(RuntimeInstance, body.runtime_instance_id)
         assert runtime is not None
         capability = session.get(
@@ -1064,10 +1062,15 @@ def activate_release(
     )
     session.add(activation)
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=body.valid_for_seconds)
-    for runtime in runtimes:
+    for runtime_profile in runtimes:
         session.add(
             _create_deployment(
-                session, release, activation, runtime, attempt=1, expires_at=expires_at
+                session,
+                release,
+                activation,
+                runtime_profile,
+                attempt=1,
+                expires_at=expires_at,
             )
         )
     session.flush()
@@ -1149,13 +1152,18 @@ def retry_deployment(
         )
     ).all()
     if isinstance(runtime, RuntimeInstance):
-        precheck = _v09_precheck(
-            session, release, runtime, valid_for_seconds=3600
-        )
+        precheck = _v09_precheck(session, release, runtime.id, valid_for_seconds=3600)
         session.add(precheck)
         session.flush()
         if not precheck.deployable:
-            raise HTTPException(409, {"code": "activation_precheck_blocked", "checks": precheck.checks})
+            raise HTTPException(
+                409, {"code": "activation_precheck_blocked", "checks": precheck.checks}
+            )
+        capability = session.get(
+            RuntimeCapabilityReport, precheck.runtime_capability_report_id
+        )
+        if capability is None:
+            raise HTTPException(409, {"code": "runtime_capability_report_missing"})
         try:
             ensure_release_skill_subscriptions(
                 session,
@@ -1171,9 +1179,7 @@ def retry_deployment(
             runtime_instance_id=runtime.id,
             attempt=max(attempts) + 1,
             status=AgentDeploymentStatus.PENDING,
-            capability_fingerprint=session.get(
-                RuntimeCapabilityReport, precheck.runtime_capability_report_id
-            ).capability_fingerprint,
+            capability_fingerprint=capability.capability_fingerprint,
             expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
         )
     else:
@@ -1228,13 +1234,18 @@ def rollback_deployment(
     ):
         raise HTTPException(409, "Previous Release cannot be verified")
     if isinstance(runtime, RuntimeInstance):
-        precheck = _v09_precheck(
-            session, previous, runtime, valid_for_seconds=3600
-        )
+        precheck = _v09_precheck(session, previous, runtime.id, valid_for_seconds=3600)
         session.add(precheck)
         session.flush()
         if not precheck.deployable:
-            raise HTTPException(409, {"code": "activation_precheck_blocked", "checks": precheck.checks})
+            raise HTTPException(
+                409, {"code": "activation_precheck_blocked", "checks": precheck.checks}
+            )
+        capability = session.get(
+            RuntimeCapabilityReport, precheck.runtime_capability_report_id
+        )
+        if capability is None:
+            raise HTTPException(409, {"code": "runtime_capability_report_missing"})
         try:
             ensure_release_skill_subscriptions(
                 session,
@@ -1261,9 +1272,7 @@ def rollback_deployment(
                 runtime_instance_id=runtime.id,
                 attempt=1,
                 status=AgentDeploymentStatus.PENDING,
-                capability_fingerprint=session.get(
-                    RuntimeCapabilityReport, precheck.runtime_capability_report_id
-                ).capability_fingerprint,
+                capability_fingerprint=capability.capability_fingerprint,
                 expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
             )
         )
@@ -1422,7 +1431,7 @@ def claim_agent_deployment(
             release = (
                 session.get(AgentRelease, activation.release_id) if activation else None
             )
-            if runtime_instance is None or release is None:
+            if runtime_instance is None or activation is None or release is None:
                 row.status = AgentDeploymentStatus.FAILED
                 row.error = {"code": "v09_deployment_target_missing"}
                 session.add(row)
@@ -1430,8 +1439,8 @@ def claim_agent_deployment(
             if runtime_instance.location_type.value != "platform":
                 continue
             try:
-                configuration, capability, catalog_fingerprint = current_runtime_evidence(
-                    session, runtime_instance
+                configuration, capability, catalog_fingerprint = (
+                    current_runtime_evidence(session, runtime_instance)
                 )
             except RuntimeCatalogError as exc:
                 row.status = AgentDeploymentStatus.INCOMPATIBLE

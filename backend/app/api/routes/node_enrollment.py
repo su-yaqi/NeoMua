@@ -838,9 +838,7 @@ def report_bootstrap_stage(
         raise HTTPException(422, "unsupported bootstrap stage report")
     if body.stage == BootstrapStatus.FAILED and body.error is None:
         raise HTTPException(422, "failed bootstrap stage requires an error")
-    receipt = session.get(
-        NodeInstallationReceipt, node.current_installation_receipt_id
-    )
+    receipt = session.get(NodeInstallationReceipt, node.current_installation_receipt_id)
     if receipt is None:
         raise HTTPException(409, "bootstrap installation receipt is missing")
     payload = {
@@ -956,6 +954,13 @@ def enroll_node(body: NodeEnrollInput, session: SessionDep) -> NodeEnrollResult:
         enrollment = consume_enrollment_token(session, body.token)
     except EnrollmentTokenInvalid as exc:
         raise HTTPException(409, str(exc)) from exc
+    distribution_release = (
+        session.get(NodeDistributionRelease, bootstrap.distribution_release_id)
+        if management_mode == RuntimeNodeMode.CLIENT
+        and bootstrap is not None
+        and bootstrap.distribution_release_id is not None
+        else None
+    )
     node = RuntimeNode(
         namespace_id=enrollment.namespace_id,
         name=body.name,
@@ -968,15 +973,11 @@ def enroll_node(body: NodeEnrollInput, session: SessionDep) -> NodeEnrollResult:
         public_key=body.public_key,
         key_fingerprint=fingerprint,
         management_mode=management_mode,
-        adapter_registry_digest=(
-            session.get(
-                NodeDistributionRelease, bootstrap.distribution_release_id
-            ).manifest.get("adapter_registry_digest")
-            if management_mode == RuntimeNodeMode.CLIENT
-            and bootstrap is not None
-            and bootstrap.distribution_release_id is not None
-            else None
-        ),
+        adapter_registry_digest=distribution_release.manifest.get(
+            "adapter_registry_digest"
+        )
+        if distribution_release is not None
+        else None,
     )
     session.add(node)
     session.flush()

@@ -1,7 +1,7 @@
 import asyncio
 import json
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile
@@ -143,7 +143,7 @@ def _current_execution_configuration(
 ) -> tuple[
     NamespaceWorkflowConfiguration | None,
     WorkflowExecutionConfigurationRevision | None,
-    list[WorkflowExecutionNodeBinding],
+    Sequence[WorkflowExecutionNodeBinding],
 ]:
     configuration = session.exec(
         select(NamespaceWorkflowConfiguration).where(
@@ -171,7 +171,7 @@ def _execution_configuration_public(
     session: SessionDep,
     configuration: NamespaceWorkflowConfiguration | None,
     revision: WorkflowExecutionConfigurationRevision | None,
-    bindings: list[WorkflowExecutionNodeBinding],
+    bindings: Sequence[WorkflowExecutionNodeBinding],
 ) -> dict[str, Any] | None:
     if configuration is None or revision is None:
         return None
@@ -220,8 +220,8 @@ def _execution_configuration_public(
 
 
 def _configuration_node_bindings(
-    bindings: list[WorkflowExecutionNodeBinding],
-) -> dict[str, dict[str, uuid.UUID | None]]:
+    bindings: Sequence[WorkflowExecutionNodeBinding],
+) -> dict[str, dict[str, Any]]:
     return {
         binding.node_key: {
             "runtime_id": binding.runtime_profile_id,

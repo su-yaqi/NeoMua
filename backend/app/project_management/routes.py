@@ -113,9 +113,7 @@ def create_project(
     current_user: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_manager),
 ) -> dict[str, Any]:
-    validate_runtime_instance(
-        session, namespace_id, body.default_runtime_instance_id
-    )
+    validate_runtime_instance(session, namespace_id, body.default_runtime_instance_id)
     requested_member_ids = list(body.member_ids)
     if not current_user.is_superuser:
         requested_member_ids.insert(0, current_user.id)
@@ -316,9 +314,7 @@ def validate_repository_access(
     repository = get_repository(session, repository_id, project_id)
     if reconcile_repository_validation(session, repository):
         session.commit()
-    runtime = validate_runtime_instance(
-        session, namespace_id, body.runtime_instance_id
-    )
+    runtime = validate_runtime_instance(session, namespace_id, body.runtime_instance_id)
     assert runtime is not None
     configuration, _capability, _catalog = current_runtime_evidence(session, runtime)
     workspaces = configuration.resource_limits.get("repository_workspaces", {})
@@ -349,9 +345,7 @@ def validate_repository_access(
         "default_branch": repository.default_branch,
         "workspace_ref": str(proof["workspace_ref"]),
         "workspace_path": str(proof.get("workspace_path") or proof.get("path")),
-        "allowed_roots": configuration.resource_limits.get(
-            "allowed_working_roots", []
-        ),
+        "allowed_roots": configuration.resource_limits.get("allowed_working_roots", []),
         "spec_locations": [
             {
                 "id": str(location.id),
@@ -545,9 +539,7 @@ def create_spec_standard_complete(
         standard_namespace_id = None
     else:
         if not can_manage_namespace(session, namespace_id, current_user):
-            raise HTTPException(
-                403, "Namespace admin or developer privilege required"
-            )
+            raise HTTPException(403, "Namespace admin or developer privilege required")
         standard_namespace_id = namespace_id
     validate_spec_standard_manifest(body.manifest)
     content_digest = canonical_spec_manifest_digest(body.manifest)
@@ -730,19 +722,17 @@ def preview_spec_diff(
     validation_job = session.get(RuntimeJob, repository.validation_job_id)
     if validation_job is None:
         raise HTTPException(409, "Repository Runtime validation job is unavailable")
-    proof = verified_repository_runtime_proof(
-        session,
-        repository,
-        validation_job.runtime_instance_id or validation_job.runtime_profile_id,
-    )
+    runtime_id = validation_job.runtime_instance_id or validation_job.runtime_profile_id
+    if runtime_id is None:
+        raise HTTPException(409, "Repository validation has no Runtime target")
+    proof = verified_repository_runtime_proof(session, repository, runtime_id)
     if proof is None:
         raise HTTPException(409, "Repository Runtime validation proof is unavailable")
     preview = build_spec_diff_preview(
         location=location,
         repository=repository,
         version=version,
-        runtime_id=validation_job.runtime_instance_id
-        or validation_job.runtime_profile_id,
+        runtime_id=runtime_id,
         proof=proof,
     )
     binding.diff_preview = preview

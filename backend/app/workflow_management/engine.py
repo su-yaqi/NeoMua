@@ -341,7 +341,7 @@ def preflight(
     namespace_id: uuid.UUID,
     project: Project | None,
     version: WorkflowTemplateVersion,
-    node_bindings: dict[str, dict[str, uuid.UUID | None]],
+    node_bindings: dict[str, dict[str, Any]],
     *,
     require_enabled: bool = True,
 ) -> dict[str, Any]:
@@ -435,9 +435,7 @@ def preflight(
                     {"code": "runtime_unavailable", "node_key": definition.node_key}
                 )
                 continue
-            runtime_agent_release_id = node_binding.get(
-                "runtime_agent_release_id"
-            )
+            runtime_agent_release_id = node_binding.get("runtime_agent_release_id")
             release: AgentRelease | None = None
             active_release: RuntimeAgentRelease | None = None
             if definition.node_type == WorkflowNodeType.AGENT:
@@ -498,7 +496,10 @@ def preflight(
                     session, runtime_instance
                 )
                 mode_value = node_binding.get("model_selection_mode")
-                if definition.node_type == WorkflowNodeType.AGENT and mode_value is None:
+                if (
+                    definition.node_type == WorkflowNodeType.AGENT
+                    and mode_value is None
+                ):
                     raise RuntimeCatalogError(
                         "model_selection_required",
                         "Agent Workflow node requires model selection",
@@ -1110,9 +1111,7 @@ def _execute_agent_node(
     release = session.get(AgentRelease, release_id) if release_id else None
     raw_runtime_agent_release_id = resolution.get("runtime_agent_release_id")
     binding = (
-        session.get(
-            RuntimeAgentRelease, uuid.UUID(str(raw_runtime_agent_release_id))
-        )
+        session.get(RuntimeAgentRelease, uuid.UUID(str(raw_runtime_agent_release_id)))
         if raw_runtime_agent_release_id
         else session.exec(
             select(RuntimeAgentRelease).where(

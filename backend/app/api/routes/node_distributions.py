@@ -293,8 +293,8 @@ def _inspect_distribution_archive(
             if normalized_path in seen_paths:
                 raise HTTPException(422, "distribution archive has duplicate paths")
             seen_paths.add(normalized_path)
-            mode = (info.external_attr >> 16) & 0o177777
-            if stat.S_IFMT(mode) == stat.S_IFLNK:
+            file_mode = (info.external_attr >> 16) & 0o177777
+            if stat.S_IFMT(file_mode) == stat.S_IFLNK:
                 raise HTTPException(422, "distribution archive symlinks are forbidden")
             digest = hashlib.sha256()
             size = 0
@@ -315,7 +315,7 @@ def _inspect_distribution_archive(
                     "path": normalized_path,
                     "sha256": digest.hexdigest(),
                     "size": size,
-                    "executable": bool(mode & 0o111),
+                    "executable": bool(file_mode & 0o111),
                 }
             )
             if content is not None:

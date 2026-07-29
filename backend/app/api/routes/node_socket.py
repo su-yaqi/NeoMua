@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import or_
+from sqlalchemy import and_, or_
 from sqlmodel import col, select
 
 from app.agent_management.capabilities import (
@@ -455,11 +455,12 @@ async def _send_pending_runtime_instance_configurations(
             col(RuntimeConfigurationRevision.runtime_instance_id) == RuntimeInstance.id,
         )
         .where(
-            RuntimeInstance.runtime_node_id == node.id,
-            RuntimeInstance.enabled.is_(True),
-            RuntimeInstance.desired_configuration_revision_id
-            == RuntimeConfigurationRevision.id,
-            RuntimeConfigurationRevision.status == RuntimeConfigurationStatus.DESIRED,
+            col(RuntimeInstance.runtime_node_id) == node.id,
+            col(RuntimeInstance.enabled).is_(True),
+            col(RuntimeInstance.desired_configuration_revision_id)
+            == col(RuntimeConfigurationRevision.id),
+            col(RuntimeConfigurationRevision.status)
+            == RuntimeConfigurationStatus.DESIRED,
         )
         .order_by(col(RuntimeConfigurationRevision.created_at))
         .with_for_update(skip_locked=True)
@@ -687,10 +688,10 @@ async def _send_pending_agent_releases(
         select(AgentDeployment)
         .where(
             or_(
-                AgentDeployment.runtime_profile_id == node.runtime_profile_id,
+                col(AgentDeployment.runtime_profile_id) == node.runtime_profile_id,
                 col(AgentDeployment.runtime_instance_id).in_(runtime_instance_ids),
             ),
-            AgentDeployment.status == AgentDeploymentStatus.PENDING,
+            col(AgentDeployment.status) == AgentDeploymentStatus.PENDING,
         )
         .order_by(col(AgentDeployment.created_at))
         .with_for_update(skip_locked=True)
@@ -877,30 +878,27 @@ async def _send_pending_skill_sync(
         select(RuntimeSkillState)
         .where(
             or_(
-                RuntimeSkillState.runtime_profile_id == node.runtime_profile_id,
+                col(RuntimeSkillState.runtime_profile_id) == node.runtime_profile_id,
                 col(RuntimeSkillState.runtime_instance_id).in_(runtime_instance_ids),
             ),
-            RuntimeSkillState.subscription_count > 0,
+            col(RuntimeSkillState.subscription_count) > 0,
             or_(
-                RuntimeSkillState.status == "pending",
-                (
-                    (RuntimeSkillState.status == "failed")
-                    & (RuntimeSkillState.retry_count < 5)
-                    & (RuntimeSkillState.next_retry_at <= datetime.now(timezone.utc))
+                col(RuntimeSkillState.status) == "pending",
+                and_(
+                    col(RuntimeSkillState.status) == "failed",
+                    col(RuntimeSkillState.retry_count) < 5,
+                    col(RuntimeSkillState.next_retry_at).is_not(None),
+                    col(RuntimeSkillState.next_retry_at) <= datetime.now(timezone.utc),
                 ),
-                (
-                    (RuntimeSkillState.status == "syncing")
-                    & (
-                        RuntimeSkillState.updated_at
-                        <= datetime.now(timezone.utc) - timedelta(minutes=10)
-                    )
+                and_(
+                    col(RuntimeSkillState.status) == "syncing",
+                    col(RuntimeSkillState.updated_at)
+                    <= datetime.now(timezone.utc) - timedelta(minutes=10),
                 ),
-                (
-                    (RuntimeSkillState.status == "committing")
-                    & (
-                        RuntimeSkillState.updated_at
-                        <= datetime.now(timezone.utc) - timedelta(minutes=1)
-                    )
+                and_(
+                    col(RuntimeSkillState.status) == "committing",
+                    col(RuntimeSkillState.updated_at)
+                    <= datetime.now(timezone.utc) - timedelta(minutes=1),
                 ),
             ),
             col(RuntimeSkillState.desired_version_id).is_not(None),
@@ -985,10 +983,10 @@ async def _send_pending_mcp_validations(
         )
         .where(
             or_(
-                McpTargetBinding.runtime_profile_id == node.runtime_profile_id,
+                col(McpTargetBinding.runtime_profile_id) == node.runtime_profile_id,
                 col(McpTargetBinding.runtime_instance_id).in_(runtime_instance_ids),
             ),
-            McpValidationAttempt.status == McpTargetStatus.PENDING,
+            col(McpValidationAttempt.status) == McpTargetStatus.PENDING,
         )
         .order_by(col(McpValidationAttempt.created_at))
         .with_for_update(skip_locked=True)
@@ -1339,7 +1337,7 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                     targets = session.exec(
                         select(McpTargetBinding).where(
                             or_(
-                                McpTargetBinding.runtime_profile_id
+                                col(McpTargetBinding.runtime_profile_id)
                                 == current.runtime_profile_id,
                                 col(McpTargetBinding.runtime_instance_id).in_(
                                     runtime_instance_ids
@@ -1963,7 +1961,7 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                     "2.0",
                 }:
                     try:
-                        evidence = [
+                        skill_evidence = [
                             SkillUsageItem.model_validate(item)
                             for item in message.payload.get("skill_evidence", [])
                         ]
@@ -1973,7 +1971,7 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                             current.runtime_profile_id
                             if task.runtime_instance_id is None
                             else None,
-                            evidence,
+                            skill_evidence,
                             runtime_instance_id=task.runtime_instance_id,
                         )
                     except (HTTPException, ValidationError) as exc:
@@ -2025,7 +2023,7 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                         if usage
                         else None
                     )
-                    evidence = message.payload.get("model_evidence")
+                    model_evidence = message.payload.get("model_evidence")
                     expected = (
                         {
                             "runtime_instance_id": str(usage.runtime_instance_id),
@@ -2064,8 +2062,9 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                         except RuntimeCatalogError:
                             pass
                     if (
-                        not isinstance(evidence, dict)
-                        or evidence != expected
+                        usage is None
+                        or not isinstance(model_evidence, dict)
+                        or model_evidence != expected
                         or binding is None
                         or not binding_is_current
                     ):
@@ -2091,7 +2090,7 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                             )
                         )
                         continue
-                    usage.runtime_evidence = evidence
+                    usage.runtime_evidence = model_evidence
                     usage.evidenced_at = datetime.now(timezone.utc)
                     session.add(usage)
                     if binding.route_type == RuntimeModelRouteType.RUNTIME_NATIVE:
@@ -2313,10 +2312,10 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                 )
             elif message.type in {"runtime_config_applied", "runtime_config_rejected"}:
                 runtime_id = uuid.UUID(message.payload["runtime_id"])
-                runtime = session.get(RuntimeProfile, runtime_id)
+                runtime_profile = session.get(RuntimeProfile, runtime_id)
                 if (
-                    runtime is None
-                    or current.runtime_profile_id != runtime.id
+                    runtime_profile is None
+                    or current.runtime_profile_id != runtime_profile.id
                     or int(message.payload["revision"]) != current.config_revision
                 ):
                     await websocket.send_json(
@@ -2328,8 +2327,8 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                         )
                     )
                     continue
-                runtime.config = {
-                    **runtime.config,
+                runtime_profile.config = {
+                    **runtime_profile.config,
                     "direct_compatibility_verified": message.type
                     == "runtime_config_applied"
                     and message.payload.get("direct_compatibility_verified") is True,
@@ -2343,7 +2342,7 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                     if message.type == "runtime_config_applied"
                     else None,
                 }
-                session.add(runtime)
+                session.add(runtime_profile)
                 session.commit()
                 await websocket.send_json(
                     _envelope(
@@ -2356,7 +2355,7 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
             elif message.type == "mcp_validation_result":
                 try:
                     attempt_id = uuid.UUID(message.payload["attempt_id"])
-                    body = McpValidationResult.model_validate(
+                    mcp_body = McpValidationResult.model_validate(
                         {
                             key: value
                             for key, value in message.payload.items()
@@ -2376,14 +2375,14 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                         )
                     )
                     continue
-                attempt = session.exec(
+                mcp_attempt = session.exec(
                     select(McpValidationAttempt)
                     .where(McpValidationAttempt.id == attempt_id)
                     .with_for_update()
                 ).first()
                 validation_target = (
-                    session.get(McpTargetBinding, attempt.target_binding_id)
-                    if attempt
+                    session.get(McpTargetBinding, mcp_attempt.target_binding_id)
+                    if mcp_attempt
                     else None
                 )
                 mcp_revision = (
@@ -2396,7 +2395,7 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                     if mcp_revision
                     else None
                 )
-                runtime = (
+                validation_runtime_profile = (
                     session.get(RuntimeProfile, validation_target.runtime_profile_id)
                     if validation_target and validation_target.runtime_profile_id
                     else None
@@ -2407,7 +2406,7 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                     else None
                 )
                 if (
-                    attempt is None
+                    mcp_attempt is None
                     or validation_target is None
                     or server is None
                     or (
@@ -2417,7 +2416,7 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                     or (
                         validation_runtime_instance is None
                         and (
-                            runtime is None
+                            validation_runtime_profile is None
                             or validation_target.runtime_profile_id
                             != current.runtime_profile_id
                         )
@@ -2432,24 +2431,24 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                         )
                     )
                     continue
-                expected_fingerprint = (
-                    current_runtime_evidence(session, validation_runtime_instance)[
-                        1
-                    ].capability_fingerprint
-                    if validation_runtime_instance is not None
-                    else runtime_capability_fingerprint(
-                        runtime, current.harness_capabilities
+                if validation_runtime_instance is not None:
+                    expected_fingerprint = current_runtime_evidence(
+                        session, validation_runtime_instance
+                    )[1].capability_fingerprint
+                else:
+                    assert validation_runtime_profile is not None
+                    expected_fingerprint = runtime_capability_fingerprint(
+                        validation_runtime_profile, current.harness_capabilities
                     )
-                )
-                if body.capability_fingerprint != expected_fingerprint:
-                    body = McpValidationResult(
+                if mcp_body.capability_fingerprint != expected_fingerprint:
+                    mcp_body = McpValidationResult(
                         status="failed",
-                        capability_fingerprint=body.capability_fingerprint,
+                        capability_fingerprint=mcp_body.capability_fingerprint,
                         error={"code": "stale_capability_fingerprint"},
                     )
                 try:
                     _apply_validation_result(
-                        attempt, validation_target, server, body, session
+                        mcp_attempt, validation_target, server, mcp_body, session
                     )
                     session.commit()
                 except HTTPException as exc:
@@ -2470,7 +2469,10 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                     _envelope(
                         "mcp_validation_result_ack",
                         node.id,
-                        {"attempt_id": str(attempt.id), "status": attempt.status.value},
+                        {
+                            "attempt_id": str(mcp_attempt.id),
+                            "status": mcp_attempt.status.value,
+                        },
                         message.message_id,
                     )
                 )
@@ -2517,7 +2519,7 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                     )
                     continue
                 try:
-                    attempt, skill, version = create_sync_attempt(
+                    sync_attempt, skill, version = create_sync_attempt(
                         session, state, trigger="notification"
                     )
                 except ValueError as exc:
@@ -2538,7 +2540,7 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                         )
                     )
                     continue
-                payload = sync_payload(attempt, skill, version)
+                payload = sync_payload(sync_attempt, skill, version)
                 payload.update(
                     {
                         **(
@@ -2546,9 +2548,9 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                             if state.runtime_instance_id
                             else {"runtime_profile_id": str(state.runtime_profile_id)}
                         ),
-                        "download_path": f"/api/v1/node/skill-sync/{attempt.id}/download",
+                        "download_path": f"/api/v1/node/skill-sync/{sync_attempt.id}/download",
                         "download_token": issue_skill_download_token(
-                            attempt_id=attempt.id,
+                            attempt_id=sync_attempt.id,
                             node_id=node.id,
                             runtime_profile_id=state.runtime_profile_id,
                             runtime_instance_id=state.runtime_instance_id,
@@ -2571,7 +2573,7 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
             elif message.type == "skill_sync_result":
                 try:
                     attempt_id = uuid.UUID(message.payload["attempt_id"])
-                    body = SkillSyncResult.model_validate(
+                    sync_body = SkillSyncResult.model_validate(
                         {
                             key: value
                             for key, value in message.payload.items()
@@ -2618,7 +2620,9 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                     )
                     continue
                 try:
-                    result = apply_skill_sync_result(attempt_id, body, session)
+                    sync_result = apply_skill_sync_result(
+                        attempt_id, sync_body, session
+                    )
                 except HTTPException as exc:
                     session.rollback()
                     await websocket.send_json(
@@ -2633,7 +2637,10 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                         )
                     )
                     continue
-                if body.status == "verified" and result["status"] == "committing":
+                if (
+                    sync_body.status == "verified"
+                    and sync_result["status"] == "committing"
+                ):
                     await websocket.send_json(
                         _envelope(
                             "skill_sync_commit",
@@ -2647,7 +2654,10 @@ async def node_websocket(websocket: WebSocket, session: SessionDep) -> None:
                     _envelope(
                         "skill_sync_result_ack",
                         node.id,
-                        {"attempt_id": str(attempt_id), "status": result["status"]},
+                        {
+                            "attempt_id": str(attempt_id),
+                            "status": sync_result["status"],
+                        },
                         message.message_id,
                     )
                 )

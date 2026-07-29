@@ -9,6 +9,7 @@ import re
 import tempfile
 import uuid
 import zipfile
+from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
@@ -467,7 +468,7 @@ def _decode_draft_content(
     return raw, is_text
 
 
-def _draft_digest(files: list[SkillDraftFile]) -> str:
+def _draft_digest(files: Sequence[SkillDraftFile]) -> str:
     return canonical_digest(
         [
             {"path": item.path, "sha256": item.content_sha256, "size": item.size}
@@ -629,10 +630,12 @@ def list_skills(
     if archived is not None:
         query = query.where(SkillDefinition.archived == archived)
     if draft_dirty is not None:
-        query = query.join(SkillDraft, SkillDraft.skill_id == SkillDefinition.id)
+        query = query.join(
+            SkillDraft, col(SkillDraft.skill_id) == col(SkillDefinition.id)
+        )
         dirty_condition = or_(
             col(SkillDraft.validated_revision).is_(None),
-            SkillDraft.validated_revision != SkillDraft.revision,
+            col(SkillDraft.validated_revision) != col(SkillDraft.revision),
         )
         query = query.where(dirty_condition if draft_dirty else ~dirty_condition)
     total = session.exec(
@@ -662,32 +665,36 @@ def list_skills(
     }
     version_counts = dict(
         session.exec(
-            select(SkillVersion.skill_id, func.count(SkillVersion.id))
+            select(col(SkillVersion.skill_id), func.count(col(SkillVersion.id)))
             .where(col(SkillVersion.skill_id).in_(skill_ids))
-            .group_by(SkillVersion.skill_id)
+            .group_by(col(SkillVersion.skill_id))
         ).all()
     )
     reference_counts = dict(
         session.exec(
-            select(AgentDraftSkill.skill_id, func.count(AgentDraftSkill.id))
+            select(col(AgentDraftSkill.skill_id), func.count(col(AgentDraftSkill.id)))
             .where(col(AgentDraftSkill.skill_id).in_(skill_ids))
-            .group_by(AgentDraftSkill.skill_id)
+            .group_by(col(AgentDraftSkill.skill_id))
         ).all()
     )
     sync_counts: dict[uuid.UUID, dict[str, int]] = {}
     for skill_id, status, count in session.exec(
         select(
-            RuntimeSkillState.skill_id,
-            RuntimeSkillState.status,
-            func.count(RuntimeSkillState.id),
+            col(RuntimeSkillState.skill_id),
+            col(RuntimeSkillState.status),
+            func.count(col(RuntimeSkillState.id)),
         )
         .where(col(RuntimeSkillState.skill_id).in_(skill_ids))
-        .group_by(RuntimeSkillState.skill_id, RuntimeSkillState.status)
+        .group_by(col(RuntimeSkillState.skill_id), col(RuntimeSkillState.status))
     ).all():
         sync_counts.setdefault(skill_id, {})[status] = count
     data: list[dict[str, Any]] = []
     for row in rows:
-        current = versions.get(row.current_version_id)
+        current = (
+            versions.get(row.current_version_id)
+            if row.current_version_id is not None
+            else None
+        )
         draft = drafts.get(row.id)
         data.append(
             {
@@ -2039,31 +2046,31 @@ def _mcp_runtime_target(
     str,
 ]:
     if runtime_instance_id is not None:
-        runtime = session.get(RuntimeInstance, runtime_instance_id)
-        if runtime is None or runtime.namespace_id != namespace_id:
+        runtime_instance = session.get(RuntimeInstance, runtime_instance_id)
+        if runtime_instance is None or runtime_instance.namespace_id != namespace_id:
             raise HTTPException(404, "Runtime target not found")
         try:
             _configuration, capability, _catalog = current_runtime_evidence(
-                session, runtime
+                session, runtime_instance
             )
         except RuntimeCatalogError as exc:
             raise HTTPException(
                 409, {"code": exc.code, "message": exc.message}
             ) from exc
         return (
-            runtime,
-            runtime.location_type,
+            runtime_instance,
+            runtime_instance.location_type,
             capability.capabilities,
             capability.capability_fingerprint,
         )
-    runtime = session.get(RuntimeProfile, runtime_profile_id)
-    if runtime is None or runtime.namespace_id != namespace_id:
+    runtime_profile = session.get(RuntimeProfile, runtime_profile_id)
+    if runtime_profile is None or runtime_profile.namespace_id != namespace_id:
         raise HTTPException(404, "Runtime target not found")
     return (
-        runtime,
-        RuntimeLocationType(runtime.runtime_type.value),
-        runtime.harness_capabilities,
-        runtime_capability_fingerprint(runtime),
+        runtime_profile,
+        RuntimeLocationType(runtime_profile.runtime_type.value),
+        runtime_profile.harness_capabilities,
+        runtime_capability_fingerprint(runtime_profile),
     )
 
 
@@ -2477,8 +2484,8 @@ def put_mcp_secret(
     _: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_admin),
 ) -> dict[str, Any]:
-    _server, revision, target, _runtime, location, _inventory, _fingerprint = _get_mcp_target(
-        session, target_id, namespace_id
+    _server, revision, target, _runtime, location, _inventory, _fingerprint = (
+        _get_mcp_target(session, target_id, namespace_id)
     )
     if location != RuntimeLocationType.PLATFORM:
         raise HTTPException(422, "Node secrets must be managed locally on the node")
@@ -2543,8 +2550,8 @@ def validate_mcp_target(
     _: CurrentUser,
     namespace_id: uuid.UUID = Depends(require_namespace_admin),
 ) -> dict[str, Any]:
-    _server, _revision, target, _runtime, location, _inventory, _fingerprint = _get_mcp_target(
-        session, target_id, namespace_id
+    _server, _revision, target, _runtime, location, _inventory, _fingerprint = (
+        _get_mcp_target(session, target_id, namespace_id)
     )
     if (
         location == RuntimeLocationType.PLATFORM
@@ -2824,11 +2831,13 @@ def report_platform_mcp_validation(
         and runtime_instance.location_type != RuntimeLocationType.PLATFORM
     ):
         raise HTTPException(404, "MCP validation attempt not found")
-    expected_fingerprint = (
-        current_runtime_evidence(session, runtime_instance)[1].capability_fingerprint
-        if runtime_instance is not None
-        else runtime_capability_fingerprint(runtime)
-    )
+    if runtime_instance is not None:
+        expected_fingerprint = current_runtime_evidence(session, runtime_instance)[
+            1
+        ].capability_fingerprint
+    else:
+        assert runtime is not None
+        expected_fingerprint = runtime_capability_fingerprint(runtime)
     if body.capability_fingerprint != expected_fingerprint:
         body = McpValidationResult(
             status="failed",

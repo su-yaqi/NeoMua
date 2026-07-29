@@ -178,7 +178,7 @@ def list_conversation_runtimes(
     rows = session.exec(
         select(RuntimeInstance).where(
             RuntimeInstance.namespace_id == namespace_id,
-            RuntimeInstance.enabled.is_(True),
+            col(RuntimeInstance.enabled).is_(True),
             RuntimeInstance.status == RuntimeInstanceStatus.AVAILABLE,
         )
     ).all()
@@ -208,8 +208,7 @@ def list_conversation_models(
     if runtime is None or runtime.namespace_id != namespace_id:
         raise HTTPException(404, "Runtime not found")
     rows = session.exec(
-        select(RuntimeModelBinding)
-        .where(
+        select(RuntimeModelBinding).where(
             RuntimeModelBinding.runtime_instance_id == runtime.id,
             RuntimeModelBinding.status == RuntimeModelBindingStatus.AVAILABLE,
         )
@@ -355,7 +354,9 @@ def create_conversation(
             or not runtime_instance.enabled
             or runtime_instance.status != RuntimeInstanceStatus.AVAILABLE
         ):
-            raise HTTPException(422, "Runtime does not belong to the namespace or is unavailable")
+            raise HTTPException(
+                422, "Runtime does not belong to the namespace or is unavailable"
+            )
     elif runtime is None or runtime.namespace_id != namespace_id:
         raise HTTPException(422, "Runtime does not belong to the namespace")
     if body.mode == ConversationMode.CHAT and runtime is not None:
@@ -448,7 +449,11 @@ def create_conversation(
                 )
             ).all()
             organizer = next(
-                (item for item in participants if item.role == ConversationAgentRole.MAIN),
+                (
+                    item
+                    for item in participants
+                    if item.role == ConversationAgentRole.MAIN
+                ),
                 None,
             )
             revision = create_configuration_revision(
@@ -495,9 +500,7 @@ def list_configuration_revisions(
     )
     rows = session.exec(
         select(ConversationConfigurationRevision)
-        .where(
-            ConversationConfigurationRevision.conversation_id == conversation.id
-        )
+        .where(ConversationConfigurationRevision.conversation_id == conversation.id)
         .order_by(col(ConversationConfigurationRevision.revision))
     ).all()
     return {
@@ -507,7 +510,9 @@ def list_configuration_revisions(
     }
 
 
-@router.post("/conversations/{conversation_id}/configuration-revisions", status_code=201)
+@router.post(
+    "/conversations/{conversation_id}/configuration-revisions", status_code=201
+)
 def update_configuration(
     conversation_id: uuid.UUID,
     body: ConversationConfigurationUpdate,
@@ -547,10 +552,7 @@ def update_configuration(
                 "current": configuration_public(current),
             },
         )
-    if (
-        conversation.mode == ConversationMode.CHAT
-        and conversation.runtime_instance_id is not None
-    ):
+    if conversation.mode == ConversationMode.CHAT:
         if (
             body.chat_model_selection is None
             or body.provider_config_id is not None
@@ -559,7 +561,9 @@ def update_configuration(
             or body.organizer_runtime_agent_release_id is not None
             or body.participant_selections
         ):
-            raise HTTPException(422, "v0.9 Chat configuration requires one exact model selection")
+            raise HTTPException(
+                422, "v0.9 Chat configuration requires one exact model selection"
+            )
         runtime_instance = session.get(
             RuntimeInstance, conversation.runtime_instance_id
         )
@@ -572,40 +576,15 @@ def update_configuration(
             mode=body.chat_model_selection.mode,
             exact_binding_id=body.chat_model_selection.runtime_model_binding_id,
         )
-        revision = create_configuration_revision(
-            session, conversation, current_user.id
-        )
+        revision = create_configuration_revision(session, conversation, current_user.id)
         attach_execution_bindings(session, revision, [execution_binding])
-    elif conversation.mode == ConversationMode.CHAT:
-        if (
-            body.provider_config_id is None
-            or body.model_id is None
-            or body.participant_runtime_agent_release_ids
-            or body.organizer_runtime_agent_release_id is not None
-        ):
-            raise HTTPException(422, "Chat configuration requires only a model")
-        validate_chat_route(
-            session,
-            conversation.namespace_id,
-            conversation.runtime_id,
-            body.provider_config_id,
-            body.model_id,
-        )
-        revision = create_configuration_revision(
-            session,
-            conversation,
-            current_user.id,
-            provider_config_id=body.provider_config_id,
-            model_id=body.model_id,
-        )
-    elif conversation.runtime_instance_id is not None:
+    else:
         runtime_instance = session.get(
             RuntimeInstance, conversation.runtime_instance_id
         )
         selections = body.participant_selections
         organizer_binding_id = body.organizer_runtime_agent_release_id
         organizer_participant_id = body.organizer_conversation_agent_id
-        binding_ids = [item.runtime_agent_release_id for item in selections]
         if (
             runtime_instance is None
             or body.provider_config_id is not None
@@ -619,11 +598,13 @@ def update_configuration(
                 422,
                 "v0.9 Agent configuration requires selections and one organizer",
             )
-        existing = session.exec(
-            select(ConversationAgent).where(
-                ConversationAgent.conversation_id == conversation.id
-            )
-        ).all()
+        existing = list(
+            session.exec(
+                select(ConversationAgent).where(
+                    ConversationAgent.conversation_id == conversation.id
+                )
+            ).all()
+        )
         by_id = {item.id: item for item in existing}
         used_participant_ids: set[uuid.UUID] = set()
         selected: list[ConversationAgent] = []
@@ -649,10 +630,7 @@ def update_configuration(
                     None,
                 )
             )
-            if (
-                selection.conversation_agent_id is not None
-                and participant is None
-            ):
+            if selection.conversation_agent_id is not None and participant is None:
                 raise HTTPException(404, "Conversation Agent participant not found")
             if (
                 participant is not None
@@ -736,72 +714,6 @@ def update_configuration(
             participant_ids=[item.id for item in selected],
         )
         attach_execution_bindings(session, revision, execution_bindings)
-    else:
-        binding_ids = body.participant_runtime_agent_release_ids
-        organizer_binding_id = body.organizer_runtime_agent_release_id
-        if (
-            body.provider_config_id is not None
-            or body.model_id is not None
-            or not binding_ids
-            or organizer_binding_id is None
-            or organizer_binding_id not in binding_ids
-            or len(binding_ids) != len(set(binding_ids))
-        ):
-            raise HTTPException(
-                422,
-                "Agent configuration requires unique participants and one organizer",
-            )
-        existing = session.exec(
-            select(ConversationAgent).where(
-                ConversationAgent.conversation_id == conversation.id
-            )
-        ).all()
-        by_binding = {item.runtime_agent_release_id: item for item in existing}
-        selected: list[ConversationAgent] = []
-        for binding_id in binding_ids:
-            binding, release = validate_agent_binding(
-                session, conversation.namespace_id, conversation.runtime_id, binding_id
-            )
-            participant = by_binding.get(binding_id)
-            if participant is None:
-                participant = add_conversation_agent(
-                    session,
-                    conversation,
-                    binding,
-                    release,
-                    ConversationAgentRole.COLLABORATOR,
-                    current_user.id,
-                )
-                session.flush()
-                by_binding[binding_id] = participant
-            elif (
-                participant.agent_release_id != release.id
-                or participant.resolved_spec_digest != release.resolved_spec_digest
-            ):
-                raise HTTPException(
-                    409,
-                    "A historical Agent participant now points to a different Release; create a new conversation",
-                )
-            selected.append(participant)
-        organizer = by_binding[organizer_binding_id]
-        old_main = next(
-            (item for item in existing if item.role == ConversationAgentRole.MAIN),
-            None,
-        )
-        if old_main is not None and old_main.id != organizer.id:
-            old_main.role = ConversationAgentRole.COLLABORATOR
-            session.add(old_main)
-            session.flush()
-        organizer.role = ConversationAgentRole.MAIN
-        session.add(organizer)
-        session.flush()
-        revision = create_configuration_revision(
-            session,
-            conversation,
-            current_user.id,
-            organizer_agent_id=organizer.id,
-            participant_ids=[item.id for item in selected],
-        )
     append_conversation_event(
         session,
         conversation.id,
@@ -1073,6 +985,8 @@ async def _execute_chat_message(
         or configuration.model_id is None
     ):
         raise HTTPException(409, "Message model configuration is incomplete")
+    if conversation.runtime_id is None:
+        raise HTTPException(409, "Message Runtime route is incomplete")
     validate_chat_route(
         session,
         conversation.namespace_id,
@@ -1186,9 +1100,7 @@ async def create_message(
             409,
             {"code": "conversation_turn_in_progress", "message_id": str(active.id)},
         )
-    configuration = ensure_current_configuration(
-        session, locked, current_user.id
-    )
+    configuration = ensure_current_configuration(session, locked, current_user.id)
     if conversation.mode == ConversationMode.CHAT:
         if body.target_type != MessageTargetType.MODEL:
             raise HTTPException(422, "Chat messages must target the fixed model")
@@ -1467,7 +1379,9 @@ def derive_conversation(
         or not runtime.enabled
         or runtime.status != RuntimeInstanceStatus.AVAILABLE
     ):
-        raise HTTPException(422, "Runtime does not belong to the namespace or is unavailable")
+        raise HTTPException(
+            422, "Runtime does not belong to the namespace or is unavailable"
+        )
     execution_binding = resolve_v09_execution_binding(
         session,
         runtime=runtime,

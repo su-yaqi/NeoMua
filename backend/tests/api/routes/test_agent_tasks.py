@@ -29,7 +29,9 @@ from tests.api.routes.test_namespaces import create_namespace, namespace_headers
 from tests.utils.user import authentication_token_from_email, create_random_user
 
 
-def ready_runtime(db: Session, namespace_id: uuid.UUID) -> tuple[RuntimeInstance, RuntimeModelBinding]:
+def ready_runtime(
+    db: Session, namespace_id: uuid.UUID
+) -> tuple[RuntimeInstance, RuntimeModelBinding]:
     definition = LlmModelDefinition(
         namespace_id=namespace_id,
         provider_family="anthropic",
@@ -133,9 +135,13 @@ def test_v09_task_freezes_exact_model_and_emits_binding_evidence(
     )
     db.commit()
     event = db.exec(
-        select(AgentEvent).where(AgentEvent.task_id == task_id, AgentEvent.sequence == 1)
+        select(AgentEvent).where(
+            AgentEvent.task_id == task_id, AgentEvent.sequence == 1
+        )
     ).one()
-    assert event.payload["model_execution"]["runtime_model_binding_id"] == str(binding.id)
+    assert event.payload["model_execution"]["runtime_model_binding_id"] == str(
+        binding.id
+    )
     append_and_apply_event(
         db,
         task_id,
@@ -214,6 +220,38 @@ def test_v09_task_rejects_stale_model_binding(
     )
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "model_binding_validation_stale"
+
+
+def test_v09_task_rejects_missing_runtime_timeout_limit(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    namespace = create_namespace(db)
+    runtime, binding = ready_runtime(db, namespace.id)
+    configuration = db.get(
+        RuntimeConfigurationRevision, runtime.applied_configuration_revision_id
+    )
+    assert configuration is not None
+    configuration.resource_limits = {"max_timeout_seconds": None}
+    db.add(configuration)
+    db.commit()
+
+    response = client.post(
+        f"{settings.API_V1_STR}/runtime-tasks",
+        headers={
+            **namespace_headers(superuser_token_headers, namespace.id),
+            "Idempotency-Key": "missing-timeout-limit",
+        },
+        json={
+            "runtime_instance_id": str(runtime.id),
+            "runtime_model_binding_id": str(binding.id),
+            "model_selection_mode": "exact",
+            "prompt": "Must not run",
+        },
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "runtime_timeout_configuration_invalid"
 
 
 def test_developer_cannot_dispatch_admin_v09_task(

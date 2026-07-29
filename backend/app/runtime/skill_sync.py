@@ -216,7 +216,7 @@ def _runtime_skill_reference_releases(
             AgentDeployment.runtime_instance_id == runtime_instance_id
             if runtime_instance_id
             else AgentDeployment.runtime_profile_id == runtime_profile_id,
-            AgentDeployment.status.in_(
+            col(AgentDeployment.status).in_(
                 [AgentDeploymentStatus.PENDING, AgentDeploymentStatus.DISPATCHED]
             ),
         )
@@ -324,10 +324,10 @@ def release_skill_blockers(
                 else RuntimeSkillState.runtime_profile_id == runtime_profile_id,
                 RuntimeSkillState.skill_id == skill_id,
                 or_(
-                    RuntimeSkillState.status == "blocked",
+                    col(RuntimeSkillState.status) == "blocked",
                     (
-                        (RuntimeSkillState.status == "failed")
-                        & (RuntimeSkillState.retry_count >= 5)
+                        (col(RuntimeSkillState.status) == "failed")
+                        & (col(RuntimeSkillState.retry_count) >= 5)
                     ),
                 ),
             )
@@ -435,8 +435,8 @@ def next_pending_skill_state(
     session: Session, *, runtime_profile_id: uuid.UUID | None = None
 ) -> RuntimeSkillState | None:
     query = select(RuntimeSkillState).where(
-        RuntimeSkillState.subscription_count > 0,
-        RuntimeSkillState.status.in_(["pending", "failed"]),
+        col(RuntimeSkillState.subscription_count) > 0,
+        col(RuntimeSkillState.status).in_(["pending", "failed"]),
         col(RuntimeSkillState.desired_version_id).is_not(None),
     )
     if runtime_profile_id is not None:

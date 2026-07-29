@@ -242,7 +242,11 @@ def resolve_v09_execution_binding(
         if missing:
             raise HTTPException(
                 409,
-                {"code": "required_tools_missing", "role_key": role_key, "missing": missing},
+                {
+                    "code": "required_tools_missing",
+                    "role_key": role_key,
+                    "missing": missing,
+                },
             )
     effective_digest = canonical_digest(
         {
@@ -281,7 +285,9 @@ def attach_execution_bindings(
 ) -> None:
     fingerprints = {binding.model_catalog_fingerprint for binding in bindings}
     if len(fingerprints) != 1:
-        raise HTTPException(409, "Conversation bindings do not share one Runtime catalog")
+        raise HTTPException(
+            409, "Conversation bindings do not share one Runtime catalog"
+        )
     revision.runtime_model_catalog_fingerprint = next(iter(fingerprints))
     session.add(revision)
     for binding in bindings:
@@ -404,7 +410,7 @@ def configuration_public(
     revision: ConversationConfigurationRevision,
     session: Session | None = None,
 ) -> dict[str, Any]:
-    result = {
+    result: dict[str, Any] = {
         "id": str(revision.id),
         "conversation_id": str(revision.conversation_id),
         "revision": revision.revision,
@@ -781,21 +787,21 @@ def create_agent_task(
     )
     effective_prompt = prompt
     if user_message.context_snapshot_id is not None:
-        snapshot = session.get(
+        context_snapshot = session.get(
             ConversationContextSnapshot, user_message.context_snapshot_id
         )
-        if snapshot is None:
+        if context_snapshot is None:
             raise HTTPException(409, "Conversation context snapshot is unavailable")
         materialized = [
             (f"--- {item['path']} @ {item['blob_digest']} ---\n{item['content']}")
-            for item in snapshot.content_refs
+            for item in context_snapshot.content_refs
             if item.get("path")
             and item.get("blob_digest")
             and isinstance(item.get("content"), str)
         ]
         effective_prompt = (
             "以下内容来自已由目标 Runtime 校验并固定的项目上下文快照。"
-            f"快照摘要：{snapshot.content_digest}\n"
+            f"快照摘要：{context_snapshot.content_digest}\n"
             + "\n".join(materialized)
             + f"\n\n当前消息：\n{prompt}"
         )
@@ -900,7 +906,10 @@ def create_agent_task(
             )
             validate_model_binding_route(session, resolved_binding)
         except RuntimeCatalogError as exc:
-            raise HTTPException(409, {"code": exc.code, "message": exc.message}) from exc
+            raise HTTPException(
+                409, {"code": exc.code, "message": exc.message}
+            ) from exc
+        assert execution_binding is not None and model_binding is not None
         if (
             current_configuration.id
             != execution_binding.runtime_configuration_revision_id
@@ -910,7 +919,7 @@ def create_agent_task(
             raise HTTPException(409, "frozen_execution_evidence_changed")
         tools = list(resolved_spec.get("tools", []))
         policies = dict(resolved_spec.get("policies", {}))
-        snapshot = {
+        task_snapshot: dict[str, Any] = {
             "schema_version": "0.9",
             "conversation_id": str(conversation.id),
             "conversation_message_id": str(user_message.id),
@@ -978,7 +987,7 @@ def create_agent_task(
         }
     else:
         assert runtime is not None
-        snapshot = {
+        task_snapshot = {
             "conversation_id": str(conversation.id),
             "conversation_message_id": str(user_message.id),
             "route_mode": runtime.route_mode.value,
@@ -1016,7 +1025,7 @@ def create_agent_task(
         runtime_instance_id=runtime_instance.id if runtime_instance else None,
         target_node_id=node_id,
         prompt=effective_prompt,
-        snapshot=snapshot,
+        snapshot=task_snapshot,
         agent_release_id=release.id,
         runtime_agent_release_id=binding.id,
         resolved_spec_digest=release.resolved_spec_digest,
@@ -1030,6 +1039,7 @@ def create_agent_task(
     session.add(task)
     session.flush()
     if runtime_instance is not None:
+        assert execution_binding is not None and model_binding is not None
         session.add(
             AgentTaskModelUsage(
                 task_id=task.id,
@@ -1061,7 +1071,10 @@ def create_chat_task(
     prompt: str,
     system_prompt: str | None,
 ) -> AgentTask:
-    if conversation.runtime_instance_id is None or message.configuration_revision_id is None:
+    if (
+        conversation.runtime_instance_id is None
+        or message.configuration_revision_id is None
+    ):
         raise HTTPException(409, "v0.9 Chat execution binding is incomplete")
     runtime = session.get(RuntimeInstance, conversation.runtime_instance_id)
     execution = session.exec(
@@ -1079,7 +1092,9 @@ def create_chat_task(
             RuntimeModelBinding, execution.runtime_model_binding_id
         )
         if model_binding is None:
-            raise RuntimeCatalogError("model_binding_missing", "Model binding is missing")
+            raise RuntimeCatalogError(
+                "model_binding_missing", "Model binding is missing"
+            )
         resolved, _ = resolve_model_binding(
             session,
             runtime=runtime,
@@ -1101,11 +1116,13 @@ def create_chat_task(
         node = session.get(RuntimeNode, node_id)
         if node is None or node.revoked_at is not None or not node_is_online(node):
             raise HTTPException(409, "Target Runtime Node is unavailable")
-    snapshot = {
+    snapshot: dict[str, Any] = {
         "schema_version": "0.9",
         "conversation_id": str(conversation.id),
         "conversation_message_id": str(message.id),
-        "conversation_configuration_revision_id": str(message.configuration_revision_id),
+        "conversation_configuration_revision_id": str(
+            message.configuration_revision_id
+        ),
         "conversation_execution_binding_id": str(execution.id),
         "runtime_instance_id": str(runtime.id),
         "runtime_node_id": str(node_id) if node_id else None,

@@ -171,7 +171,7 @@ def create_sync_attempt(
             AgentDeployment.runtime_instance_id == state.runtime_instance_id
             if state.runtime_instance_id
             else AgentDeployment.runtime_profile_id == state.runtime_profile_id,
-            AgentDeployment.status.in_(
+            col(AgentDeployment.status).in_(
                 [AgentDeploymentStatus.PENDING, AgentDeploymentStatus.DISPATCHED]
             ),
         )
@@ -230,7 +230,7 @@ def create_sync_attempt(
     stale_attempts = session.exec(
         select(RuntimeSkillSyncAttempt).where(
             RuntimeSkillSyncAttempt.runtime_skill_state_id == state.id,
-            RuntimeSkillSyncAttempt.status.in_(["syncing", "verified"]),
+            col(RuntimeSkillSyncAttempt.status).in_(["syncing", "verified"]),
         )
     ).all()
     for stale in stale_attempts:
@@ -301,7 +301,9 @@ def runtime_skill_status(
     namespace_id: uuid.UUID = Depends(require_namespace_runtime_user),
 ) -> dict[str, Any]:
     runtime_instance = session.get(RuntimeInstance, runtime_id)
-    runtime = session.get(RuntimeProfile, runtime_id) if runtime_instance is None else None
+    runtime = (
+        session.get(RuntimeProfile, runtime_id) if runtime_instance is None else None
+    )
     if (
         runtime_instance is None
         and runtime is None
@@ -311,13 +313,14 @@ def runtime_skill_status(
         and runtime.namespace_id != namespace_id
     ):
         raise HTTPException(404, "Runtime not found")
+    if runtime_instance is not None:
+        target_clause = RuntimeSkillState.runtime_instance_id == runtime_instance.id
+    else:
+        assert runtime is not None
+        target_clause = RuntimeSkillState.runtime_profile_id == runtime.id
     states = session.exec(
         select(RuntimeSkillState)
-        .where(
-            RuntimeSkillState.runtime_instance_id == runtime_instance.id
-            if runtime_instance
-            else RuntimeSkillState.runtime_profile_id == runtime.id
-        )
+        .where(target_clause)
         .order_by(col(RuntimeSkillState.updated_at).desc())
     ).all()
     return {
@@ -391,25 +394,25 @@ def claim_platform_skill_sync(
     session: SessionDep, response: Response
 ) -> dict[str, Any] | None:
     common = (
-        RuntimeSkillState.subscription_count > 0,
+        col(RuntimeSkillState.subscription_count) > 0,
         or_(
-            RuntimeSkillState.status == "pending",
+            col(RuntimeSkillState.status) == "pending",
             (
-                (RuntimeSkillState.status == "failed")
-                & (RuntimeSkillState.retry_count < 5)
-                & (RuntimeSkillState.next_retry_at <= datetime.now(timezone.utc))
+                (col(RuntimeSkillState.status) == "failed")
+                & (col(RuntimeSkillState.retry_count) < 5)
+                & (col(RuntimeSkillState.next_retry_at) <= datetime.now(timezone.utc))
             ),
             (
-                (RuntimeSkillState.status == "syncing")
+                (col(RuntimeSkillState.status) == "syncing")
                 & (
-                    RuntimeSkillState.updated_at
+                    col(RuntimeSkillState.updated_at)
                     <= datetime.now(timezone.utc) - timedelta(minutes=10)
                 )
             ),
             (
-                (RuntimeSkillState.status == "committing")
+                (col(RuntimeSkillState.status) == "committing")
                 & (
-                    RuntimeSkillState.updated_at
+                    col(RuntimeSkillState.updated_at)
                     <= datetime.now(timezone.utc) - timedelta(minutes=1)
                 )
             ),
@@ -428,17 +431,17 @@ def claim_platform_skill_sync(
     ).first()
     if state is None:
         state = session.exec(
-        select(RuntimeSkillState)
-        .join(
-            RuntimeProfile,
-            col(RuntimeSkillState.runtime_profile_id) == RuntimeProfile.id,
-        )
-        .where(
-            RuntimeProfile.runtime_type == RuntimeType.PLATFORM,
-            *common,
-        )
-        .order_by(col(RuntimeSkillState.updated_at))
-        .with_for_update(skip_locked=True)
+            select(RuntimeSkillState)
+            .join(
+                RuntimeProfile,
+                col(RuntimeSkillState.runtime_profile_id) == RuntimeProfile.id,
+            )
+            .where(
+                RuntimeProfile.runtime_type == RuntimeType.PLATFORM,
+                *common,
+            )
+            .order_by(col(RuntimeSkillState.updated_at))
+            .with_for_update(skip_locked=True)
         ).first()
     if state is None:
         response.status_code = 204

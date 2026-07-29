@@ -188,7 +188,9 @@ def _validated_v09_working_directory(
     )
     candidate = path_type(requested)
     if not candidate.is_absolute() or ".." in candidate.parts:
-        raise HTTPException(422, "Working directory must be an absolute normalized path")
+        raise HTTPException(
+            422, "Working directory must be an absolute normalized path"
+        )
     if not any(
         candidate == path_type(root) or path_type(root) in candidate.parents
         for root in roots
@@ -201,14 +203,26 @@ def _v09_task_material(
     session: SessionDep,
     namespace_id: uuid.UUID,
     body: TaskCreate,
-) -> tuple[RuntimeInstance, RuntimeNode | None, RuntimeModelBinding, AgentRelease | None, RuntimeAgentRelease | None, dict[str, Any], AgentTaskModelUsage]:
+) -> tuple[
+    RuntimeInstance,
+    RuntimeNode | None,
+    RuntimeModelBinding,
+    AgentRelease | None,
+    RuntimeAgentRelease | None,
+    dict[str, Any],
+    AgentTaskModelUsage,
+]:
     assert body.runtime_instance_id is not None
     assert body.runtime_model_binding_id is not None
     assert body.model_selection_mode is not None
     runtime = session.get(RuntimeInstance, body.runtime_instance_id)
     if runtime is None or runtime.namespace_id != namespace_id:
         raise HTTPException(404, "Runtime not found")
-    node = session.get(RuntimeNode, runtime.runtime_node_id) if runtime.runtime_node_id else None
+    node = (
+        session.get(RuntimeNode, runtime.runtime_node_id)
+        if runtime.runtime_node_id
+        else None
+    )
     if runtime.location_type == RuntimeLocationType.NODE:
         if node is None or node.revoked_at is not None or not node_is_online(node):
             raise HTTPException(409, "Runtime Node is offline")
@@ -333,6 +347,12 @@ def _v09_task_material(
             "model_catalog_fingerprint": catalog_fingerprint,
         }
     )
+    policy_timeout = policies.get("timeout_seconds", 3600)
+    resource_timeout = configuration.resource_limits.get(
+        "max_timeout_seconds", policy_timeout
+    )
+    if policy_timeout is None or resource_timeout is None:
+        raise HTTPException(409, {"code": "runtime_timeout_configuration_invalid"})
     snapshot = {
         "schema_version": "0.9",
         "runtime_instance_id": str(runtime.id),
@@ -391,14 +411,7 @@ def _v09_task_material(
         "allowed_working_roots": configuration.security_policy.get(
             "allowed_working_roots", []
         ),
-        "timeout_seconds": min(
-            int(policies.get("timeout_seconds", 3600)),
-            int(
-                configuration.resource_limits.get(
-                    "max_timeout_seconds", policies.get("timeout_seconds", 3600)
-                )
-            ),
-        ),
+        "timeout_seconds": min(int(policy_timeout), int(resource_timeout)),
         "effective_spec_digest": effective_digest,
     }
     usage = AgentTaskModelUsage(
@@ -838,7 +851,7 @@ def retry_failed_task(
                     "The original exact execution binding is missing",
                 )
             current_runtime_evidence(session, runtime)
-            resolved, _ = resolve_model_binding(
+            resolved, _selection_source = resolve_model_binding(
                 session,
                 runtime=runtime,
                 mode=ModelSelectionMode.EXACT,

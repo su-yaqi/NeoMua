@@ -313,9 +313,7 @@ def _runtime_public(session: SessionDep, runtime: RuntimeInstance) -> dict[str, 
     if runtime.management_type == RuntimeManagementType.CLIENT_DISCOVERED:
         if observation is not None and observation.status != "available":
             evidence_state = (
-                "installation_missing"
-                if observation.status == "missing"
-                else "blocked"
+                "installation_missing" if observation.status == "missing" else "blocked"
             )
         elif runtime.status == RuntimeInstanceStatus.AVAILABLE:
             evidence_state = "available"
@@ -326,8 +324,7 @@ def _runtime_public(session: SessionDep, runtime: RuntimeInstance) -> dict[str, 
         ):
             evidence_state = "change_detected"
         elif any(
-            binding.status == RuntimeModelBindingStatus.DECLARED
-            for binding in bindings
+            binding.status == RuntimeModelBindingStatus.DECLARED for binding in bindings
         ):
             evidence_state = "validating"
     return {
@@ -1013,6 +1010,7 @@ def resume_managed_node_runtime(
         raise HTTPException(
             409, "managed Node Runtime evidence must be revalidated before resume"
         )
+    assert observation is not None and capability is not None
     runtime.enabled = True
     runtime.status = RuntimeInstanceStatus.AVAILABLE
     runtime.updated_at = datetime.now(timezone.utc)
@@ -1285,7 +1283,12 @@ def report_runtime_discovery(
                     configuration_digest=canonical_digest(configuration_payload_value),
                     status=RuntimeConfigurationStatus.DESIRED,
                     created_by=None,
-                    **configuration_payload_value,
+                    executable=executable,
+                    arguments=[],
+                    working_directory_policy="workspace",
+                    environment_allowlist=[],
+                    security_policy=configuration_payload_value["security_policy"],
+                    resource_limits=configuration_payload_value["resource_limits"],
                 )
                 session.add(configuration)
                 session.flush()
@@ -1323,6 +1326,9 @@ def report_runtime_discovery(
                 },
                 "resource_limits": {"max_timeout_seconds": 3600},
             }
+            executable = (
+                "codex" if item.engine_type == RuntimeEngineType.CODEX else "claude"
+            )
             configuration = RuntimeConfigurationRevision(
                 runtime_instance_id=runtime.id,
                 revision=len(previous_revisions) + 1,
@@ -1331,7 +1337,12 @@ def report_runtime_discovery(
                 configuration_digest=canonical_digest(configuration_payload_value),
                 status=RuntimeConfigurationStatus.DESIRED,
                 created_by=None,
-                **configuration_payload_value,
+                executable=executable,
+                arguments=[],
+                working_directory_policy="workspace",
+                environment_allowlist=[],
+                security_policy=configuration_payload_value["security_policy"],
+                resource_limits=configuration_payload_value["resource_limits"],
             )
             session.add(configuration)
             session.flush()
@@ -1949,6 +1960,7 @@ def report_native_model_validation_result(
                 else None
             )
             if bootstrap is not None and bootstrap.status == BootstrapStatus.STAGED:
+                assert receipt is not None
                 bootstrap.status = BootstrapStatus.RECONCILED
                 bootstrap.completed_at = attempt.completed_at
                 attempt_no = (
