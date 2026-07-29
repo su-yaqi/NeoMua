@@ -1,0 +1,25 @@
+services:
+  proxy:
+    ports: !reset []
+
+  adminer:
+    ports: !reset []
+
+  backend:
+    ports: !reset []
+    environment:
+      BACKEND_CORS_ORIGINS: "http://localhost:5173"
+      ENABLE_PRIVATE_TEST_API: "true"
+      FRONTEND_HOST: "http://localhost:5173"
+
+  mailcatcher:
+    ports: !reset []
+
+  frontend:
+    ports: !reset []
+
+  model-gateway:
+    ports: !reset []
+
+  frontend-dev:
+    ports: !reset []

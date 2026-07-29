@@ -208,6 +208,11 @@ docker compose -f compose.yml up -d
 
 For production you wouldn't want to have the overrides in `compose.override.yml`, that's why we explicitly specify `compose.yml` as the file to use.
 
+The local `DEV_PROJECT_SCOPE` / `DEV_SLOT` wrapper, deterministic host ports, and
+optional `tools` / `proxy` profiles belong only to `compose.override.yml`. They do
+not alter the container ports, image promotion requirements, or network semantics
+of this production command.
+
 ## Continuous Deployment (CD)
 
 You can use GitHub Actions to deploy your project automatically. 😎

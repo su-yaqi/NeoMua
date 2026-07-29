@@ -32,8 +32,8 @@ services:
       - ADMINER_DESIGN=pepa-linha-dark
     labels:
       - traefik.enable=true
-      - traefik.docker.network=traefik-public
-      - traefik.constraint-label=traefik-public
+      - traefik.docker.network=${TRAEFIK_PUBLIC_NETWORK-traefik-public}
+      - traefik.constraint-label=${TRAEFIK_CONSTRAINT_LABEL-traefik-public}
       - traefik.http.routers.${STACK_NAME?Variable not set}-adminer-http.rule=Host(`adminer.${DOMAIN?Variable not set}`)
       - traefik.http.routers.${STACK_NAME?Variable not set}-adminer-http.entrypoints=http
       - traefik.http.routers.${STACK_NAME?Variable not set}-adminer-http.middlewares=https-redirect
@@ -130,8 +130,8 @@ services:
       dockerfile: backend/Dockerfile
     labels:
       - traefik.enable=true
-      - traefik.docker.network=traefik-public
-      - traefik.constraint-label=traefik-public
+      - traefik.docker.network=${TRAEFIK_PUBLIC_NETWORK-traefik-public}
+      - traefik.constraint-label=${TRAEFIK_CONSTRAINT_LABEL-traefik-public}
 
       - traefik.http.services.${STACK_NAME?Variable not set}-backend.loadbalancer.server.port=8000
 
@@ -163,8 +163,8 @@ services:
       - default
     labels:
       - traefik.enable=true
-      - traefik.docker.network=traefik-public
-      - traefik.constraint-label=traefik-public
+      - traefik.docker.network=${TRAEFIK_PUBLIC_NETWORK-traefik-public}
+      - traefik.constraint-label=${TRAEFIK_CONSTRAINT_LABEL-traefik-public}
       - traefik.http.services.${STACK_NAME?Variable not set}-model-gateway.loadbalancer.server.port=8090
       - traefik.http.routers.${STACK_NAME?Variable not set}-model-gateway-http.rule=Host(`gateway.${DOMAIN?Variable not set}`)
       - traefik.http.routers.${STACK_NAME?Variable not set}-model-gateway-http.entrypoints=http
@@ -203,8 +203,8 @@ services:
         - NODE_ENV=production
     labels:
       - traefik.enable=true
-      - traefik.docker.network=traefik-public
-      - traefik.constraint-label=traefik-public
+      - traefik.docker.network=${TRAEFIK_PUBLIC_NETWORK-traefik-public}
+      - traefik.constraint-label=${TRAEFIK_CONSTRAINT_LABEL-traefik-public}
 
       - traefik.http.services.${STACK_NAME?Variable not set}-frontend.loadbalancer.server.port=80
 

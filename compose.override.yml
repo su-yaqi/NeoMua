@@ -7,17 +7,18 @@ services:
   # DOMAIN=localhost.tiangolo.com
   proxy:
     image: traefik:3.6
+    profiles: ["proxy"]
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
-      - "80:80"
-      - "8091:8080"
+      - "${DEV_PROXY_HTTP_PORT?Run through make or scripts/dev-stack.sh}:80"
+      - "${DEV_TRAEFIK_DASHBOARD_PORT?Run through make or scripts/dev-stack.sh}:8080"
     # Duplicate the command from compose.yml to add --api.insecure=true
     command:
       # Enable Docker in Traefik, so that it reads labels from Docker services
       - --providers.docker
       # Add a constraint to only use services with the label for this stack
-      - --providers.docker.constraints=Label(`traefik.constraint-label`, `traefik-public`)
+      - --providers.docker.constraints=Label(`traefik.constraint-label`, `${TRAEFIK_CONSTRAINT_LABEL?Run through make or scripts/dev-stack.sh}`)
       # Do not expose all Docker services, only the ones explicitly exposed
       - --providers.docker.exposedbydefault=false
       # Create an entrypoint "http" listening on port 80
@@ -37,7 +38,7 @@ services:
     labels:
       # Enable Traefik for this service, to make it available in the public network
       - traefik.enable=true
-      - traefik.constraint-label=traefik-public
+      - traefik.constraint-label=${TRAEFIK_CONSTRAINT_LABEL?Run through make or scripts/dev-stack.sh}
       # Dummy https-redirect middleware that doesn't really redirect, only to
       # allow running it locally
       - traefik.http.middlewares.https-redirect.contenttype.autodetect=false
@@ -47,18 +48,21 @@ services:
 
   db:
     restart: "no"
-    ports:
-      - "5432:5432"
 
   adminer:
     restart: "no"
+    profiles: ["tools"]
     ports:
-      - "8080:8080"
+      - "${DEV_ADMINER_PORT?Run through make or scripts/dev-stack.sh}:8080"
+    labels:
+      - traefik.http.routers.${STACK_NAME?Variable not set}-adminer-https.tls.certresolver=
 
   backend:
     restart: "no"
     ports:
-      - "8000:8000"
+      - "${DEV_BACKEND_PORT?Run through make or scripts/dev-stack.sh}:8000"
+    labels:
+      - traefik.http.routers.${STACK_NAME?Variable not set}-backend-https.tls.certresolver=
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -86,30 +90,35 @@ services:
       SMTP_PORT: "1025"
       SMTP_TLS: "false"
       EMAILS_FROM_EMAIL: "noreply@example.com"
-      MODEL_GATEWAY_PUBLIC_URL: "http://localhost:8090"
+      MODEL_GATEWAY_PUBLIC_URL: "${MODEL_GATEWAY_PUBLIC_URL?Run through make or scripts/dev-stack.sh}"
 
   mailcatcher:
     image: schickling/mailcatcher
+    profiles: ["tools", "test"]
     ports:
-      - "1080:1080"
-      - "1025:1025"
+      - "${DEV_MAILCATCHER_PORT?Run through make or scripts/dev-stack.sh}:1080"
+      - "${DEV_SMTP_PORT?Run through make or scripts/dev-stack.sh}:1025"
 
   frontend:
     restart: "no"
-    image: frontend:latest
+    image: "${DOCKER_IMAGE_FRONTEND?Run through make or scripts/dev-stack.sh}:${TAG-dev}"
     build:
       context: .
       dockerfile: frontend/Dockerfile
       args:
-        - VITE_API_URL=http://localhost:8000
+        - VITE_API_URL=${DEV_BACKEND_URL?Run through make or scripts/dev-stack.sh}
         - NODE_ENV=production
     ports:
-      - "5173:80"
+      - "${DEV_FRONTEND_PORT?Run through make or scripts/dev-stack.sh}:80"
+    labels:
+      - traefik.http.routers.${STACK_NAME?Variable not set}-frontend-https.tls.certresolver=
 
   model-gateway:
     restart: "no"
     ports:
-      - "8090:8090"
+      - "${DEV_MODEL_GATEWAY_PORT?Run through make or scripts/dev-stack.sh}:8090"
+    labels:
+      - traefik.http.routers.${STACK_NAME?Variable not set}-model-gateway-https.tls.certresolver=
 
   runtime-worker:
     restart: "no"
@@ -117,13 +126,13 @@ services:
   frontend-dev:
     restart: "no"
     profiles: ["dev-hot"]
-    image: neomua-frontend-dev:latest
+    image: "${DEV_FRONTEND_DEV_IMAGE?Run through make or scripts/dev-stack.sh}"
     build:
       context: .
       dockerfile: frontend/Dockerfile.dev
     working_dir: /app/frontend
     environment:
-      - VITE_API_URL=http://localhost:8000
+      - VITE_API_URL=${DEV_BACKEND_URL?Run through make or scripts/dev-stack.sh}
     command:
       - npm
       - run
@@ -138,7 +147,7 @@ services:
       - ./workflow_apps:/app/workflow_apps:ro
       - frontend-dev-node-modules:/app/frontend/node_modules
     ports:
-      - "5173:5173"
+      - "${DEV_FRONTEND_PORT?Run through make or scripts/dev-stack.sh}:5173"
 
   playwright:
     profiles: ["test"]

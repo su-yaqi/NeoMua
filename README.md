@@ -216,11 +216,11 @@ Frontend docs: [frontend/README.md](./frontend/README.md).
 
 ## NeoMua Development Workflow
 
-For this fork, we keep a fixed daily development workflow in:
+NeoMua's local workflow supports deterministic, isolated Compose instances for parallel worktrees:
 
 - [development-workflow.md](./development-workflow.md)
 
-And use root `Makefile` commands as the standard entrypoint (e.g. `make dev-up`, `make dev-logs-backend`, `make test-backend`).
+Use the root `Makefile` as the only supported local Compose entrypoint. Start with `make DEV_SLOT=0 dev-init`, then `make DEV_SLOT=0 dev-up`; choose another slot for every parallel worktree.
 
 ## Deployment
 

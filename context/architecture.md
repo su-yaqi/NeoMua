@@ -58,6 +58,8 @@ backend routes --> deps / crud --> models --> db
 - 供应商预置目录内置在后端服务层：以统一 `ProviderDefinition` 描述不同供应商的接入参数、鉴权方式、探活和模型发现能力。
 - 密钥仅以版本化 AES-GCM v2 密文落库、对外固定显示 `****`；reader 在迁移期兼容 v1，自带独立 purpose/version AAD。
 - 单体服务 + Compose 编排：当前规模下优先简化开发、测试和部署链路。
+- 本地 Compose 以项目范围和显式 `DEV_SLOT` 形成稳定项目名，并映射到 NeoMua 预留端口块；启动前验证项目工作目录归属和宿主机端口占用，冲突即阻断，不随机改端口、不操作其他项目容器。各实例的镜像、网络、Traefik 发现标签和数据卷随 Compose project 隔离。
+- Backend 与 Playwright 测试使用当前 slot 派生的独立 test project、无宿主机发布端口的一次性数据库卷，并在验证后清理；测试不复用联调数据库，也不与联调 Runtime Worker 竞争协调任务。
 - 能力不可变与目标显式性：Skill/Plugin Version、MCP Revision、Agent Release 内容本身均不可变；Plugin、MCP 与 Agent Release 继续精确锁定自身版本，但 Agent/Plugin/Release 对 Skill 只锁定身份。Skill 当前版本由控制面指针显式决定，Runtime 按目标独立同步，不按 SemVer 猜测，也不做模型、Harness、Tool 或权限降级。
 - v0.9 执行绑定以 Runtime Instance 为边界：Agent Release 只保存稳定模型偏好；Conversation、Workflow 和 Task 保存 exact binding 或严格的偏好解析结果。Runtime 配置摘要、能力指纹、模型目录指纹和 effective spec digest 进入不可变执行快照。
 - v0.9 的 Runtime 模型证明来自本地持久化 applied 配置、实际 Adapter、能力缓存和已验证模型路由，控制面精确核对后才允许首次模型调用。配置环境按运维与 Runtime 双重 allowlist 清洗；目录、权限、Tool/MCP、能力和超时在执行边界复核，当前无法可靠执行的隔离、网络、CPU、内存或并发策略明确阻断。Node 离线、能力过期或依赖变化会统一使旧 Binding 失效。
@@ -83,6 +85,8 @@ browser
 Adminer 仅位于显式 `debug` Compose profile，不属于默认生产拓扑。
 Traefik 负责域名路由与 HTTPS 终止。
 prestart 容器负责迁移前准备与初始化检查。
+
+本地开发默认只发布 Frontend、Backend 和 Model Gateway 入口；Adminer、Mailcatcher 与本地 Traefik 通过显式 profile 按需启动，PostgreSQL 不发布宿主机端口。该本地 override 不改变仅加载 `compose.yml` 的 staging/production 拓扑。
 
 运行时拓扑：
 
