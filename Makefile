@@ -4,10 +4,12 @@ DEV_SLOT ?= 0
 DEV_PROJECT_SCOPE ?= neomua
 DEV_STACK := DEV_SLOT="$(DEV_SLOT)" DEV_PROJECT_SCOPE="$(DEV_PROJECT_SCOPE)" ./scripts/dev-stack.sh
 
-.PHONY: help dev-init dev-preflight dev-up dev-down dev-restart dev-ps dev-logs dev-logs-backend dev-logs-frontend dev-watch dev-health dev-config dev-test-config dev-urls dev-tools-up dev-tools-down dev-proxy-up dev-proxy-down dev-db-shell test-backend test-e2e generate-client frontend-hot-up frontend-hot-down frontend-hot-logs frontend-static-up
+.PHONY: help check-change test-change-process dev-init dev-preflight dev-up dev-down dev-restart dev-ps dev-logs dev-logs-backend dev-logs-frontend dev-watch dev-health dev-config dev-test-config dev-urls dev-tools-up dev-tools-down dev-proxy-up dev-proxy-down dev-db-shell test-backend test-e2e generate-client frontend-hot-up frontend-hot-down frontend-hot-logs frontend-static-up
 
 help:
 	@echo "Available targets:"
+	@echo "  make check-change      - Validate S/M/H risk and process evidence"
+	@echo "  make test-change-process - Test the S/M/H process checker"
 	@echo "  make dev-init          - Create a local .env without overwriting an existing one"
 	@echo "  make dev-preflight     - Check this slot's project ownership and core ports"
 	@echo "  make dev-up            - Build and start the isolated core stack"
@@ -36,6 +38,12 @@ help:
 	@echo "  make frontend-static-up - Switch frontend back to stable static mode"
 	@echo ""
 	@echo "Select another deterministic instance with: make DEV_SLOT=1 dev-up"
+
+check-change:
+	@./scripts/check-change-process.sh
+
+test-change-process:
+	@./scripts/tests/test-check-change-process.sh
 
 dev-init:
 	@$(DEV_STACK) init

@@ -1,5 +1,7 @@
 # NeoMua 本地开发与联调流程
 
+变更分级、分支、PR、context impact 与完成标准见 [development-process.md](./development-process.md)。
+
 本地开发统一通过根目录 `Makefile` 进入。不要直接运行 `docker compose up/down`；统一入口负责固定实例身份、端口计算、项目归属检查和冲突报告。
 
 ## 1. 初始化并启动

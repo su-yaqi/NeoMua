@@ -1,5 +1,7 @@
 # NeoMua Development
 
+Development governance, S/M/H change risk, context impact, branch rules, and the definition of done are documented in [development-process.md](./development-process.md).
+
 ## Local Docker environment
 
 Use the repository `Makefile` for all local Compose operations. The authoritative guide is [development-workflow.md](./development-workflow.md).
