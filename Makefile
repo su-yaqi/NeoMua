@@ -4,12 +4,13 @@ DEV_SLOT ?= 0
 DEV_PROJECT_SCOPE ?= neomua
 DEV_STACK := DEV_SLOT="$(DEV_SLOT)" DEV_PROJECT_SCOPE="$(DEV_PROJECT_SCOPE)" ./scripts/dev-stack.sh
 
-.PHONY: help check-change test-change-process dev-init dev-preflight dev-up dev-down dev-restart dev-ps dev-logs dev-logs-backend dev-logs-frontend dev-watch dev-health dev-config dev-test-config dev-urls dev-tools-up dev-tools-down dev-proxy-up dev-proxy-down dev-db-shell test-backend test-e2e generate-client frontend-hot-up frontend-hot-down frontend-hot-logs frontend-static-up
+.PHONY: help check-change test-change-process test-ci-control dev-init dev-preflight dev-up dev-down dev-restart dev-ps dev-logs dev-logs-backend dev-logs-frontend dev-watch dev-health dev-config dev-test-config dev-urls dev-tools-up dev-tools-down dev-proxy-up dev-proxy-down dev-db-shell test-backend test-e2e test-migrations generate-client frontend-hot-up frontend-hot-down frontend-hot-logs frontend-static-up
 
 help:
 	@echo "Available targets:"
 	@echo "  make check-change      - Validate S/M/H risk and process evidence"
 	@echo "  make test-change-process - Test the S/M/H process checker"
+	@echo "  make test-ci-control   - Test graded CI planning and the single gate"
 	@echo "  make dev-init          - Create a local .env without overwriting an existing one"
 	@echo "  make dev-preflight     - Check this slot's project ownership and core ports"
 	@echo "  make dev-up            - Build and start the isolated core stack"
@@ -31,6 +32,7 @@ help:
 	@echo "  make dev-db-shell      - Open psql inside this slot's database"
 	@echo "  make test-backend      - Run backend pytest in container"
 	@echo "  make test-e2e          - Run playwright tests in playwright container"
+	@echo "  make test-migrations   - Upgrade and validate Alembic heads in an isolated database"
 	@echo "  make generate-client   - Regenerate frontend SDK from backend OpenAPI"
 	@echo "  make frontend-hot-up   - Switch frontend to Docker Vite hot-reload mode"
 	@echo "  make frontend-hot-down - Stop Docker Vite hot-reload frontend"
@@ -44,6 +46,9 @@ check-change:
 
 test-change-process:
 	@./scripts/tests/test-check-change-process.sh
+
+test-ci-control:
+	@python3 -m unittest scripts/tests/test-ci-control.py
 
 dev-init:
 	@$(DEV_STACK) init
@@ -107,7 +112,10 @@ test-backend:
 	@$(DEV_STACK) test-backend
 
 test-e2e:
-	@$(DEV_STACK) test-e2e
+	@$(DEV_STACK) test-e2e $(ARGS)
+
+test-migrations:
+	@$(DEV_STACK) test-migrations
 
 generate-client:
 	bash ./scripts/generate-client.sh

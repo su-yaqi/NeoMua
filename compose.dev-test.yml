@@ -11,6 +11,7 @@ services:
       BACKEND_CORS_ORIGINS: "http://localhost:5173"
       ENABLE_PRIVATE_TEST_API: "true"
       FRONTEND_HOST: "http://localhost:5173"
+      COVERAGE_FAIL_UNDER: "${COVERAGE_FAIL_UNDER-0}"
 
   mailcatcher:
     ports: !reset []

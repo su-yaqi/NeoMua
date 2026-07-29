@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+  push:
+    branches: [master]
+  schedule:
+    - cron: "17 18 * * *"
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: Plan graded checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      risk: ${{ steps.plan.outputs.risk }}
+      full: ${{ steps.plan.outputs.full }}
+      run_hygiene: ${{ steps.plan.outputs.run_hygiene }}
+      run_backend: ${{ steps.plan.outputs.run_backend }}
+      run_e2e: ${{ steps.plan.outputs.run_e2e }}
+      run_compose: ${{ steps.plan.outputs.run_compose }}
+      run_integrity: ${{ steps.plan.outputs.run_integrity }}
+      run_security: ${{ steps.plan.outputs.run_security }}
+      base_sha: ${{ steps.plan.outputs.base_sha }}
+      head_sha: ${{ steps.plan.outputs.head_sha }}
+    steps:
+      - name: Checkout exact revision and history
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Collect changed paths for a pull request
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: git diff --name-only --diff-filter=ACMRTUXB "$BASE_SHA...$HEAD_SHA" > "$RUNNER_TEMP/changed-files.txt"
+      - name: Plan checks and validate the PR declaration
+        id: plan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          args=(
+            --event-file "$GITHUB_EVENT_PATH"
+            --event-name "$EVENT_NAME"
+            --output "$GITHUB_OUTPUT"
+          )
+          if [ "$EVENT_NAME" = pull_request ]; then
+            args+=(--files-file "$RUNNER_TEMP/changed-files.txt")
+          fi
+          python3 scripts/ci-plan.py "${args[@]}"
+
+  hygiene:
+    needs: plan
+    if: needs.plan.outputs.run_hygiene == 'true'
+    uses: ./.github/workflows/pre-commit.yml
+    with:
+      full: ${{ needs.plan.outputs.full == 'true' }}
+      base_sha: ${{ needs.plan.outputs.base_sha }}
+      head_sha: ${{ needs.plan.outputs.head_sha }}
+
+  backend:
+    needs: plan
+    if: needs.plan.outputs.run_backend == 'true'
+    uses: ./.github/workflows/test-backend.yml
+
+  e2e:
+    needs: plan
+    if: needs.plan.outputs.run_e2e == 'true'
+    uses: ./.github/workflows/playwright.yml
+
+  compose:
+    needs: plan
+    if: needs.plan.outputs.run_compose == 'true'
+    uses: ./.github/workflows/test-docker-compose.yml
+
+  integrity:
+    needs: plan
+    if: needs.plan.outputs.run_integrity == 'true'
+    uses: ./.github/workflows/integrity.yml
+
+  security:
+    needs: plan
+    if: needs.plan.outputs.run_security == 'true'
+    uses: ./.github/workflows/zizmor.yml
+
+  gate:
+    name: CI Gate
+    if: always()
+    needs: [plan, hygiene, backend, e2e, compose, integrity, security]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout gate implementation
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Require every planned check to succeed
+        env:
+          CI_NEEDS_JSON: ${{ toJSON(needs) }}
+        run: python3 scripts/ci-gate.py

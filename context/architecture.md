@@ -60,6 +60,8 @@ backend routes --> deps / crud --> models --> db
 - 单体服务 + Compose 编排：当前规模下优先简化开发、测试和部署链路。
 - 本地 Compose 以项目范围和显式 `DEV_SLOT` 形成稳定项目名，并映射到 NeoMua 预留端口块；启动前验证项目工作目录归属和宿主机端口占用，冲突即阻断，不随机改端口、不操作其他项目容器。各实例的镜像、网络、Traefik 发现标签和数据卷随 Compose project 隔离。
 - Backend 与 Playwright 测试使用当前 slot 派生的独立 test project、无宿主机发布端口的一次性数据库卷，并在验证后清理；测试不复用联调数据库，也不与联调 Runtime Worker 竞争协调任务。
+- GitHub Actions 由单一 `CI` 工作流统一规划：PR 根据 S/M/H 声明与路径最低风险运行相关检查，`master`、夜间、Release 与手工触发运行全量；所有路径汇聚到唯一的 `CI Gate`，避免把条件跳过误判为未生成门禁。生成客户端、Python/Bun 锁文件、Alembic 迁移图与 Compose 渲染均有显式完整性检查。
+- staging/production 工作流只消费成功的 `CI` 结果并检出对应 `head_sha`。当前仍在目标 runner 上实时构建并执行 Compose，尚未实现不可变镜像的一次构建/同镜像晋级、完整健康门禁及可靠回滚链路。
 - 能力不可变与目标显式性：Skill/Plugin Version、MCP Revision、Agent Release 内容本身均不可变；Plugin、MCP 与 Agent Release 继续精确锁定自身版本，但 Agent/Plugin/Release 对 Skill 只锁定身份。Skill 当前版本由控制面指针显式决定，Runtime 按目标独立同步，不按 SemVer 猜测，也不做模型、Harness、Tool 或权限降级。
 - v0.9 执行绑定以 Runtime Instance 为边界：Agent Release 只保存稳定模型偏好；Conversation、Workflow 和 Task 保存 exact binding 或严格的偏好解析结果。Runtime 配置摘要、能力指纹、模型目录指纹和 effective spec digest 进入不可变执行快照。
 - v0.9 的 Runtime 模型证明来自本地持久化 applied 配置、实际 Adapter、能力缓存和已验证模型路由，控制面精确核对后才允许首次模型调用。配置环境按运维与 Runtime 双重 allowlist 清洗；目录、权限、Tool/MCP、能力和超时在执行边界复核，当前无法可靠执行的隔离、网络、CPU、内存或并发策略明确阻断。Node 离线、能力过期或依赖变化会统一使旧 Binding 失效。
@@ -112,4 +114,4 @@ Node 发行和 client Adapter 是两层独立不可变签名对象。service 发
 | 安全 | 浏览器 HttpOnly Cookie + CSRF、非浏览器 Bearer；密码使用 Argon2/Bcrypt；重置密码接口避免邮箱枚举 |
 | 可维护性 | 前后端均基于模板标准目录；接口类型由 OpenAPI 生成；文档需同步到 `context/` |
 | 部署 | 所有核心服务均以容器方式运行，依赖 `.env` 注入配置 |
-| 测试 | 后端路由与 CRUD 有 Pytest，前端关键页面有 Playwright 覆盖 |
+| 测试 | 后端路由与 CRUD 有 Pytest，前端关键页面有 Playwright 覆盖；PR 按 S/M/H 分级，默认分支、夜间与发布执行全量并汇聚到单一门禁 |

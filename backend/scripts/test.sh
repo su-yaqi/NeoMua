@@ -8,5 +8,5 @@ if [ "$#" -eq 0 ]; then
 fi
 
 coverage run -m pytest "$@"
-coverage report
+coverage report --fail-under="${COVERAGE_FAIL_UNDER:-0}"
 coverage html --title "coverage"

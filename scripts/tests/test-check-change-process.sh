@@ -109,6 +109,18 @@ expect_fail h-rejects-pending-staging \
     "${common_env[@]}" \
     "${checker}"
 
+expect_fail h-rejects-failed-suite \
+    env \
+    CHANGE_FILES_FILE="${fixture_root}/h-files" \
+    CHANGE_RISK=H \
+    CHANGE_CONTEXT_IMPACT=none \
+    CHANGE_FULL_TEST_EVIDENCE="218 tests passed but coverage gate failed" \
+    CHANGE_MIGRATION_EVIDENCE="not applicable: no data change" \
+    CHANGE_ROLLBACK_EVIDENCE="revert procedure verified" \
+    CHANGE_STAGING_EVIDENCE="health and smoke checks passed" \
+    "${common_env[@]}" \
+    "${checker}"
+
 expect_pass h-complete \
     env \
     CHANGE_FILES_FILE="${fixture_root}/h-files" \

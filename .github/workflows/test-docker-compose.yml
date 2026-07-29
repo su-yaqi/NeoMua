@@ -1,31 +1,33 @@
-name: Test Docker Compose
+name: Reusable Docker Compose Tests
 
 on:
-  push:
-    branches:
-      - master
-  pull_request:
-    types:
-      - opened
-      - synchronize
+  workflow_call:
 
-permissions: {}
+permissions:
+  contents: read
 
 jobs:
-
-  test-docker-compose:
+  compose:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     steps:
-      - name: Checkout
+      - name: Checkout exact revision
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-      - run: docker compose build
-      - run: docker compose down -v --remove-orphans
-      - run: docker compose up -d --wait backend frontend adminer
-      - name: Test backend is up
-        run: curl http://localhost:8000/api/v1/utils/health-check
-      - name: Test frontend is up
-        run: curl http://localhost:5173
-      - run: docker compose down -v --remove-orphans
+      - name: Initialize local test environment
+        run: make dev-init
+      - name: Validate local and production Compose rendering
+        run: |
+          make DEV_SLOT=95 dev-config
+          make DEV_SLOT=95 dev-test-config
+          docker compose -f compose.yml config --quiet
+      - name: Build and start isolated core stack
+        run: make DEV_SLOT=95 dev-up
+      - name: Verify backend and frontend
+        run: |
+          make DEV_SLOT=95 dev-health
+          curl --fail --show-error --silent http://localhost:29500/ >/dev/null
+      - name: Clean up only the isolated CI stack
+        if: always()
+        run: make DEV_SLOT=95 dev-down

@@ -256,7 +256,8 @@ usage() {
         "  frontend-hot-logs    Follow this project's Vite logs" \
         "  frontend-static-up   Switch this project to the static frontend" \
         "  test-backend         Run backend tests in the running stack" \
-        "  test-e2e             Run Playwright in the isolated test profile" \
+        "  test-e2e [args...]   Run Playwright in the isolated test profile" \
+        "  test-migrations      Validate Alembic upgrade and a single current head" \
         "  db-shell             Open psql inside this project's database"
 }
 
@@ -413,7 +414,19 @@ case "${command_name}" in
         cleanup_test_project
         trap cleanup_test_project EXIT
         printf 'Running Playwright in isolated project: %s\n' "${NEOMUA_TEST_PROJECT_NAME}"
-        test_compose --profile test run --rm --build playwright bunx playwright test
+        test_compose --profile test run --rm --build playwright bunx playwright test "$@"
+        trap - EXIT
+        cleanup_test_project
+        ;;
+    test-migrations)
+        require_env_file
+        require_docker
+        check_project_owner "${NEOMUA_TEST_PROJECT_NAME}"
+        cleanup_test_project
+        trap cleanup_test_project EXIT
+        printf 'Validating migrations in isolated project: %s\n' "${NEOMUA_TEST_PROJECT_NAME}"
+        test_compose run --rm --build backend bash -c \
+            'alembic upgrade head && alembic check && test "$(alembic heads | wc -l | tr -d " ")" = "1"'
         trap - EXIT
         cleanup_test_project
         ;;

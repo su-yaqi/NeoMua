@@ -1,6 +1,6 @@
 # NeoMua Development Process
 
-This document defines how a change moves from a task to a traceable, reviewable result. Repository-wide agent rules are in [AGENTS.md](./AGENTS.md); local environment commands are in [development-workflow.md](./development-workflow.md).
+This document defines how a change moves from a task to a traceable, reviewable result. Repository-wide agent rules are in [AGENTS.md](./AGENTS.md); local environment commands are in [development-workflow.md](./development-workflow.md); graded automation is in [development-ci.md](./development-ci.md).
 
 ## 1. Start from verified facts
 
@@ -75,6 +75,8 @@ The checker:
 - confirms that `context impact: updated` corresponds to changed files under `context/`.
 
 It cannot infer semantic risk, so authors and reviewers must raise the level when required.
+
+On pull requests, `.github/workflows/ci.yml` applies the same declaration to select affected checks and produces the single `CI Gate`. Pushes to `master`, nightly runs, releases, and manual runs execute the full set. Repository files do not enforce branch protection by themselves; follow the activation checklist in `development-ci.md`.
 
 ## 5. Pull request and completion
 

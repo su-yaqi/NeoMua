@@ -1,0 +1,51 @@
+name: Reusable Repository Integrity
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  integrity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.11"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.4"
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.12
+      - name: Verify dependency lock files
+        run: |
+          uv lock --check
+          bun install --frozen-lockfile
+          git diff --exit-code -- uv.lock bun.lock
+      - name: Install Python workspace
+        run: uv sync --all-packages
+      - name: Test CI and development process controls
+        run: |
+          make test-ci-control
+          make test-change-process
+      - name: Initialize local test environment
+        run: make dev-init
+      - name: Verify generated API artifacts
+        run: |
+          make generate-client
+          git diff --exit-code -- frontend/openapi.json frontend/src/client
+      - name: Validate database migration graph
+        run: make DEV_SLOT=96 test-migrations

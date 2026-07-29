@@ -156,7 +156,7 @@ while IFS= read -r path; do
 
     case "${path}" in
         AGENTS.md|Makefile|scripts/*|\
-        development-process.md|.github/PULL_REQUEST_TEMPLATE.md)
+        development-process.md|development-ci.md|.github/PULL_REQUEST_TEMPLATE.md)
             raise_minimum 2 "repository process path ${path}"
             ;;
         *.md|context/*|\
@@ -196,6 +196,10 @@ evidence_is_complete() {
             fail "${label} must contain completed evidence, not a pending status"
             ;;
     esac
+    if printf '%s\n' "${lowered}" |
+        grep -Eq '(^|[^[:alpha:]])(failed|failure|failing|blocked|unavailable)([^[:alpha:]]|$)'; then
+        fail "${label} must contain successful evidence, not a failed or blocked status"
+    fi
 }
 
 if [[ "${declared_risk}" == "H" ]]; then

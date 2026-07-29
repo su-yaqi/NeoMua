@@ -220,6 +220,7 @@ NeoMua's local workflow supports deterministic, isolated Compose instances for p
 
 - [development-process.md](./development-process.md) — change risk, branches, context impact, PRs, and completion
 - [development-workflow.md](./development-workflow.md)
+- [development-ci.md](./development-ci.md) — graded checks, `CI Gate`, and GitHub activation
 
 Use the root `Makefile` as the only supported local Compose entrypoint. Start with `make DEV_SLOT=0 dev-init`, then `make DEV_SLOT=0 dev-up`; choose another slot for every parallel worktree.
 

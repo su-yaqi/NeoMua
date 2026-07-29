@@ -1,6 +1,6 @@
 # NeoMua Development
 
-Development governance, S/M/H change risk, context impact, branch rules, and the definition of done are documented in [development-process.md](./development-process.md).
+Development governance, S/M/H change risk, context impact, branch rules, and the definition of done are documented in [development-process.md](./development-process.md). Graded GitHub Actions, the single required gate, and its activation checklist are documented in [development-ci.md](./development-ci.md).
 
 ## Local Docker environment
 
@@ -54,6 +54,8 @@ make DEV_SLOT=0 dev-watch
 ```bash
 make DEV_SLOT=0 test-backend
 make DEV_SLOT=0 test-e2e
+make DEV_SLOT=0 test-migrations
+make test-ci-control
 make generate-client
 ```
 
