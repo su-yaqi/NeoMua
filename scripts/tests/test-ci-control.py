@@ -208,5 +208,13 @@ class WorkflowPolicyTests(unittest.TestCase):
         self.assertNotIn("COVERAGE_FAIL_UNDER=90", backend)
         self.assertIn("SMOKESHOW_GITHUB_COVERAGE_THRESHOLD: 0", smokeshow)
 
+    def test_client_generation_includes_the_local_test_api(self) -> None:
+        generator = (ROOT / "scripts/generate-client.sh").read_text(encoding="utf-8")
+        self.assertIn(
+            "ENABLE_PRIVATE_TEST_API=true uv run python",
+            generator,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

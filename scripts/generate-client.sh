@@ -4,7 +4,7 @@ set -e
 set -x
 
 cd backend
-uv run python -c "import app.main; import json; print(json.dumps(app.main.app.openapi()))" > ../openapi.json
+ENABLE_PRIVATE_TEST_API=true uv run python -c "import app.main; import json; print(json.dumps(app.main.app.openapi()))" > ../openapi.json
 cd ..
 mv openapi.json frontend/
 npm --prefix frontend run generate-client
