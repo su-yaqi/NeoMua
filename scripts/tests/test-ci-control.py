@@ -195,5 +195,18 @@ class GateTests(unittest.TestCase):
         self.assertIn("backend=failure", result.stderr)
 
 
+class WorkflowPolicyTests(unittest.TestCase):
+    def test_backend_coverage_is_reported_without_a_threshold(self) -> None:
+        backend = (ROOT / ".github/workflows/test-backend.yml").read_text(
+            encoding="utf-8"
+        )
+        smokeshow = (ROOT / ".github/workflows/smokeshow.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("make DEV_SLOT=90 test-backend", backend)
+        self.assertIn("name: coverage-html", backend)
+        self.assertNotIn("COVERAGE_FAIL_UNDER=90", backend)
+        self.assertIn("SMOKESHOW_GITHUB_COVERAGE_THRESHOLD: 0", smokeshow)
+
 if __name__ == "__main__":
     unittest.main()

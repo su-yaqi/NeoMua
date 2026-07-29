@@ -25,7 +25,9 @@ The following events run every reusable check:
 - a published GitHub Release;
 - manual `workflow_dispatch`.
 
-Full runs cover repository lint/type checks, backend coverage, Playwright, local and production Compose rendering, generated OpenAPI client drift, Python and Bun lock files, Alembic migration heads, and GitHub Actions security.
+Full runs cover repository lint/type checks, backend tests and a non-blocking coverage report, Playwright, local and production Compose rendering, generated OpenAPI client drift, Python and Bun lock files, Alembic migration heads, and GitHub Actions security.
+
+The repository-wide backend coverage threshold is temporarily disabled by explicit user approval on 2026-07-29. Tests still collect and upload coverage, but neither the backend job nor Smokeshow fails on the percentage. Restoring a ratcheted or absolute threshold is separate follow-up work; this exception must not be described as 90% coverage passing.
 
 ## Local control tests
 
@@ -63,11 +65,11 @@ Repository files alone cannot enable enforcement. Before calling this CI active:
 
 1. Push the workflow commit only after authorization and merge it through the approved path.
 2. Confirm GitHub registers `CI` and complete the first full run.
-3. Resolve any real full-suite failures; do not lower gates to make the first run green.
+3. Resolve any real full-suite failures. The explicitly approved coverage exception above is the only known disabled quality threshold.
 4. Protect `master` and require the single status check `CI Gate`.
 5. Confirm skipped S checks still leave `CI Gate` successful and a failed planned job makes it fail.
 6. Keep deployment environments and runners disabled until the Phase 4 configuration checklist is approved.
 
-As of the 2026-07-29 external audit, GitHub had no registered workflows or runs, no branch protection or rulesets, no Environments, and no self-hosted runners. The local workflow implementation therefore remains unactivated until the steps above are completed.
+The 2026-07-29 external audit was repeated after GitHub authorization was restored. GitHub still had no registered workflows or runs, no branch protection or rulesets, no Environments, and no self-hosted runners. The local workflow implementation therefore remains unactivated until the steps above are completed.
 
-Local Phase 3 verification passed the CI control fixtures, process-check fixtures, YAML/Shell/Python syntax, Ruff for the new controls, zizmor, Compose rendering, Alembic upgrade/head checks, and all 74 Playwright tests. All 218 backend tests also passed, but measured coverage was 60%, so the preserved 90% coverage gate failed. The earlier full-repository baseline also contains unresolved mypy/ty findings. These are real blockers to a successful first full `CI` run; they must be resolved explicitly rather than hidden by lowering or skipping gates.
+Local Phase 3 verification passed the CI control fixtures, process-check fixtures, YAML/Shell/Python syntax, Ruff, mypy, ty, zizmor, Compose rendering, Alembic upgrade/head checks, all 255 backend tests, and all 74 Playwright tests. Backend coverage remains 60% and is reported without gating under the approved temporary exception.

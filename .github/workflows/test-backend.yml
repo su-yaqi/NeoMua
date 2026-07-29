@@ -17,8 +17,8 @@ jobs:
           persist-credentials: false
       - name: Initialize local test environment
         run: make dev-init
-      - name: Run backend tests with the configured coverage gate
-        run: COVERAGE_FAIL_UNDER=90 make DEV_SLOT=90 test-backend
+      - name: Run backend tests and generate the coverage report
+        run: make DEV_SLOT=90 test-backend
       - name: Store coverage files
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
