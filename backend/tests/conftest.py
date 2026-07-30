@@ -56,7 +56,7 @@ from app.conversation_management.models import (
 from app.core.config import settings
 from app.core.db import engine, init_db
 from app.main import app
-from app.models import RefreshSession
+from app.models import LlmProviderConfig, LlmProviderModel, RefreshSession
 from app.project_management.models import (
     Project,
     ProjectMember,
@@ -256,6 +256,8 @@ def isolate_runtime_data(db: Session) -> Generator[None, None, None]:
         db.execute(delete(NodeDistributionRelease))
         db.execute(delete(RuntimeSecret))
         db.execute(delete(RuntimeProfile))
+        db.execute(delete(LlmProviderModel))
+        db.execute(delete(LlmProviderConfig))
         db.commit()
         db.expire_all()
 
