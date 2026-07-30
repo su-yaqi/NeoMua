@@ -75,9 +75,7 @@ def rotate_refresh_session(
         session.add(record)
         session.commit()
         raise RefreshTokenError("refresh session user is unavailable")
-    raw, replacement = issue_refresh_session(
-        session, user, family_id=record.family_id
-    )
+    raw, replacement = issue_refresh_session(session, user, family_id=record.family_id)
     record.revoked_at = now
     record.last_used_at = now
     record.replaced_by_id = replacement.id

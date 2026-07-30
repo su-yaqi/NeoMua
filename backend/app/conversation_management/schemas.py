@@ -21,13 +21,18 @@ class ModelSelectionInput(StrictBody):
 
     @model_validator(mode="after")
     def validate_model_selection(self) -> "ModelSelectionInput":
-        if self.mode == ModelSelectionMode.EXACT and self.runtime_model_binding_id is None:
+        if (
+            self.mode == ModelSelectionMode.EXACT
+            and self.runtime_model_binding_id is None
+        ):
             raise ValueError("exact mode requires runtime_model_binding_id")
         if (
             self.mode == ModelSelectionMode.AGENT_PREFERENCE
             and self.runtime_model_binding_id is not None
         ):
-            raise ValueError("agent_preference does not accept runtime_model_binding_id")
+            raise ValueError(
+                "agent_preference does not accept runtime_model_binding_id"
+            )
         return self
 
 
@@ -78,7 +83,9 @@ class ConversationCreate(StrictBody):
             participants = [self.main_agent, *self.collaborators]
             if current and any(item.model_selection is None for item in participants):
                 raise ValueError("v0.9 Agent participants require model selection")
-            if legacy and any(item.model_selection is not None for item in participants):
+            if legacy and any(
+                item.model_selection is not None for item in participants
+            ):
                 raise ValueError("Legacy Agent participants cannot select v0.9 models")
         if (
             self.visibility == ConversationVisibility.PROJECT

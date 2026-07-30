@@ -81,4 +81,3 @@ sequenceDiagram
 - [x] 平台 Gateway Token 不能跨空间、节点、任务或模型使用。
 - [x] 节点直连仅允许已通过 Anthropic 兼容性测试的 API。
 - [x] 完整过程按序保存且敏感值已脱敏。
-

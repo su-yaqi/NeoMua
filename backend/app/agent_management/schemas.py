@@ -30,7 +30,11 @@ class AgentCompleteCreate(AgentCreate):
     def validate_execution_schema(self) -> "AgentCompleteCreate":
         if any(
             value is not None
-            for value in (self.harness_profile_id, self.provider_config_id, self.model_id)
+            for value in (
+                self.harness_profile_id,
+                self.provider_config_id,
+                self.model_id,
+            )
         ):
             raise ValueError("Legacy Harness/model fields are read-only in v0.9")
         if self.preferred_model_definition_id is None:

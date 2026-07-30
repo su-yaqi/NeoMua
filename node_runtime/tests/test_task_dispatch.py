@@ -68,9 +68,7 @@ async def test_v09_dispatch_rejects_server_evidence_that_differs_from_local_stat
         },
         discovered_models=[{"id": "claude-test"}],
     )
-    store.record_validated_model(
-        applied.runtime_instance_id, "claude-test", "native"
-    )
+    store.record_validated_model(applied.runtime_instance_id, "claude-test", "native")
     controller = NodeTaskController(
         "00000000-0000-0000-0000-000000000010",
         EventSpool(tmp_path / "spool.db"),

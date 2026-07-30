@@ -965,7 +965,10 @@ class AgentReleaseRuntimeCompatibility(SQLModel, table=True):
         foreign_key="agent_release.id", nullable=False, ondelete="CASCADE", index=True
     )
     runtime_instance_id: uuid.UUID = Field(
-        foreign_key="runtime_instance.id", nullable=False, ondelete="CASCADE", index=True
+        foreign_key="runtime_instance.id",
+        nullable=False,
+        ondelete="CASCADE",
+        index=True,
     )
     runtime_capability_report_id: uuid.UUID | None = Field(
         default=None, foreign_key="runtime_capability_report.id", ondelete="SET NULL"
@@ -992,7 +995,10 @@ class AgentActivationPrecheck(SQLModel, table=True):
         foreign_key="agent_release.id", nullable=False, ondelete="CASCADE", index=True
     )
     runtime_instance_id: uuid.UUID = Field(
-        foreign_key="runtime_instance.id", nullable=False, ondelete="CASCADE", index=True
+        foreign_key="runtime_instance.id",
+        nullable=False,
+        ondelete="CASCADE",
+        index=True,
     )
     runtime_configuration_revision_id: uuid.UUID | None = Field(
         default=None,

@@ -91,20 +91,27 @@ def test_only_one_connection_can_reserve_then_expiry_releases(db: Session) -> No
     first_connection = uuid.uuid4()
     second_connection = uuid.uuid4()
     with Session(engine) as first:
-        assert [item.id for item in reserve_node_tasks(
-            first,
-            node_id=node.id,
-            connection_id=first_connection,
-            ttl_seconds=30,
-        )] == [task.id]
+        assert [
+            item.id
+            for item in reserve_node_tasks(
+                first,
+                node_id=node.id,
+                connection_id=first_connection,
+                ttl_seconds=30,
+            )
+        ] == [task.id]
     with Session(engine) as second:
-        assert reserve_node_tasks(
-            second, node_id=node.id, connection_id=second_connection
-        ) == []
+        assert (
+            reserve_node_tasks(second, node_id=node.id, connection_id=second_connection)
+            == []
+        )
         expire_dispatch_reservations(
             second, now=datetime.now(timezone.utc) + timedelta(seconds=31)
         )
         second.commit()
-        assert [item.id for item in reserve_node_tasks(
-            second, node_id=node.id, connection_id=second_connection
-        )] == [task.id]
+        assert [
+            item.id
+            for item in reserve_node_tasks(
+                second, node_id=node.id, connection_id=second_connection
+            )
+        ] == [task.id]

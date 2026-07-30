@@ -63,7 +63,10 @@ def enqueue_runtime_job(
         else None
     )
     if runtime_instance is not None:
-        if runtime_instance.namespace_id != namespace_id or not runtime_instance.enabled:
+        if (
+            runtime_instance.namespace_id != namespace_id
+            or not runtime_instance.enabled
+        ):
             raise HTTPException(409, "Runtime is unavailable")
         target_node_id = (
             runtime_instance.runtime_node_id

@@ -73,9 +73,7 @@ def test_refresh_rotates_and_replay_revokes_family(client: TestClient) -> None:
     old_refresh = client.cookies.get("neomua_refresh")
     csrf = client.cookies.get("neomua_csrf")
     headers = {"Origin": settings.FRONTEND_HOST, "X-CSRF-Token": csrf}
-    refreshed = client.post(
-        f"{settings.API_V1_STR}/login/refresh", headers=headers
-    )
+    refreshed = client.post(f"{settings.API_V1_STR}/login/refresh", headers=headers)
     assert refreshed.status_code == 200
     replacement = client.cookies.get("neomua_refresh")
     assert replacement and replacement != old_refresh

@@ -178,9 +178,7 @@ class RuntimeWorker:
             json={
                 "worker_id": self.worker_id,
                 "runtime_instance_id": payload["runtime_instance_id"],
-                "configuration_revision_id": payload[
-                    "configuration_revision_id"
-                ],
+                "configuration_revision_id": payload["configuration_revision_id"],
                 "configuration_digest": payload["configuration_digest"],
                 **body,
             },

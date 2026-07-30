@@ -11,7 +11,9 @@ from app.runtime.endpoints import EndpointValidationError, canonical_endpoint
         ("http://[fd00::1]/v1", "http://[fd00::1]/v1"),
     ],
 )
-def test_canonical_endpoint_preserves_private_targets(value: str, expected: str) -> None:
+def test_canonical_endpoint_preserves_private_targets(
+    value: str, expected: str
+) -> None:
     assert canonical_endpoint(value) == expected
 
 

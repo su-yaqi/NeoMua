@@ -92,7 +92,9 @@ class NodeTaskExecutor:
             configuration.validate_task_snapshot(snapshot)
         if snapshot.get("agent_release_id"):
             if self.release_store is None:
-                raise ValueError("release_not_active: Agent Release store is unavailable")
+                raise ValueError(
+                    "release_not_active: Agent Release store is unavailable"
+                )
             self.release_store.verify_installed(
                 str(snapshot["agent_id"]),
                 str(snapshot["agent_release_id"]),

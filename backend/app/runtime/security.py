@@ -68,14 +68,14 @@ def issue_gateway_token(
 ) -> str:
     now = datetime.now(timezone.utc)
     claims: dict[str, Any] = {
-            "aud": "neomua-model-gateway",
-            "namespace_id": str(namespace_id),
-            "runtime_id": str(runtime_id),
-            "task_id": str(task_id),
-            "model_id": model_id,
-            "iat": now,
-            "exp": now + timedelta(minutes=10),
-        }
+        "aud": "neomua-model-gateway",
+        "namespace_id": str(namespace_id),
+        "runtime_id": str(runtime_id),
+        "task_id": str(task_id),
+        "model_id": model_id,
+        "iat": now,
+        "exp": now + timedelta(minutes=10),
+    }
     if provider_config_id is not None:
         claims["provider_config_id"] = str(provider_config_id)
     if runtime_model_binding_id is not None:

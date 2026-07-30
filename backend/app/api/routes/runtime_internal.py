@@ -461,9 +461,7 @@ def claim_platform_task(body: ClaimInput, session: SessionDep) -> dict[str, Any]
             mcp_runtime_configs.append(
                 {
                     **server,
-                    "secret_inputs": open_secret_payload(
-                        mcp_secret.secret_ciphertext
-                    ),
+                    "secret_inputs": open_secret_payload(mcp_secret.secret_ciphertext),
                 }
             )
         return {
@@ -507,12 +505,8 @@ def claim_platform_task(body: ClaimInput, session: SessionDep) -> dict[str, Any]
                 "tools": snapshot.get("tools", []),
                 "allowed_tools": snapshot.get("allowed_tools", []),
                 "disallowed_tools": snapshot.get("disallowed_tools", []),
-                "require_approval_tools": snapshot.get(
-                    "require_approval_tools", []
-                ),
-                "required_capabilities": snapshot.get(
-                    "required_capabilities", {}
-                ),
+                "require_approval_tools": snapshot.get("require_approval_tools", []),
+                "required_capabilities": snapshot.get("required_capabilities", {}),
                 "cwd": snapshot.get("working_directory"),
                 "env": {},
                 "sdk_session_id": agent_session.sdk_session_id
@@ -520,9 +514,7 @@ def claim_platform_task(body: ClaimInput, session: SessionDep) -> dict[str, Any]
                 else None,
                 "start_sequence": 1,
                 "timeout_seconds": snapshot.get("timeout_seconds", 3600),
-                "roundtable_participants": snapshot.get(
-                    "roundtable_participants", []
-                ),
+                "roundtable_participants": snapshot.get("roundtable_participants", []),
             },
         }
     raise HTTPException(204)
@@ -671,9 +663,7 @@ def resolve_route(
     task = session.get(AgentTask, task_id)
     if task is not None and task.runtime_instance_id == runtime_id:
         usage = session.exec(
-            select(AgentTaskModelUsage).where(
-                AgentTaskModelUsage.task_id == task.id
-            )
+            select(AgentTaskModelUsage).where(AgentTaskModelUsage.task_id == task.id)
         ).first()
         binding = (
             session.get(RuntimeModelBinding, usage.runtime_model_binding_id)

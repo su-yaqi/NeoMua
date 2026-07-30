@@ -122,9 +122,7 @@ class NodeConnection:
             "observations": observations,
         }
         if self.adapter_registry_digest is not None:
-            discovery_payload["adapter_registry_digest"] = (
-                self.adapter_registry_digest
-            )
+            discovery_payload["adapter_registry_digest"] = self.adapter_registry_digest
         discovery_digest = hashlib.sha256(
             json.dumps(
                 discovery_payload,

@@ -233,9 +233,7 @@ def create_agent_complete(
     provider: LlmProviderConfig | None = None
     model: LlmProviderModel | None = None
     if body.preferred_model_definition_id is not None:
-        definition = session.get(
-            LlmModelDefinition, body.preferred_model_definition_id
-        )
+        definition = session.get(LlmModelDefinition, body.preferred_model_definition_id)
         if (
             definition is None
             or definition.namespace_id != namespace_id
@@ -415,9 +413,7 @@ def save_draft_endpoint(
         "preferred_model_definition_id" in provided
         and body.preferred_model_definition_id is not None
     ):
-        definition = session.get(
-            LlmModelDefinition, body.preferred_model_definition_id
-        )
+        definition = session.get(LlmModelDefinition, body.preferred_model_definition_id)
         if (
             definition is None
             or definition.namespace_id != namespace_id

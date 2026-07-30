@@ -215,6 +215,14 @@ class WorkflowPolicyTests(unittest.TestCase):
             generator,
         )
 
+    def test_full_hygiene_initializes_the_environment_before_hooks(self) -> None:
+        workflow = (ROOT / ".github/workflows/pre-commit.yml").read_text(
+            encoding="utf-8"
+        )
+        initialize = workflow.index("run: make dev-init")
+        all_hooks = workflow.index("run: uv run prek run --all-files")
+        self.assertLess(initialize, all_hooks)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -151,9 +151,7 @@ def append_and_apply_event(
         and event_type != AgentEventType.USER_MESSAGE
     ):
         usage = session.exec(
-            select(AgentTaskModelUsage).where(
-                AgentTaskModelUsage.task_id == task.id
-            )
+            select(AgentTaskModelUsage).where(AgentTaskModelUsage.task_id == task.id)
         ).first()
         if usage is None:
             raise ValueError("v0.9 task model usage evidence is missing")
@@ -210,9 +208,7 @@ def append_and_apply_event(
         and usage_payload
     ):
         model_usage = session.exec(
-            select(AgentTaskModelUsage).where(
-                AgentTaskModelUsage.task_id == task.id
-            )
+            select(AgentTaskModelUsage).where(AgentTaskModelUsage.task_id == task.id)
         ).one()
         last_call = session.exec(
             select(AgentTaskModelCallUsage)

@@ -16,7 +16,9 @@ def migrate() -> tuple[int, int]:
     with Session(engine) as session:
         providers = session.exec(select(LlmProviderConfig).with_for_update()).all()
         for provider in providers:
-            if provider.secret_ciphertext and provider.secret_ciphertext.startswith("v1."):
+            if provider.secret_ciphertext and provider.secret_ciphertext.startswith(
+                "v1."
+            ):
                 payload = open_secret_payload(provider.secret_ciphertext)
                 replacement = seal_secret_payload(payload)
                 assert replacement and open_secret_payload(replacement) == payload

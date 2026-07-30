@@ -158,9 +158,7 @@ async def test_worker_claims_executes_and_posts_events(tmp_path: Path) -> None:
         },
         discovered_models=[{"id": "claude-test"}],
     )
-    store.record_validated_model(
-        applied.runtime_instance_id, "claude-test", "native"
-    )
+    store.record_validated_model(applied.runtime_instance_id, "claude-test", "native")
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)

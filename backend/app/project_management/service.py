@@ -122,12 +122,10 @@ def validate_runtime_instance(
     if runtime_id is None:
         return None
     runtime = session.get(RuntimeInstance, runtime_id)
-    if (
-        runtime is None
-        or runtime.namespace_id != namespace_id
-        or not runtime.enabled
-    ):
-        raise HTTPException(422, "Default Runtime must be available in the project namespace")
+    if runtime is None or runtime.namespace_id != namespace_id or not runtime.enabled:
+        raise HTTPException(
+            422, "Default Runtime must be available in the project namespace"
+        )
     return runtime
 
 

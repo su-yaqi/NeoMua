@@ -41,9 +41,7 @@ def _manifest() -> dict:
 
 
 def test_web_platform_development_package_is_valid() -> None:
-    package_root = (
-        Path(__file__).parents[3] / "workflow_apps/web_platform_development"
-    )
+    package_root = Path(__file__).parents[3] / "workflow_apps/web_platform_development"
     manifest = json.loads((package_root / "manifest.json").read_text())
 
     validated = validate_package(manifest)

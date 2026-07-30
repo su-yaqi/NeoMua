@@ -56,9 +56,13 @@ _UPLOAD_LOCK_BASE = 0x4E4D5500
 def _acquire_upload_slot(session: SessionDep) -> int:
     for slot in range(settings.ARTIFACT_MAX_CONCURRENT_UPLOADS):
         lock_id = _UPLOAD_LOCK_BASE + slot
-        if session.connection().execute(
-            text("SELECT pg_try_advisory_lock(:lock_id)"), {"lock_id": lock_id}
-        ).scalar_one():
+        if (
+            session.connection()
+            .execute(
+                text("SELECT pg_try_advisory_lock(:lock_id)"), {"lock_id": lock_id}
+            )
+            .scalar_one()
+        ):
             return lock_id
     raise HTTPException(429, "Artifact upload concurrency limit reached")
 
@@ -216,8 +220,7 @@ async def upload_artifact(
     temp_dir = Path(settings.ARTIFACT_TEMP_DIR or tempfile.gettempdir())
     temp_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     required_free = (
-        settings.ARTIFACT_MAX_ARCHIVE_BYTES
-        + settings.ARTIFACT_TEMP_MIN_FREE_BYTES
+        settings.ARTIFACT_MAX_ARCHIVE_BYTES + settings.ARTIFACT_TEMP_MIN_FREE_BYTES
     )
     if shutil.disk_usage(temp_dir).free < required_free:
         _release_upload_slot(session, lock_id)

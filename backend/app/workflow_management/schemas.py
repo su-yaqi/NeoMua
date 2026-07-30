@@ -50,7 +50,9 @@ class WorkflowExecutionNodeBindingInput(StrictBody):
             self.model_selection_mode == ModelSelectionMode.AGENT_PREFERENCE
             and self.runtime_model_binding_id is not None
         ):
-            raise ValueError("agent_preference does not accept runtime_model_binding_id")
+            raise ValueError(
+                "agent_preference does not accept runtime_model_binding_id"
+            )
         if legacy and (
             self.runtime_agent_release_id is not None
             or self.model_selection_mode is not None

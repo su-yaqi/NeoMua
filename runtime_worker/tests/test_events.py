@@ -77,6 +77,4 @@ def test_normalize_message_bounds_cycles_and_depth() -> None:
     class DeepMessage:
         content = root
 
-    assert "DEPTH_LIMIT_EXCEEDED" in str(
-        normalize_message(DeepMessage(), sequence=2)
-    )
+    assert "DEPTH_LIMIT_EXCEEDED" in str(normalize_message(DeepMessage(), sequence=2))

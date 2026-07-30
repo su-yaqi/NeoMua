@@ -47,6 +47,9 @@ jobs:
       - name: Install frontend workspace for full checks
         if: inputs.full
         run: bun install --frozen-lockfile
+      - name: Initialize local test environment for full checks
+        if: inputs.full
+        run: make dev-init
       - name: Run full repository checks
         if: inputs.full
         run: uv run prek run --all-files --show-diff-on-failure

@@ -39,7 +39,9 @@ def verify_gateway_scope(
     except jwt.PyJWTError as exc:
         raise GatewayAuthError("invalid gateway token") from exc
     if (
-        runtime_id is not None and claims.get("runtime_id") != str(runtime_id)
-    ) or claims.get("task_id") != str(task_id) or claims.get("model_id") != model_id:
+        (runtime_id is not None and claims.get("runtime_id") != str(runtime_id))
+        or claims.get("task_id") != str(task_id)
+        or claims.get("model_id") != model_id
+    ):
         raise GatewayAuthError("gateway token scope mismatch")
     return claims
