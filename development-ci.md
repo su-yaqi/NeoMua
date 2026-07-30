@@ -59,17 +59,25 @@ The staging and production workflows now listen for a completed `CI` workflow an
 
 This is only the Phase 3 dependency gate. Deployment still builds on the self-hosted runner and starts Compose in place. Immutable images, build-once promotion, backup/migration sequencing, health gates, and rollback belong to Phase 4 and are not implemented here.
 
-## GitHub activation checklist
+## GitHub activation status
 
-Repository files alone cannot enable enforcement. Before calling this CI active:
+The CI control plane was activated on 2026-07-30:
 
-1. Push the workflow commit only after authorization and merge it through the approved path.
-2. Confirm GitHub registers `CI` and complete the first full run.
-3. Resolve any real full-suite failures. The explicitly approved coverage exception above is the only known disabled quality threshold.
-4. Protect `master` and require the single status check `CI Gate`.
-5. Confirm skipped S checks still leave `CI Gate` successful and a failed planned job makes it fail.
-6. Keep deployment environments and runners disabled until the Phase 4 configuration checklist is approved.
+1. The authorized public branch is attached to [draft PR #1](https://github.com/su-yaqi/NeoMua/pull/1), and GitHub has registered the `CI` workflow.
+2. Full run [30508474040](https://github.com/su-yaqi/NeoMua/actions/runs/30508474040) passed on exact commit `c7b97c7ea791fc67b37f8e7f1c7e049eb75693c5`, including all reusable jobs and the final `CI Gate`.
+3. `master` branch protection is strict and requires only `CI Gate`; it applies to administrators, while force pushes and branch deletion remain disabled.
+4. The planner/gate fixtures confirm that unplanned jobs may be skipped, while any failed planned job fails `CI Gate`.
 
-The 2026-07-29 external audit was repeated after GitHub authorization was restored. GitHub still had no registered workflows or runs, no branch protection or rulesets, no Environments, and no self-hosted runners. The local workflow implementation therefore remains unactivated until the steps above are completed.
+Draft PR #1 remains intentionally blocked. It is an H change and does not claim staging evidence: the repository had zero GitHub Environments and zero self-hosted runners when rechecked on 2026-07-30. Do not mark the staging checkbox complete, make the PR ready, or merge it until an authorized staging environment runs the required health and smoke checks.
 
-Local Phase 3 verification passed the CI control fixtures, process-check fixtures, YAML/Shell/Python syntax, Ruff, mypy, ty, zizmor, Compose rendering, Alembic upgrade/head checks, generated-client drift checks, the frontend production build, all 255 backend tests, and all 74 Playwright tests. Client generation explicitly enables the local-only private test API needed by Playwright without changing its disabled runtime/deployment default. Backend coverage remains 60% and is reported without gating under the approved temporary exception.
+To unblock that evidence through the current Phase 3 workflow, an administrator must:
+
+1. Create the `staging` GitHub Environment and configure its protection/approval policy.
+2. Register a trusted runner with both `self-hosted` and `staging` labels.
+3. Configure the Environment secrets currently referenced by `deploy-staging.yml`: `DOMAIN_STAGING`, `STACK_NAME_STAGING`, `SECRET_KEY`, `INTERNAL_RUNTIME_TOKEN`, `FIRST_SUPERUSER`, `FIRST_SUPERUSER_PASSWORD`, `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAILS_FROM_EMAIL`, `POSTGRES_PASSWORD`, and optional `SENTRY_DSN`.
+4. Verify the staging host has the supported Docker/Compose runtime and access to the target domain/network.
+5. After an authorized `master` update with a successful exact-SHA `CI Gate`, record the staging deployment run, service health result, and critical smoke evidence. A successful Compose start alone is not sufficient.
+
+This checklist only describes the current Phase 3 prerequisite. Do not activate this legacy build-in-place deployment as the final production design: Phase 4 must first replace it with immutable build-once images, explicit migration/backup ordering, health gates, and a tested rollback path.
+
+Local Phase 3 verification passed the CI control fixtures, process-check fixtures, YAML/Shell/Python syntax, Ruff, mypy, ty, zizmor, Compose rendering, Alembic upgrade/head checks, generated-client drift checks, the frontend production build, all 255 backend tests, and all 74 Playwright tests. The remote full run repeated the complete graded jobs successfully. Client generation explicitly enables the local-only private test API needed by Playwright without changing its disabled runtime/deployment default. Backend coverage remains 60% and is reported without gating under the approved temporary exception.
