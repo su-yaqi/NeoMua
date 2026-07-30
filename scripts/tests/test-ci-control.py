@@ -223,6 +223,17 @@ class WorkflowPolicyTests(unittest.TestCase):
         all_hooks = workflow.index("run: uv run prek run --all-files")
         self.assertLess(initialize, all_hooks)
 
+    def test_e2e_backend_uses_a_stable_server_without_hot_reload(self) -> None:
+        test_compose = (ROOT / "compose.dev-test.yml").read_text(encoding="utf-8")
+        backend = test_compose.split("\n  backend:\n", maxsplit=1)[1].split(
+            "\n  mailcatcher:", maxsplit=1
+        )[0]
+        self.assertIn(
+            "command:\n      - fastapi\n      - run\n      - app/main.py",
+            backend,
+        )
+        self.assertNotIn("--reload", backend)
+
 
 if __name__ == "__main__":
     unittest.main()

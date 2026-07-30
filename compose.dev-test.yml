@@ -7,6 +7,12 @@ services:
 
   backend:
     ports: !reset []
+    # E2E must use a stable application process, not the hot-reload command
+    # inherited from compose.override.yml.
+    command:
+      - fastapi
+      - run
+      - app/main.py
     environment:
       BACKEND_CORS_ORIGINS: "http://localhost:5173"
       ENABLE_PRIVATE_TEST_API: "true"
