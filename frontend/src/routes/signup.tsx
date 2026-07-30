@@ -18,11 +18,11 @@ import {
 import { Input } from "@/components/ui/input"
 import { LoadingButton } from "@/components/ui/loading-button"
 import { PasswordInput } from "@/components/ui/password-input"
-import useAuth, { isLoggedIn } from "@/hooks/useAuth"
+import useAuth, { hasAuthenticatedSession } from "@/hooks/useAuth"
 
 const formSchema = z
   .object({
-    email: z.email(),
+    email: z.email({ message: "Invalid email address" }),
     full_name: z.string().min(1, { message: "Full Name is required" }),
     password: z
       .string()
@@ -42,7 +42,7 @@ type FormData = z.infer<typeof formSchema>
 export const Route = createFileRoute("/signup")({
   component: SignUp,
   beforeLoad: async () => {
-    if (isLoggedIn()) {
+    if (await hasAuthenticatedSession()) {
       throw redirect({
         to: "/",
       })

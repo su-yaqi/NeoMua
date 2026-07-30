@@ -5,7 +5,8 @@ import { useState } from "react"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
-import { type ItemCreate, ItemsService } from "@/client"
+import { ItemsService } from "@/api/generatedCompat"
+import type { ItemCreate } from "@/client"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,

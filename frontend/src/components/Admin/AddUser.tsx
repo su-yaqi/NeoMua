@@ -1,11 +1,11 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Plus } from "lucide-react"
 import { useState } from "react"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
-import { type UserCreate, UsersService } from "@/client"
+import { tenantApi } from "@/api/tenantApi"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -30,6 +30,7 @@ import { Input } from "@/components/ui/input"
 import { LoadingButton } from "@/components/ui/loading-button"
 import useCustomToast from "@/hooks/useCustomToast"
 import { handleError } from "@/utils"
+import { NamespaceAssignmentsField } from "./NamespaceAssignmentsField"
 
 const formSchema = z
   .object({
@@ -44,6 +45,12 @@ const formSchema = z
       .min(1, { message: "Please confirm your password" }),
     is_superuser: z.boolean(),
     is_active: z.boolean(),
+    namespace_assignments: z.array(
+      z.object({
+        namespace_id: z.string(),
+        role: z.enum(["admin", "developer", "user"]),
+      }),
+    ),
   })
   .refine((data) => data.password === data.confirm_password, {
     message: "The passwords don't match",
@@ -67,21 +74,34 @@ const AddUser = () => {
       password: "",
       confirm_password: "",
       is_superuser: false,
-      is_active: false,
+      is_active: true,
+      namespace_assignments: [],
     },
   })
 
+  const { data: namespaceOptions } = useQuery({
+    queryKey: ["system-namespaces", "options"],
+    queryFn: tenantApi.readSystemNamespaces,
+  })
+
   const mutation = useMutation({
-    mutationFn: (data: UserCreate) =>
-      UsersService.createUser({ requestBody: data }),
+    mutationFn: (data: FormData) =>
+      tenantApi.createPlatformUser({
+        email: data.email,
+        full_name: data.full_name,
+        password: data.password,
+        is_superuser: data.is_superuser,
+        is_active: data.is_active,
+        namespace_assignments: data.namespace_assignments,
+      }),
     onSuccess: () => {
-      showSuccessToast("User created successfully")
+      showSuccessToast("平台用户创建成功")
       form.reset()
       setIsOpen(false)
     },
     onError: handleError.bind(showErrorToast),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["users"] })
+      queryClient.invalidateQueries({ queryKey: ["platform-users"] })
     },
   })
 
@@ -94,14 +114,14 @@ const AddUser = () => {
       <DialogTrigger asChild>
         <Button className="my-4">
           <Plus className="mr-2" />
-          Add User
+          新增平台用户
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Add User</DialogTitle>
+          <DialogTitle>新增平台用户</DialogTitle>
           <DialogDescription>
-            Fill in the form below to add a new user to the system.
+            创建平台用户，并可直接分配其可访问空间与空间角色。
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -113,11 +133,11 @@ const AddUser = () => {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>
-                      Email <span className="text-destructive">*</span>
+                      邮箱 <span className="text-destructive">*</span>
                     </FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="Email"
+                        placeholder="请输入邮箱"
                         type="email"
                         {...field}
                         required
@@ -133,9 +153,9 @@ const AddUser = () => {
                 name="full_name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Full Name</FormLabel>
+                    <FormLabel>姓名</FormLabel>
                     <FormControl>
-                      <Input placeholder="Full name" type="text" {...field} />
+                      <Input placeholder="请输入姓名" type="text" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -148,11 +168,11 @@ const AddUser = () => {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>
-                      Set Password <span className="text-destructive">*</span>
+                      密码 <span className="text-destructive">*</span>
                     </FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="Password"
+                        placeholder="请输入密码"
                         type="password"
                         {...field}
                         required
@@ -169,12 +189,11 @@ const AddUser = () => {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>
-                      Confirm Password{" "}
-                      <span className="text-destructive">*</span>
+                      确认密码 <span className="text-destructive">*</span>
                     </FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="Password"
+                        placeholder="请再次输入密码"
                         type="password"
                         {...field}
                         required
@@ -196,7 +215,9 @@ const AddUser = () => {
                         onCheckedChange={field.onChange}
                       />
                     </FormControl>
-                    <FormLabel className="font-normal">Is superuser?</FormLabel>
+                    <FormLabel className="font-normal">
+                      全局超级管理员
+                    </FormLabel>
                   </FormItem>
                 )}
               />
@@ -212,7 +233,21 @@ const AddUser = () => {
                         onCheckedChange={field.onChange}
                       />
                     </FormControl>
-                    <FormLabel className="font-normal">Is active?</FormLabel>
+                    <FormLabel className="font-normal">启用账号</FormLabel>
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="namespace_assignments"
+                render={({ field }) => (
+                  <FormItem>
+                    <NamespaceAssignmentsField
+                      namespaces={namespaceOptions?.data ?? []}
+                      value={field.value}
+                      onChange={field.onChange}
+                    />
                   </FormItem>
                 )}
               />
@@ -221,11 +256,11 @@ const AddUser = () => {
             <DialogFooter>
               <DialogClose asChild>
                 <Button variant="outline" disabled={mutation.isPending}>
-                  Cancel
+                  取消
                 </Button>
               </DialogClose>
               <LoadingButton type="submit" loading={mutation.isPending}>
-                Save
+                保存
               </LoadingButton>
             </DialogFooter>
           </form>

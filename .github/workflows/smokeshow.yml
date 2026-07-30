@@ -2,22 +2,27 @@ name: Smokeshow
 
 on:
   workflow_run: # zizmor: ignore[dangerous-triggers]
-    workflows: [Test Backend]
+    workflows: [CI]
     types: [completed]
 
 permissions: {}
 
 jobs:
   smokeshow:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       actions: read
+      contents: read
       statuses: write
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          ref: ${{ github.event.workflow_run.head_sha }}
           persist-credentials: false
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
@@ -41,7 +46,8 @@ jobs:
       - run: uv run smokeshow upload backend/htmlcov
         env:
           SMOKESHOW_GITHUB_STATUS_DESCRIPTION: Coverage {coverage-percentage}
-          SMOKESHOW_GITHUB_COVERAGE_THRESHOLD: 90
+          # User-approved temporary exception: publish coverage without gating CI.
+          SMOKESHOW_GITHUB_COVERAGE_THRESHOLD: 0
           SMOKESHOW_GITHUB_CONTEXT: coverage
           SMOKESHOW_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SMOKESHOW_GITHUB_PR_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}

@@ -25,6 +25,95 @@ def test_get_access_token(client: TestClient) -> None:
     assert tokens["access_token"]
 
 
+def test_browser_login_sets_hardened_session_cookies(client: TestClient) -> None:
+    response = client.post(
+        f"{settings.API_V1_STR}/login/access-token",
+        data={
+            "username": settings.FIRST_SUPERUSER,
+            "password": settings.FIRST_SUPERUSER_PASSWORD,
+        },
+    )
+    cookies = response.headers.get_list("set-cookie")
+    access = next(item for item in cookies if item.startswith("neomua_access="))
+    refresh = next(item for item in cookies if item.startswith("neomua_refresh="))
+    assert "HttpOnly" in access and "SameSite=lax" in access
+    assert "Path=/api/v1" in access
+    assert "HttpOnly" in refresh and "Path=/api/v1/login" in refresh
+    assert any(item.startswith("neomua_csrf=") for item in cookies)
+    assert client.get(f"{settings.API_V1_STR}/users/me").status_code == 200
+
+
+def test_cookie_mutation_requires_origin_and_csrf(client: TestClient) -> None:
+    login = client.post(
+        f"{settings.API_V1_STR}/login/access-token",
+        data={
+            "username": settings.FIRST_SUPERUSER,
+            "password": settings.FIRST_SUPERUSER_PASSWORD,
+        },
+    )
+    assert login.status_code == 200
+    assert client.post(f"{settings.API_V1_STR}/login/logout").status_code == 403
+    csrf = client.cookies.get("neomua_csrf")
+    response = client.post(
+        f"{settings.API_V1_STR}/login/logout",
+        headers={"Origin": settings.FRONTEND_HOST, "X-CSRF-Token": csrf},
+    )
+    assert response.status_code == 204
+
+
+def test_refresh_rotates_and_replay_revokes_family(client: TestClient) -> None:
+    login = client.post(
+        f"{settings.API_V1_STR}/login/access-token",
+        data={
+            "username": settings.FIRST_SUPERUSER,
+            "password": settings.FIRST_SUPERUSER_PASSWORD,
+        },
+    )
+    assert login.status_code == 200
+    old_refresh = client.cookies.get("neomua_refresh")
+    csrf = client.cookies.get("neomua_csrf")
+    headers = {"Origin": settings.FRONTEND_HOST, "X-CSRF-Token": csrf}
+    refreshed = client.post(f"{settings.API_V1_STR}/login/refresh", headers=headers)
+    assert refreshed.status_code == 200
+    replacement = client.cookies.get("neomua_refresh")
+    assert replacement and replacement != old_refresh
+
+    client.cookies.delete("neomua_refresh")
+    client.cookies.set(
+        "neomua_refresh",
+        old_refresh,
+        domain="testserver.local",
+        path=f"{settings.API_V1_STR}/login",
+    )
+    replay_csrf = client.cookies.get("neomua_csrf")
+    replay = client.post(
+        f"{settings.API_V1_STR}/login/refresh",
+        headers={
+            "Origin": settings.FRONTEND_HOST,
+            "X-CSRF-Token": replay_csrf,
+        },
+    )
+    assert replay.status_code == 401
+
+    client.cookies.delete("neomua_refresh")
+    client.cookies.set(
+        "neomua_refresh",
+        replacement,
+        domain="testserver.local",
+        path=f"{settings.API_V1_STR}/login",
+    )
+    assert (
+        client.post(
+            f"{settings.API_V1_STR}/login/refresh",
+            headers={
+                "Origin": settings.FRONTEND_HOST,
+                "X-CSRF-Token": client.cookies.get("neomua_csrf") or "missing",
+            },
+        ).status_code
+        == 401
+    )
+
+
 def test_get_access_token_incorrect_password(client: TestClient) -> None:
     login_data = {
         "username": settings.FIRST_SUPERUSER,

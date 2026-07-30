@@ -6,8 +6,8 @@ import {
 } from "@tanstack/react-router"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
-
-import type { Body_login_login_access_token as AccessToken } from "@/client"
+import { UsersService } from "@/api/generatedCompat"
+import type { BodyLoginLoginAccessToken as AccessToken } from "@/client"
 import { AuthLayout } from "@/components/Common/AuthLayout"
 import {
   Form,
@@ -20,10 +20,10 @@ import {
 import { Input } from "@/components/ui/input"
 import { LoadingButton } from "@/components/ui/loading-button"
 import { PasswordInput } from "@/components/ui/password-input"
-import useAuth, { isLoggedIn } from "@/hooks/useAuth"
+import useAuth from "@/hooks/useAuth"
 
 const formSchema = z.object({
-  username: z.email(),
+  username: z.email({ message: "Invalid email address" }),
   password: z
     .string()
     .min(1, { message: "Password is required" })
@@ -35,7 +35,14 @@ type FormData = z.infer<typeof formSchema>
 export const Route = createFileRoute("/login")({
   component: Login,
   beforeLoad: async () => {
-    if (isLoggedIn()) {
+    let authenticated = false
+    try {
+      await UsersService.readUserMe()
+      authenticated = true
+    } catch {
+      authenticated = false
+    }
+    if (authenticated) {
       throw redirect({
         to: "/",
       })

@@ -1,0 +1,187 @@
+import hashlib
+import hmac
+import secrets
+import uuid
+from datetime import datetime, timedelta, timezone
+
+import jwt
+from sqlmodel import Session, select
+
+from app.core.config import settings
+from app.runtime.models import (
+    NodeCredential,
+    NodeEnrollmentToken,
+    RuntimeNode,
+    RuntimeNodeMode,
+)
+
+
+class EnrollmentTokenInvalid(ValueError):
+    pass
+
+
+def _token_hash(raw_token: str) -> str:
+    key = hmac.new(
+        settings.SECRET_KEY.encode(), b"neomua-node-enrollment", hashlib.sha256
+    ).digest()
+    return hmac.new(key, raw_token.encode(), hashlib.sha256).hexdigest()
+
+
+def create_enrollment_token(
+    session: Session,
+    namespace_id: uuid.UUID,
+    created_by: uuid.UUID,
+    *,
+    ttl: timedelta = timedelta(minutes=10),
+    management_mode: RuntimeNodeMode = RuntimeNodeMode.LEGACY_UNCLASSIFIED,
+    commit: bool = True,
+) -> tuple[str, NodeEnrollmentToken]:
+    raw = f"nmenr_{secrets.token_urlsafe(32)}"
+    record = NodeEnrollmentToken(
+        namespace_id=namespace_id,
+        token_hash=_token_hash(raw),
+        requested_management_mode=management_mode,
+        expires_at=datetime.now(timezone.utc) + ttl,
+        created_by=created_by,
+    )
+    session.add(record)
+    if commit:
+        session.commit()
+        session.refresh(record)
+    else:
+        session.flush()
+    return raw, record
+
+
+def read_enrollment_token(session: Session, raw_token: str) -> NodeEnrollmentToken:
+    record = session.exec(
+        select(NodeEnrollmentToken)
+        .where(NodeEnrollmentToken.token_hash == _token_hash(raw_token))
+        .with_for_update()
+    ).first()
+    if record is None:
+        raise EnrollmentTokenInvalid("enrollment token is invalid or expired")
+    return record
+
+
+def consume_enrollment_token(session: Session, raw_token: str) -> NodeEnrollmentToken:
+    now = datetime.now(timezone.utc)
+    record = session.exec(
+        select(NodeEnrollmentToken)
+        .where(NodeEnrollmentToken.token_hash == _token_hash(raw_token))
+        .with_for_update()
+    ).first()
+    if (
+        record is None
+        or record.consumed_at is not None
+        or record.revoked_at is not None
+        or record.expires_at <= now
+    ):
+        session.rollback()
+        raise EnrollmentTokenInvalid("enrollment token is invalid or expired")
+    record.consumed_at = now
+    session.add(record)
+    session.flush()
+    return record
+
+
+def _credential_token(node: RuntimeNode, credential: NodeCredential) -> str:
+    return jwt.encode(
+        {
+            "aud": "neomua-node-runtime",
+            "sub": str(node.id),
+            "namespace_id": str(node.namespace_id),
+            "credential_id": str(credential.id),
+            "key_fingerprint": node.key_fingerprint,
+            "iat": credential.issued_at,
+            "exp": credential.expires_at,
+        },
+        settings.SECRET_KEY,
+        algorithm="HS256",
+    )
+
+
+def issue_node_credential(
+    session: Session,
+    node: RuntimeNode,
+    *,
+    ttl: timedelta = timedelta(days=90),
+) -> tuple[NodeCredential, str]:
+    now = datetime.now(timezone.utc)
+    credential = NodeCredential(
+        node_id=node.id,
+        namespace_id=node.namespace_id,
+        key_fingerprint=node.key_fingerprint,
+        issued_at=now,
+        expires_at=now + ttl,
+    )
+    session.add(credential)
+    session.flush()
+    return credential, _credential_token(node, credential)
+
+
+def rotate_node_credential(
+    session: Session,
+    node: RuntimeNode,
+    current: NodeCredential,
+) -> tuple[NodeCredential, str]:
+    if (
+        current.node_id != node.id
+        or current.revoked_at is not None
+        or current.replaced_by_id is not None
+    ):
+        raise ValueError("credential cannot be rotated")
+    replacement, token = issue_node_credential(session, node)
+    now = datetime.now(timezone.utc)
+    current.replaced_by_id = replacement.id
+    current.replacement_issued_at = now
+    current.replacement_grace_until = now + timedelta(hours=24)
+    session.add(current)
+    session.flush()
+    return replacement, token
+
+
+def recover_node_credential_rotation(
+    session: Session,
+    node: RuntimeNode,
+    current: NodeCredential,
+) -> tuple[NodeCredential, str]:
+    now = datetime.now(timezone.utc)
+    if (
+        current.replaced_by_id is None
+        or current.replacement_grace_until is None
+        or current.replacement_grace_until <= now
+    ):
+        raise ValueError("credential rotation recovery window expired")
+    abandoned = session.get(NodeCredential, current.replaced_by_id)
+    if abandoned is not None:
+        abandoned.revoked_at = now
+        session.add(abandoned)
+    current.replaced_by_id = None
+    current.replacement_issued_at = None
+    current.replacement_grace_until = None
+    session.add(current)
+    session.flush()
+    return rotate_node_credential(session, node, current)
+
+
+def retire_replaced_credential(
+    session: Session,
+    node: RuntimeNode,
+    old_credential_id: uuid.UUID,
+    new_credential_id: uuid.UUID,
+) -> None:
+    old = session.get(NodeCredential, old_credential_id)
+    new = session.get(NodeCredential, new_credential_id)
+    if (
+        old is None
+        or new is None
+        or old.node_id != node.id
+        or new.node_id != node.id
+        or old.replaced_by_id != new.id
+    ):
+        raise ValueError("credential rotation acknowledgement is invalid")
+    old.revoked_at = datetime.now(timezone.utc)
+    old.replacement_grace_until = None
+    session.add(old)
+    session.flush()

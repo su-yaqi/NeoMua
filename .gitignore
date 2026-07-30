@@ -5,3 +5,12 @@ node_modules/
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+.superpowers/
+context/.claude/
+.worktrees/
+.env
+.DS_Store
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.backups/

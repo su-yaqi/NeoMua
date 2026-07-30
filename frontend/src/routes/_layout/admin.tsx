@@ -1,8 +1,8 @@
 import { useSuspenseQuery } from "@tanstack/react-query"
 import { createFileRoute, redirect } from "@tanstack/react-router"
 import { Suspense } from "react"
-
-import { type UserPublic, UsersService } from "@/client"
+import { UsersService } from "@/api/generatedCompat"
+import { type TenantUser, tenantApi } from "@/api/tenantApi"
 import AddUser from "@/components/Admin/AddUser"
 import { columns, type UserTableData } from "@/components/Admin/columns"
 import { DataTable } from "@/components/Common/DataTable"
@@ -11,8 +11,8 @@ import useAuth from "@/hooks/useAuth"
 
 function getUsersQueryOptions() {
   return {
-    queryFn: () => UsersService.readUsers({ skip: 0, limit: 100 }),
-    queryKey: ["users"],
+    queryFn: tenantApi.readPlatformUsers,
+    queryKey: ["platform-users"],
   }
 }
 
@@ -39,7 +39,7 @@ function UsersTableContent() {
   const { user: currentUser } = useAuth()
   const { data: users } = useSuspenseQuery(getUsersQueryOptions())
 
-  const tableData: UserTableData[] = users.data.map((user: UserPublic) => ({
+  const tableData: UserTableData[] = users.data.map((user: TenantUser) => ({
     ...user,
     isCurrentUser: currentUser?.id === user.id,
   }))
@@ -60,9 +60,9 @@ function Admin() {
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Users</h1>
+          <h1 className="text-2xl font-bold tracking-tight">平台用户治理</h1>
           <p className="text-muted-foreground">
-            Manage user accounts and permissions
+            管理平台用户、超级管理员身份以及用户可访问的空间。
           </p>
         </div>
         <AddUser />

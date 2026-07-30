@@ -214,6 +214,16 @@ Backend docs: [backend/README.md](./backend/README.md).
 
 Frontend docs: [frontend/README.md](./frontend/README.md).
 
+## NeoMua Development Workflow
+
+NeoMua's local workflow supports deterministic, isolated Compose instances for parallel worktrees:
+
+- [development-process.md](./development-process.md) — change risk, branches, context impact, PRs, and completion
+- [development-workflow.md](./development-workflow.md)
+- [development-ci.md](./development-ci.md) — graded checks, `CI Gate`, and GitHub activation
+
+Use the root `Makefile` as the only supported local Compose entrypoint. Start with `make DEV_SLOT=0 dev-init`, then `make DEV_SLOT=0 dev-up`; choose another slot for every parallel worktree.
+
 ## Deployment
 
 Deployment docs: [deployment.md](./deployment.md).

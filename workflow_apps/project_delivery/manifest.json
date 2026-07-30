@@ -1,0 +1,92 @@
+{
+  "slug": "project-delivery",
+  "name": "项目交付协作",
+  "description": "通过人工澄清、确定性整理和结果确认完成一项项目交付。",
+  "version": "1.0.7",
+  "sdk_version": "0.7.0",
+  "scope_type": "platform",
+  "project_mode": "required",
+  "nodes": [
+    {
+      "key": "clarify",
+      "name": "需求澄清",
+      "type": "human",
+      "confirmation_mode": "process_confirmation",
+      "input_schema": {
+        "type": "object",
+        "required": ["task_input", "upstream", "upstream_revisions", "project_context"],
+        "properties": {
+          "task_input": {"type": "object", "additionalProperties": true},
+          "upstream": {"type": "object", "additionalProperties": true},
+          "upstream_revisions": {"type": "object", "additionalProperties": true},
+          "project_context": {"type": "object", "additionalProperties": true}
+        },
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "required": ["goals", "acceptance_criteria"],
+        "properties": {
+          "goals": {"type": "array", "items": {"type": "string"}},
+          "acceptance_criteria": {"type": "array", "items": {"type": "string"}},
+          "notes": {"type": "string"}
+        },
+        "additionalProperties": false
+      },
+      "runtime_policy": {},
+      "skippable": false,
+      "side_effecting": false,
+      "join_policy": "all"
+    },
+    {
+      "key": "prepare",
+      "name": "交付摘要",
+      "type": "code",
+      "confirmation_mode": "result_confirmation",
+      "input_schema": {
+        "type": "object",
+        "required": ["task_input", "upstream", "upstream_revisions", "project_context"],
+        "properties": {
+          "task_input": {"type": "object", "additionalProperties": true},
+          "upstream": {"type": "object", "additionalProperties": true},
+          "upstream_revisions": {"type": "object", "additionalProperties": true},
+          "project_context": {"type": "object", "additionalProperties": true}
+        },
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "required": ["summary", "source_revision"],
+        "properties": {
+          "summary": {"type": "string"},
+          "source_revision": {"type": "integer"}
+        },
+        "additionalProperties": false
+      },
+      "runtime_policy": {},
+      "handler_key": "project_delivery.prepare",
+      "validate_in": "project_delivery.has_clarification",
+      "skippable": false,
+      "side_effecting": false,
+      "join_policy": "all"
+    }
+  ],
+  "edges": [
+    {"source": "clarify", "target": "prepare", "condition_key": "always", "condition_config": {}}
+  ],
+  "entry_nodes": ["clarify"],
+  "exit_nodes": ["prepare"],
+  "application": {
+    "component_key": "workflow.project_delivery.v1_0_7",
+    "route_slug": "project-delivery",
+    "build_digest": "d62d10353563c42540a821ed5ea3d9f5e182b114992bf4713d59e42500c3373e",
+    "shell_version": "0.7.0"
+  },
+  "input_schema": {
+    "type": "object",
+    "required": ["request"],
+    "properties": {"request": {"type": "string"}},
+    "additionalProperties": false
+  },
+  "requirements": {"repositories": true}
+}

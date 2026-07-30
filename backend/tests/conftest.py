@@ -2,12 +2,123 @@ from collections.abc import Generator
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import Session, delete
+from sqlmodel import Session, SQLModel, delete, update
 
+from app.agent_management.capability_models import (
+    AgentActivation,
+    AgentActivationPrecheck,
+    AgentDeployment,
+    AgentDraftMcp,
+    AgentDraftPlugin,
+    AgentDraftSkill,
+    AgentDraftToolPolicy,
+    AgentRelease,
+    AgentReleaseComponent,
+    AgentReleaseRuntimeCompatibility,
+    CliSession,
+    McpPlatformSecret,
+    McpRuntimeEvent,
+    McpRuntimeInstance,
+    McpServer,
+    McpServerRevision,
+    McpTargetBinding,
+    McpToolSnapshot,
+    McpValidationAttempt,
+    NamespaceToolPolicy,
+    Plugin,
+    PluginDraft,
+    PluginVersion,
+    RuntimeAgentRelease,
+    SkillCurrentVersionChange,
+    SkillDefinition,
+    SkillDraft,
+    SkillDraftFile,
+    SkillVersion,
+    ToolApprovalRequest,
+    ToolDefinition,
+)
+from app.agent_management.models import (
+    AgentDefinition,
+    AgentDraft,
+    HarnessProfile,
+)
+from app.conversation_management.models import (
+    AgentDelegation,
+    Conversation,
+    ConversationAgent,
+    ConversationAttachment,
+    ConversationConfigurationRevision,
+    ConversationContextSnapshot,
+    ConversationEvent,
+    ConversationExecutionBinding,
+    ConversationMessage,
+)
 from app.core.config import settings
 from app.core.db import engine, init_db
 from app.main import app
-from app.models import Item, User
+from app.models import LlmProviderConfig, LlmProviderModel, RefreshSession
+from app.project_management.models import (
+    Project,
+    ProjectMember,
+    ProjectRepository,
+    ProjectSpecBinding,
+    ProjectSpecLocation,
+    SpecStandard,
+    SpecStandardVersion,
+)
+from app.runtime.models import (
+    AgentEvent,
+    AgentSession,
+    AgentTask,
+    AgentTaskModelUsage,
+    AgentTaskSkillUsage,
+    ArtifactDeployment,
+    ArtifactRelease,
+    LlmProviderModelValidation,
+    NodeBootstrapAttempt,
+    NodeBootstrapSession,
+    NodeCredential,
+    NodeDistributionRelease,
+    NodeEnrollmentToken,
+    NodeHandshakeNonce,
+    NodeInstallationReceipt,
+    PlatformRuntimeReconcileAttempt,
+    PlatformRuntimeReconcileJob,
+    RuntimeAdapterRelease,
+    RuntimeArtifact,
+    RuntimeCapabilityReport,
+    RuntimeConfigurationRevision,
+    RuntimeControlDecision,
+    RuntimeDiscoveryObservation,
+    RuntimeInstallationMigrationReceipt,
+    RuntimeInstance,
+    RuntimeJob,
+    RuntimeModelBinding,
+    RuntimeModelValidationAttempt,
+    RuntimeNode,
+    RuntimeNodeArtifact,
+    RuntimeProfile,
+    RuntimeSecret,
+    RuntimeSkillState,
+    RuntimeSkillSyncAttempt,
+)
+from app.workflow_management.models import (
+    NamespaceWorkflowConfiguration,
+    NamespaceWorkflowEnablement,
+    WorkflowArtifact,
+    WorkflowAttachment,
+    WorkflowConfirmation,
+    WorkflowEvent,
+    WorkflowExecutionConfigurationRevision,
+    WorkflowExecutionNodeBinding,
+    WorkflowGateResult,
+    WorkflowInstance,
+    WorkflowInstanceAgentBinding,
+    WorkflowNodeExecution,
+    WorkflowNodeInstance,
+    WorkflowNodeRevision,
+)
+from tests.utils.db import cleanup_test_data
 from tests.utils.user import authentication_token_from_email
 from tests.utils.utils import get_superuser_token_headers
 
@@ -15,13 +126,144 @@ from tests.utils.utils import get_superuser_token_headers
 @pytest.fixture(scope="session", autouse=True)
 def db() -> Generator[Session, None, None]:
     with Session(engine) as session:
+        SQLModel.metadata.create_all(engine)
         init_db(session)
         yield session
-        statement = delete(Item)
-        session.execute(statement)
-        statement = delete(User)
-        session.execute(statement)
-        session.commit()
+        cleanup_test_data(session)
+
+
+@pytest.fixture(autouse=True)
+def isolate_runtime_data(db: Session) -> Generator[None, None, None]:
+    def clean() -> None:
+        db.rollback()
+        db.execute(delete(WorkflowArtifact))
+        db.execute(delete(WorkflowAttachment))
+        db.execute(delete(WorkflowConfirmation))
+        db.execute(delete(WorkflowGateResult))
+        db.execute(delete(WorkflowNodeExecution))
+        db.execute(update(WorkflowNodeInstance).values(current_revision_id=None))
+        db.execute(delete(WorkflowNodeRevision))
+        db.execute(delete(WorkflowNodeInstance))
+        db.execute(delete(WorkflowEvent))
+        db.execute(delete(WorkflowInstanceAgentBinding))
+        db.execute(delete(WorkflowInstance))
+        db.execute(delete(WorkflowExecutionNodeBinding))
+        db.execute(
+            update(NamespaceWorkflowConfiguration).values(current_revision_id=None)
+        )
+        db.execute(delete(WorkflowExecutionConfigurationRevision))
+        db.execute(delete(NamespaceWorkflowConfiguration))
+        db.execute(delete(NamespaceWorkflowEnablement))
+        db.execute(delete(AgentDelegation))
+        db.execute(delete(ConversationAttachment))
+        db.execute(delete(ConversationEvent))
+        db.execute(delete(ConversationMessage))
+        db.execute(
+            update(Conversation).values(
+                current_context_snapshot_id=None,
+                current_configuration_revision_id=None,
+            )
+        )
+        db.execute(delete(ConversationContextSnapshot))
+        db.execute(delete(ConversationExecutionBinding))
+        db.execute(delete(ConversationConfigurationRevision))
+        db.execute(delete(ConversationAgent))
+        db.execute(delete(Conversation))
+        db.execute(delete(ProjectSpecBinding))
+        db.execute(delete(ProjectSpecLocation))
+        db.execute(delete(ProjectRepository))
+        db.execute(delete(RuntimeJob))
+        db.execute(delete(ProjectMember))
+        db.execute(delete(Project))
+        db.execute(delete(SpecStandardVersion))
+        db.execute(delete(SpecStandard))
+        db.execute(delete(ToolApprovalRequest))
+        db.execute(delete(CliSession))
+        db.execute(delete(AgentReleaseComponent))
+        db.execute(delete(AgentDeployment))
+        db.execute(delete(RuntimeAgentRelease))
+        db.execute(delete(AgentActivation))
+        db.execute(delete(AgentActivationPrecheck))
+        db.execute(delete(AgentReleaseRuntimeCompatibility))
+        db.execute(delete(AgentDraftPlugin))
+        db.execute(delete(AgentDraftMcp))
+        db.execute(delete(AgentDraftSkill))
+        db.execute(delete(AgentDraftToolPolicy))
+        db.execute(delete(McpToolSnapshot))
+        db.execute(delete(McpValidationAttempt))
+        db.execute(delete(McpRuntimeEvent))
+        db.execute(delete(McpRuntimeInstance))
+        db.execute(delete(McpPlatformSecret))
+        db.execute(delete(McpTargetBinding))
+        db.execute(delete(PluginVersion))
+        db.execute(delete(PluginDraft))
+        db.execute(delete(Plugin))
+        db.execute(delete(McpServerRevision))
+        db.execute(delete(McpServer))
+        db.execute(delete(AgentTaskSkillUsage))
+        db.execute(delete(RuntimeSkillSyncAttempt))
+        db.execute(delete(RuntimeSkillState))
+        db.execute(delete(SkillCurrentVersionChange))
+        db.execute(delete(SkillDraftFile))
+        db.execute(
+            update(SkillDefinition).values(current_version_id=None, draft_id=None)
+        )
+        db.execute(delete(SkillDraft))
+        db.execute(delete(SkillVersion))
+        db.execute(delete(SkillDefinition))
+        db.execute(delete(NamespaceToolPolicy))
+        db.execute(delete(ToolDefinition))
+        db.execute(delete(AgentRelease))
+        db.execute(delete(AgentDraft))
+        db.execute(delete(AgentDefinition))
+        db.execute(delete(HarnessProfile))
+        db.execute(delete(AgentEvent))
+        db.execute(delete(AgentTaskModelUsage))
+        db.execute(delete(AgentTask))
+        db.execute(delete(AgentSession))
+        db.execute(delete(RefreshSession))
+        db.execute(delete(ArtifactDeployment))
+        db.execute(delete(RuntimeNodeArtifact))
+        db.execute(delete(ArtifactRelease))
+        db.execute(delete(RuntimeArtifact))
+        db.execute(delete(RuntimeModelValidationAttempt))
+        db.execute(delete(RuntimeModelBinding))
+        db.execute(delete(LlmProviderModelValidation))
+        db.execute(delete(PlatformRuntimeReconcileAttempt))
+        db.execute(delete(PlatformRuntimeReconcileJob))
+        db.execute(delete(RuntimeControlDecision))
+        db.execute(delete(RuntimeDiscoveryObservation))
+        db.execute(delete(RuntimeInstallationMigrationReceipt))
+        db.execute(
+            update(RuntimeInstance).values(
+                desired_configuration_revision_id=None,
+                applied_configuration_revision_id=None,
+                current_capability_report_id=None,
+            )
+        )
+        db.execute(delete(RuntimeCapabilityReport))
+        db.execute(delete(RuntimeConfigurationRevision))
+        db.execute(delete(RuntimeInstance))
+        db.execute(update(RuntimeNode).values(current_installation_receipt_id=None))
+        db.execute(delete(NodeInstallationReceipt))
+        db.execute(delete(NodeBootstrapAttempt))
+        db.execute(delete(NodeBootstrapSession))
+        db.execute(delete(NodeCredential))
+        db.execute(delete(NodeEnrollmentToken))
+        db.execute(delete(NodeHandshakeNonce))
+        db.execute(delete(RuntimeNode))
+        db.execute(delete(RuntimeAdapterRelease))
+        db.execute(delete(NodeDistributionRelease))
+        db.execute(delete(RuntimeSecret))
+        db.execute(delete(RuntimeProfile))
+        db.execute(delete(LlmProviderModel))
+        db.execute(delete(LlmProviderConfig))
+        db.commit()
+        db.expire_all()
+
+    clean()
+    yield
+    clean()
 
 
 @pytest.fixture(scope="module")

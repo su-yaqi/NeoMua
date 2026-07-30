@@ -22,7 +22,12 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src", "tests", "playwright.config.ts"],
+  "include": [
+    "src",
+    "tests",
+    "playwright.config.ts",
+    "../workflow_apps/**/*.tsx"
+  ],
   "references": [
     {
       "path": "./tsconfig.node.json"

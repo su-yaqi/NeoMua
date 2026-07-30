@@ -1,0 +1,6 @@
+{
+  "type": "object",
+  "required": ["request"],
+  "properties": {"request": {"type": "string"}},
+  "additionalProperties": false
+}

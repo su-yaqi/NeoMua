@@ -208,13 +208,16 @@ docker compose -f compose.yml up -d
 
 For production you wouldn't want to have the overrides in `compose.override.yml`, that's why we explicitly specify `compose.yml` as the file to use.
 
+The local `DEV_PROJECT_SCOPE` / `DEV_SLOT` wrapper, deterministic host ports, and
+optional `tools` / `proxy` profiles belong only to `compose.override.yml`. They do
+not alter the container ports, image promotion requirements, or network semantics
+of this production command.
+
 ## Continuous Deployment (CD)
 
 You can use GitHub Actions to deploy your project automatically. 😎
 
-You can have multiple environment deployments.
-
-There are already two environments configured, `staging` and `production`. 🚀
+The repository workflows target two environment names, `staging` and `production`. They must be created and configured in GitHub before deployment; the 2026-07-29 audit found neither environment nor any self-hosted runner registered.
 
 ### Install GitHub Actions Runner
 
@@ -309,17 +312,26 @@ The current Github Actions workflows expect these secrets:
 * `FIRST_SUPERUSER_PASSWORD`
 * `POSTGRES_PASSWORD`
 * `SECRET_KEY`
+* `INTERNAL_RUNTIME_TOKEN`
+* `SMTP_HOST`
+* `SMTP_USER`
+* `SMTP_PASSWORD`
+* `SENTRY_DSN`
 * `LATEST_CHANGES`
 * `SMOKESHOW_AUTH_KEY`
 
 ## GitHub Action Deployment Workflows
 
-There are GitHub Action workflows in the `.github/workflows` directory already configured for deploying to the environments (GitHub Actions runners with the labels):
+There are GitHub Action workflow definitions in `.github/workflows` that target self-hosted runners with environment labels:
 
-* `staging`: after pushing (or merging) to the branch `master`.
-* `production`: after publishing a release.
+* `staging`: after the top-level `CI` workflow succeeds for a push to `master`.
+* `production`: after the top-level `CI` workflow succeeds for a published release.
 
-Both workflows are associated with their respective GitHub Environments, so deployments will be visible in the repository's **Environments** section and will respect any protection rules you configure.
+Both workflows check out the exact commit SHA that passed `CI`. They are associated with their respective GitHub Environment names, so configured protection rules will apply.
+
+This is the current Phase 3 safety boundary, not the final release design. Both deployment workflows still build with Docker Compose on the target runner and run `up -d`. They do not yet promote one immutable image, perform a complete health gate, or provide the Phase 4 backup and rollback chain.
+
+Before activation, register and verify the `CI` workflow, resolve its full-suite results, and protect `master` with the single required check `CI Gate`. Do not register deployment runners or complete environment secrets until the deployment configuration is intentionally approved.
 
 If you need to add extra environments you could use those as a starting point.
 

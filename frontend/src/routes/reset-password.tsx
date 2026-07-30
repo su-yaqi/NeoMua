@@ -9,7 +9,7 @@ import {
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
-import { LoginService } from "@/client"
+import { LoginService } from "@/api/generatedCompat"
 import { AuthLayout } from "@/components/Common/AuthLayout"
 import {
   Form,
@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/form"
 import { LoadingButton } from "@/components/ui/loading-button"
 import { PasswordInput } from "@/components/ui/password-input"
-import { isLoggedIn } from "@/hooks/useAuth"
+import { hasAuthenticatedSession } from "@/hooks/useAuth"
 import useCustomToast from "@/hooks/useCustomToast"
 import { handleError } from "@/utils"
 
@@ -50,7 +50,7 @@ export const Route = createFileRoute("/reset-password")({
   component: ResetPassword,
   validateSearch: searchSchema,
   beforeLoad: async ({ search }) => {
-    if (isLoggedIn()) {
+    if (await hasAuthenticatedSession()) {
       throw redirect({ to: "/" })
     }
     if (!search.token) {

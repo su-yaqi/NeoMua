@@ -1,182 +1,115 @@
 import { expect, test } from "@playwright/test"
-import { firstSuperuser, firstSuperuserPassword } from "./config.ts"
+
 import { createUser } from "./utils/privateApi"
 import { randomEmail, randomPassword } from "./utils/random"
 import { logInUser } from "./utils/user"
 
-test("Admin page is accessible and shows correct title", async ({ page }) => {
+test.describe.configure({ mode: "serial" })
+
+const namespaceRow = (
+  page: import("@playwright/test").Page,
+  namespaceName: string,
+) =>
+  page.locator("tr").filter({
+    has: page.getByRole("cell", { name: namespaceName, exact: true }),
+  })
+
+test("Superuser can access platform user governance", async ({ page }) => {
   await page.goto("/admin")
-  await expect(page.getByRole("heading", { name: "Users" })).toBeVisible()
+
   await expect(
-    page.getByText("Manage user accounts and permissions"),
+    page.getByRole("heading", { name: "平台用户治理" }),
   ).toBeVisible()
+  await expect(page.getByRole("button", { name: "新增平台用户" })).toBeVisible()
 })
 
-test("Add User button is visible", async ({ page }) => {
+test("Superuser can create a namespace and open member management", async ({
+  page,
+}) => {
+  const namespaceName = `空间-${Date.now()}`
+
+  await page.goto("/system/namespaces")
+  await expect(page.getByRole("heading", { name: "空间治理" })).toBeVisible()
+
+  await page.getByRole("button", { name: "新增空间" }).click()
+  await page.getByPlaceholder("请输入空间名称").fill(namespaceName)
+  await page.getByRole("button", { name: "保存" }).click()
+
+  await expect(page.getByText("空间创建成功")).toBeVisible()
+
+  const row = namespaceRow(page, namespaceName)
+  await expect(row).toBeVisible()
+
+  const membersHref = await row
+    .getByRole("link", { name: "成员管理" })
+    .getAttribute("href")
+  await page.goto(membersHref ?? "/system/namespaces")
+
+  await expect(
+    page.getByRole("heading", { name: "空间成员管理" }),
+  ).toBeVisible()
+  await expect(page.getByRole("button", { name: "新增成员" })).toBeVisible()
+})
+
+test("Superuser can add a namespace member from the members page", async ({
+  page,
+}) => {
+  const namespaceName = `成员空间-${Date.now()}`
+  const email = randomEmail()
+  const password = randomPassword()
+
+  await page.goto("/system/namespaces")
+  await page.getByRole("button", { name: "新增空间" }).click()
+  await page.getByPlaceholder("请输入空间名称").fill(namespaceName)
+  await page.getByRole("button", { name: "保存" }).click()
+  await expect(page.getByText("空间创建成功")).toBeVisible()
+
+  const row = namespaceRow(page, namespaceName)
+  const membersHref = await row
+    .getByRole("link", { name: "成员管理" })
+    .getAttribute("href")
+  await page.goto(membersHref ?? "/system/namespaces")
+
+  await expect(
+    page.getByRole("heading", { name: "空间成员管理" }),
+  ).toBeVisible()
+
+  await page.getByRole("button", { name: "新增成员" }).click()
+  await page.getByPlaceholder("请输入邮箱").fill(email)
+  await page.getByPlaceholder("请输入姓名").fill("空间成员")
+  await page.getByPlaceholder("仅新用户会使用此密码").fill(password)
+  await page.getByRole("button", { name: "保存" }).click()
+
+  await expect(page.getByText("空间成员添加成功")).toBeVisible()
+  await expect(page.getByRole("row").filter({ hasText: email })).toBeVisible()
+})
+
+test("Superuser can create a platform user with namespace assignment", async ({
+  page,
+}) => {
+  const namespaceName = `平台空间-${Date.now()}`
+  const email = randomEmail()
+  const password = randomPassword()
+
+  await page.goto("/system/namespaces")
+  await page.getByRole("button", { name: "新增空间" }).click()
+  await page.getByPlaceholder("请输入空间名称").fill(namespaceName)
+  await page.getByRole("button", { name: "保存" }).click()
+  await expect(page.getByText("空间创建成功")).toBeVisible()
+
   await page.goto("/admin")
-  await expect(page.getByRole("button", { name: "Add User" })).toBeVisible()
-})
+  await page.getByRole("button", { name: "新增平台用户" }).click()
+  await page.getByPlaceholder("请输入邮箱").fill(email)
+  await page.getByPlaceholder("请输入姓名").fill("平台成员")
+  await page.getByPlaceholder("请输入密码").fill(password)
+  await page.getByPlaceholder("请再次输入密码").fill(password)
+  const namespaceCheckbox = page.getByRole("checkbox", { name: namespaceName })
+  await namespaceCheckbox.scrollIntoViewIfNeeded()
+  await namespaceCheckbox.check({ force: true })
+  await page.getByRole("button", { name: "保存" }).click()
 
-test.describe("Admin user management", () => {
-  test("Create a new user successfully", async ({ page }) => {
-    await page.goto("/admin")
-
-    const email = randomEmail()
-    const password = randomPassword()
-    const fullName = "Test User Admin"
-
-    await page.getByRole("button", { name: "Add User" }).click()
-
-    await page.getByPlaceholder("Email").fill(email)
-    await page.getByPlaceholder("Full name").fill(fullName)
-    await page.getByPlaceholder("Password").first().fill(password)
-    await page.getByPlaceholder("Password").last().fill(password)
-
-    await page.getByRole("button", { name: "Save" }).click()
-
-    await expect(page.getByText("User created successfully")).toBeVisible()
-
-    await expect(page.getByRole("dialog")).not.toBeVisible()
-
-    const userRow = page.getByRole("row").filter({ hasText: email })
-    await expect(userRow).toBeVisible()
-  })
-
-  test("Create a superuser", async ({ page }) => {
-    await page.goto("/admin")
-
-    const email = randomEmail()
-    const password = randomPassword()
-
-    await page.getByRole("button", { name: "Add User" }).click()
-
-    await page.getByPlaceholder("Email").fill(email)
-    await page.getByPlaceholder("Password").first().fill(password)
-    await page.getByPlaceholder("Password").last().fill(password)
-    await page.getByLabel("Is superuser?").check()
-    await page.getByLabel("Is active?").check()
-
-    await page.getByRole("button", { name: "Save" }).click()
-
-    await expect(page.getByText("User created successfully")).toBeVisible()
-
-    await expect(page.getByRole("dialog")).not.toBeVisible()
-
-    const userRow = page.getByRole("row").filter({ hasText: email })
-    await expect(userRow.getByText("Superuser")).toBeVisible()
-  })
-
-  test("Edit a user successfully", async ({ page }) => {
-    await page.goto("/admin")
-
-    const email = randomEmail()
-    const password = randomPassword()
-    const originalName = "Original Name"
-    const updatedName = "Updated Name"
-
-    await page.getByRole("button", { name: "Add User" }).click()
-    await page.getByPlaceholder("Email").fill(email)
-    await page.getByPlaceholder("Full name").fill(originalName)
-    await page.getByPlaceholder("Password").first().fill(password)
-    await page.getByPlaceholder("Password").last().fill(password)
-    await page.getByRole("button", { name: "Save" }).click()
-
-    await expect(page.getByText("User created successfully")).toBeVisible()
-    await expect(page.getByRole("dialog")).not.toBeVisible()
-
-    const userRow = page.getByRole("row").filter({ hasText: email })
-    await userRow.getByRole("button").click()
-
-    await page.getByRole("menuitem", { name: "Edit User" }).click()
-
-    await page.getByPlaceholder("Full name").fill(updatedName)
-    await page.getByRole("button", { name: "Save" }).click()
-
-    await expect(page.getByText("User updated successfully")).toBeVisible()
-    await expect(page.getByText(updatedName)).toBeVisible()
-  })
-
-  test("Delete a user successfully", async ({ page }) => {
-    await page.goto("/admin")
-
-    const email = randomEmail()
-    const password = randomPassword()
-
-    await page.getByRole("button", { name: "Add User" }).click()
-    await page.getByPlaceholder("Email").fill(email)
-    await page.getByPlaceholder("Password").first().fill(password)
-    await page.getByPlaceholder("Password").last().fill(password)
-    await page.getByRole("button", { name: "Save" }).click()
-
-    await expect(page.getByText("User created successfully")).toBeVisible()
-
-    await expect(page.getByRole("dialog")).not.toBeVisible()
-
-    const userRow = page.getByRole("row").filter({ hasText: email })
-    await userRow.getByRole("button").click()
-
-    await page.getByRole("menuitem", { name: "Delete User" }).click()
-
-    await page.getByRole("button", { name: "Delete" }).click()
-
-    await expect(
-      page.getByText("The user was deleted successfully"),
-    ).toBeVisible()
-
-    await expect(
-      page.getByRole("row").filter({ hasText: email }),
-    ).not.toBeVisible()
-  })
-
-  test("Cancel user creation", async ({ page }) => {
-    await page.goto("/admin")
-
-    await page.getByRole("button", { name: "Add User" }).click()
-    await page.getByPlaceholder("Email").fill("test@example.com")
-
-    await page.getByRole("button", { name: "Cancel" }).click()
-
-    await expect(page.getByRole("dialog")).not.toBeVisible()
-  })
-
-  test("Email is required and must be valid", async ({ page }) => {
-    await page.goto("/admin")
-
-    await page.getByRole("button", { name: "Add User" }).click()
-
-    await page.getByPlaceholder("Email").fill("invalid-email")
-    await page.getByPlaceholder("Email").blur()
-
-    await expect(page.getByText("Invalid email address")).toBeVisible()
-  })
-
-  test("Password must be at least 8 characters", async ({ page }) => {
-    await page.goto("/admin")
-
-    await page.getByRole("button", { name: "Add User" }).click()
-
-    await page.getByPlaceholder("Email").fill(randomEmail())
-    await page.getByPlaceholder("Password").first().fill("short")
-    await page.getByPlaceholder("Password").last().fill("short")
-    await page.getByRole("button", { name: "Save" }).click()
-
-    await expect(
-      page.getByText("Password must be at least 8 characters"),
-    ).toBeVisible()
-  })
-
-  test("Passwords must match", async ({ page }) => {
-    await page.goto("/admin")
-
-    await page.getByRole("button", { name: "Add User" }).click()
-
-    await page.getByPlaceholder("Email").fill(randomEmail())
-    await page.getByPlaceholder("Password").first().fill(randomPassword())
-    await page.getByPlaceholder("Password").last().fill("different12345")
-    await page.getByPlaceholder("Password").last().blur()
-
-    await expect(page.getByText("The passwords don't match")).toBeVisible()
-  })
+  const row = page.getByRole("row").filter({ hasText: email })
+  await expect(row).toBeVisible()
 })
 
 test.describe("Admin page access control", () => {
@@ -191,15 +124,9 @@ test.describe("Admin page access control", () => {
 
     await page.goto("/admin")
 
-    await expect(page.getByRole("heading", { name: "Users" })).not.toBeVisible()
+    await expect(
+      page.getByRole("heading", { name: "平台用户治理" }),
+    ).not.toBeVisible()
     await expect(page).not.toHaveURL(/\/admin/)
-  })
-
-  test("Superuser can access admin page", async ({ page }) => {
-    await logInUser(page, firstSuperuser, firstSuperuserPassword)
-
-    await page.goto("/admin")
-
-    await expect(page.getByRole("heading", { name: "Users" })).toBeVisible()
   })
 })

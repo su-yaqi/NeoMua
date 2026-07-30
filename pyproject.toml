@@ -1,5 +1,5 @@
 [tool.uv.workspace]
-members = ["backend"]
+members = ["backend", "runtime_worker", "workflow_runtime", "model_gateway", "node_runtime", "operator_cli"]
 
 [dependency-groups]
 dev = [
@@ -9,3 +9,13 @@ dev = [
 github-actions = [
     "smokeshow >=0.5.0",
 ]
+
+[tool.mypy]
+strict = true
+exclude = ["(^|/)alembic/"]
+
+[tool.ty.terminal]
+error-on-warning = true
+
+[tool.ty.src]
+exclude = ["backend/app/alembic/**"]

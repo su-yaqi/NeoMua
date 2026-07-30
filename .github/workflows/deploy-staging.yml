@@ -1,17 +1,22 @@
 name: Deploy to Staging
 
 on:
-  push:
-    branches:
-      - master
+  workflow_run: # zizmor: ignore[dangerous-triggers]
+    workflows: [CI]
+    types: [completed]
 
-permissions: {}
+permissions:
+  contents: read
 
 jobs:
   deploy:
     environment: staging
     # Do not deploy in the main repository, only in user projects
-    if: github.repository_owner != 'fastapi'
+    if: >-
+      github.repository_owner != 'fastapi' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'master'
     runs-on:
       - self-hosted
       - staging
@@ -20,6 +25,7 @@ jobs:
       DOMAIN: ${{ secrets.DOMAIN_STAGING }}
       STACK_NAME: ${{ secrets.STACK_NAME_STAGING }}
       SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      INTERNAL_RUNTIME_TOKEN: ${{ secrets.INTERNAL_RUNTIME_TOKEN }}
       FIRST_SUPERUSER: ${{ secrets.FIRST_SUPERUSER }}
       FIRST_SUPERUSER_PASSWORD: ${{ secrets.FIRST_SUPERUSER_PASSWORD }}
       SMTP_HOST: ${{ secrets.SMTP_HOST }}
@@ -32,6 +38,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          ref: ${{ github.event.workflow_run.head_sha }}
           persist-credentials: false
       - run: docker compose -f compose.yml --project-name ${{ secrets.STACK_NAME_STAGING }} build
       - run: docker compose -f compose.yml --project-name ${{ secrets.STACK_NAME_STAGING }} up -d

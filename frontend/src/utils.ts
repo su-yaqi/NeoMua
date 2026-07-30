@@ -1,21 +1,32 @@
 import { AxiosError } from "axios"
-import type { ApiError } from "./client"
 
-function extractErrorMessage(err: ApiError): string {
+export function extractErrorMessage(err: unknown): string {
   if (err instanceof AxiosError) {
-    return err.message
+    const detail = (err.response?.data as { detail?: unknown } | undefined)
+      ?.detail
+    if (Array.isArray(detail) && detail.length > 0) {
+      return String((detail[0] as { msg?: unknown }).msg ?? err.message)
+    }
+    if (detail && typeof detail === "object") {
+      const structured = detail as {
+        errors?: Array<{ message?: unknown }>
+        current_revision?: unknown
+      }
+      if (structured.errors?.length) {
+        return String(structured.errors[0]?.message ?? err.message)
+      }
+      if (structured.current_revision !== undefined) {
+        return `草稿已被其他人更新（当前 revision ${structured.current_revision}），请重新加载后手工合并。`
+      }
+    }
+    return typeof detail === "string" ? detail : err.message
   }
-
-  const errDetail = (err.body as any)?.detail
-  if (Array.isArray(errDetail) && errDetail.length > 0) {
-    return errDetail[0].msg
-  }
-  return errDetail || "Something went wrong."
+  return err instanceof Error ? err.message : "Something went wrong."
 }
 
 export const handleError = function (
   this: (msg: string) => void,
-  err: ApiError,
+  err: unknown,
 ) {
   const errorMessage = extractErrorMessage(err)
   this(errorMessage)

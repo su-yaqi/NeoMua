@@ -3,7 +3,8 @@ import { useMutation } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
-import { type UpdatePassword, UsersService } from "@/client"
+import { UsersService } from "@/api/generatedCompat"
+import type { UpdatePassword } from "@/client"
 import {
   Form,
   FormControl,

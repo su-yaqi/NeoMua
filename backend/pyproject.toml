@@ -4,11 +4,12 @@ version = "0.1.0"
 description = ""
 requires-python = ">=3.10,<4.0"
 dependencies = [
+  "neomua-workflow-runtime",
     "fastapi[standard]<1.0.0,>=0.114.2",
     "python-multipart<1.0.0,>=0.0.7",
     "email-validator<3.0.0.0,>=2.1.0.post1",
     "tenacity<9.0.0,>=8.2.3",
-    "pydantic>2.0",
+    "pydantic>=2.12,<3",
     "emails<1.0,>=0.6",
     "jinja2<4.0.0,>=3.1.4",
     "alembic<2.0.0,>=1.12.1",
@@ -18,6 +19,8 @@ dependencies = [
     "pydantic-settings<3.0.0,>=2.2.1",
     "sentry-sdk[fastapi]>=2.0.0,<3.0.0",
     "pyjwt<3.0.0,>=2.8.0",
+    "cryptography>=44,<50",
+    "boto3>=1.42,<2",
     "pwdlib[argon2,bcrypt]>=0.3.0",
 ]
 
@@ -29,15 +32,19 @@ dev = [
     "ruff<1.0.0,>=0.2.2",
     "prek>=0.2.24,<1.0.0",
     "coverage<8.0.0,>=7.4.3",
+    "boto3-stubs[s3]>=1.42,<2",
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.uv.sources]
+neomua-workflow-runtime = { workspace = true }
+
 [tool.mypy]
 strict = true
-exclude = ["venv", ".venv", "alembic"]
+exclude = ["(^|/)alembic/"]
 
 [tool.ruff]
 target-version = "py310"
@@ -79,3 +86,6 @@ show_contexts = true
 
 [tool.ty.terminal]
 error-on-warning = true
+
+[tool.ty.src]
+exclude = ["app/alembic/**"]
